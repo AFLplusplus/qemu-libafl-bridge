@@ -32,6 +32,19 @@
 #include "tcg/tcg.h"
 #include "exec/tb-lookup.h"
 
+//// --- Begin LibAFL code ---
+
+#define EXCP_LIBAFL_BP 0xf4775747
+
+void HELPER(libafl_qemu_handle_breakpoint)(CPUArchState *env)
+{
+    CPUState* cpu = env_cpu(env);
+    cpu->exception_index = EXCP_LIBAFL_BP;
+    cpu_loop_exit(cpu);
+}
+
+//// --- End LibAFL code ---
+
 /* 32-bit helpers */
 
 int32_t HELPER(div_i32)(int32_t arg1, int32_t arg2)

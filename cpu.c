@@ -37,6 +37,110 @@
 #include "exec/translate-all.h"
 #include "exec/log.h"
 
+//// --- Begin LibAFL code ---
+
+struct libafl_breakpoint {
+    target_ulong addr;
+    struct libafl_breakpoint* next;
+};
+
+struct libafl_breakpoint* libafl_qemu_breakpoints = NULL;
+
+static GByteArray *libafl_qemu_mem_buf = NULL;
+
+int libafl_qemu_write_reg(int reg, uint8_t* val);
+int libafl_qemu_read_reg(int reg, uint8_t* val);
+int libafl_qemu_num_regs(void);
+int libafl_qemu_set_breakpoint(uint64_t addr);
+int libafl_qemu_remove_breakpoint(uint64_t addr);
+
+int libafl_qemu_write_reg(int reg, uint8_t* val)
+{
+    CPUState *cpu = current_cpu;
+    if (!cpu) {
+        return 0;
+    }
+
+    if (libafl_qemu_mem_buf == NULL) {
+        libafl_qemu_mem_buf = g_byte_array_sized_new(64);
+    }
+
+    CPUClass *cc = CPU_GET_CLASS(cpu);
+    if (reg < cc->gdb_num_core_regs) {
+        return cc->gdb_write_register(cpu, val, reg);
+    }
+    return 0;
+}
+
+int libafl_qemu_read_reg(int reg, uint8_t* val)
+{
+    CPUState *cpu = current_cpu;
+    if (!cpu) {
+        return 0;
+    }
+
+    CPUClass *cc = CPU_GET_CLASS(cpu);
+    if (reg < cc->gdb_num_core_regs) {
+        int len = cc->gdb_read_register(cpu, libafl_qemu_mem_buf, reg);
+        if (len > 0) {
+            memcpy(val, libafl_qemu_mem_buf->data, len);
+        }
+        return len;
+    }
+    return 0;
+}
+
+int libafl_qemu_num_regs(void)
+{
+    CPUState *cpu = current_cpu;
+    if (!cpu) {
+        return 0;
+    }
+
+    CPUClass *cc = CPU_GET_CLASS(cpu);
+    return cc->gdb_num_core_regs;
+}
+
+static void breakpoint_invalidate(CPUState *cpu, target_ulong pc);
+
+int libafl_qemu_set_breakpoint(uint64_t addr)
+{
+    CPUState *cpu;
+
+    target_ulong pc = (target_ulong) addr;
+    CPU_FOREACH(cpu) {
+        breakpoint_invalidate(cpu, pc);
+    }
+
+    struct libafl_breakpoint* bp = malloc(sizeof(struct libafl_breakpoint));
+    bp->addr = pc;
+    bp->next = libafl_qemu_breakpoints;
+    libafl_qemu_breakpoints = bp;
+    return 1;
+}
+
+int libafl_qemu_remove_breakpoint(uint64_t addr)
+{
+    CPUState *cpu;
+
+    target_ulong pc = (target_ulong) addr;
+    struct libafl_breakpoint** bp = &libafl_qemu_breakpoints;
+    while (*bp) {
+        if ((*bp)->addr == pc) {
+            CPU_FOREACH(cpu) {
+                breakpoint_invalidate(cpu, pc);
+            }
+
+            *bp = (*bp)->next;
+            return 1;
+        }
+        bp = &(*bp)->next;
+    }
+    return 0;
+}
+
+//// --- End LibAFL code ---
+
 uintptr_t qemu_host_page_size;
 intptr_t qemu_host_page_mask;
 

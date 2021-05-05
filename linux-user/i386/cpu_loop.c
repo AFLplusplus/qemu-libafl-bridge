@@ -209,6 +209,16 @@ void cpu_loop(CPUX86State *env)
         process_queued_cpu_work(cs);
 
         switch(trapnr) {
+
+//// --- Begin LibAFL code ---
+
+#define EXCP_LIBAFL_BP 0xf4775747
+
+        case EXCP_LIBAFL_BP:
+            return;
+
+//// --- End LibAFL code ---
+
         case 0x80:
             /* linux syscall from int $0x80 */
             ret = do_syscall(env,

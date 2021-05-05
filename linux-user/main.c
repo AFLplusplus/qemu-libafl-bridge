@@ -621,6 +621,27 @@ static int parse_args(int argc, char **argv)
     return optind;
 }
 
+//// --- Begin LibAFL code ---
+
+int libafl_qemu_main(void);
+int libafl_qemu_run(void);
+
+static CPUArchState *libafl_qemu_env;
+
+__attribute__((weak)) int libafl_qemu_main(void)
+{
+    libafl_qemu_run();
+    return 0;
+}
+
+int libafl_qemu_run(void)
+{
+    cpu_loop(libafl_qemu_env);
+    return 1;
+}
+
+//// --- End LibAFL code ---
+
 int main(int argc, char **argv, char **envp)
 {
     struct target_pt_regs regs1, *regs = &regs1;
@@ -886,7 +907,16 @@ int main(int argc, char **argv, char **envp)
         }
         gdb_handlesig(cpu, 0);
     }
-    cpu_loop(env);
+    // cpu_loop(env);
+
+    //// --- Begin LibAFL code ---
+
+    libafl_qemu_env = env;
+
+    return libafl_qemu_main();
+    
+    //// --- End LibAFL code ---
+
     /* never exits */
-    return 0;
+    // return 0;
 }

@@ -19,6 +19,17 @@
 #include "exec/plugin-gen.h"
 #include "sysemu/replay.h"
 
+//// --- Begin LibAFL code ---
+
+struct libafl_breakpoint {
+    target_ulong addr;
+    struct libafl_breakpoint* next;
+};
+
+extern struct libafl_breakpoint* libafl_qemu_breakpoints;
+
+//// --- End LibAFL code ---
+
 /* Pairs with tcg_clear_temp_count.
    To be called by #TranslatorOps.{translate_insn,tb_stop} if
    (1) the target is sufficiently clean to support reporting,
@@ -90,6 +101,18 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
                 break;
             }
         }
+
+        //// --- Begin LibAFL code ---
+
+        struct libafl_breakpoint* bp = libafl_qemu_breakpoints;
+        while (bp) {
+            if (bp->addr == db->pc_next) {
+                gen_helper_libafl_qemu_handle_breakpoint(cpu_env);
+            }
+            bp = bp->next;
+        }
+
+        //// --- End LibAFL code ---
 
         /* Disassemble one instruction.  The translate_insn hook should
            update db->pc_next and db->is_jmp to indicate what should be

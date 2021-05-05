@@ -88,6 +88,16 @@ void cpu_loop(CPUARMState *env)
         process_queued_cpu_work(cs);
 
         switch (trapnr) {
+
+//// --- Begin LibAFL code ---
+
+#define EXCP_LIBAFL_BP 0xf4775747
+
+        case EXCP_LIBAFL_BP:
+            return;
+
+//// --- End LibAFL code ---
+
         case EXCP_SWI:
             ret = do_syscall(env,
                              env->xregs[8],

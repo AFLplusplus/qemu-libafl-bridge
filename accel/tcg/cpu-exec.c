@@ -487,6 +487,18 @@ static inline void cpu_handle_debug_exception(CPUState *cpu)
 
 static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
 {
+    //// --- Begin LibAFL code ---
+
+#define EXCP_LIBAFL_BP 0xf4775747
+
+    if (cpu->exception_index == EXCP_LIBAFL_BP) {
+        *ret = cpu->exception_index;
+        cpu->exception_index = -1;
+        return true; 
+    }
+
+    //// --- End LibAFL code ---
+
     if (cpu->exception_index < 0) {
 #ifndef CONFIG_USER_ONLY
         if (replay_has_exception()

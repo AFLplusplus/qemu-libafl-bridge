@@ -446,6 +446,8 @@ slirp_smbd="$default_feature"
 malloc_trim="auto"
 gio="$default_feature"
 
+libafl_bridge=""
+
 # parse CC options second
 for opt do
   optarg=$(expr "x$opt" : 'x[^=]*=\(.*\)')
@@ -1558,6 +1560,8 @@ for opt do
   ;;
   --disable-slirp-smbd) slirp_smbd=no
   ;;
+  --with-libafl-bridge=*) libafl_bridge="$optarg"
+  ;;
   *)
       echo "ERROR: unknown option $opt"
       echo "Try '$0 --help' for more information"
@@ -1565,6 +1569,8 @@ for opt do
   ;;
   esac
 done
+
+QEMU_LDFLAGS="$QEMU_LDFLAGS $libafl_bridge"
 
 case $git_submodules_action in
     update|validate)

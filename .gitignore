@@ -1,3 +1,5 @@
+/qemu_libafl_bridge/Cargo.lock
+/qemu_libafl_bridge/target/
 /GNUmakefile
 /build/
 *.pyc

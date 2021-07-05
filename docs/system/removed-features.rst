@@ -126,6 +126,11 @@ devices.  Drives the board doesn't pick up can no longer be used with
 This option was undocumented and not used in the field.
 Use `-device usb-ccid`` instead.
 
+RISC-V firmware not booted by default (removed in 5.1)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+QEMU 5.1 changes the default behaviour from ``-bios none`` to ``-bios default``
+for the RISC-V ``virt`` machine and ``sifive_u`` machine.
 
 QEMU Machine Protocol (QMP) commands
 ------------------------------------
@@ -249,6 +254,11 @@ Use ``migrate-set-parameters`` and ``info migrate-parameters`` instead.
 
 Use ``migrate-set-parameters`` instead.
 
+``info cpustats`` (removed in 6.1)
+''''''''''''''''''''''''''''''''''
+
+This command didn't produce any output already. Removed with no replacement.
+
 Guest Emulator ISAs
 -------------------
 
@@ -284,6 +294,33 @@ RISC-V no MMU CPUs (removed in 5.1)
 The RISC-V no MMU cpus have been removed. The two CPUs: ``rv32imacu-nommu`` and
 ``rv64imacu-nommu`` can no longer be used. Instead the MMU status can be specified
 via the CPU ``mmu`` option when using the ``rv32`` or ``rv64`` CPUs.
+
+``compat`` property of server class POWER CPUs (removed in 6.0)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+The ``max-cpu-compat`` property of the ``pseries`` machine type should be used
+instead.
+
+``moxie`` CPU (removed in 6.1)
+''''''''''''''''''''''''''''''
+
+Nobody was using this CPU emulation in QEMU, and there were no test images
+available to make sure that the code is still working, so it has been removed
+without replacement.
+
+``lm32`` CPUs (removed in 6.1.0)
+''''''''''''''''''''''''''''''''
+
+The only public user of this architecture was the milkymist project,
+which has been dead for years; there was never an upstream Linux
+port.  Removed without replacement.
+
+``unicore32`` CPUs (since 6.1.0)
+''''''''''''''''''''''''''''''''
+
+Support for this CPU was removed from the upstream Linux kernel, and
+there is no available upstream toolchain to build binaries for it.
+Removed without replacement.
 
 System emulator machines
 ------------------------
@@ -461,3 +498,10 @@ VXHS backend (removed in 5.1)
 '''''''''''''''''''''''''''''
 
 The VXHS code did not compile since v2.12.0. It was removed in 5.1.
+
+``sheepdog`` driver (removed in 6.0)
+''''''''''''''''''''''''''''''''''''
+
+The corresponding upstream server project is no longer maintained.
+Users are recommended to switch to an alternative distributed block
+device driver such as RBD.

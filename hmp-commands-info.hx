@@ -500,19 +500,6 @@ SRST
     Show the current VM UUID.
 ERST
 
-    {
-        .name       = "cpustats",
-        .args_type  = "",
-        .params     = "",
-        .help       = "show CPU statistics",
-        .cmd        = hmp_info_cpustats,
-    },
-
-SRST
-  ``info cpustats``
-    Show CPU statistics.
-ERST
-
 #if defined(CONFIG_SLIRP)
     {
         .name       = "usernet",
@@ -879,4 +866,17 @@ ERST
 SRST
   ``info replay``
     Display the record/replay information: mode and the current icount.
+ERST
+
+    {
+        .name       = "dirty_rate",
+        .args_type  = "",
+        .params     = "",
+        .help       = "show dirty rate information",
+        .cmd        = hmp_info_dirty_rate,
+    },
+
+SRST
+  ``info dirty_rate``
+    Display the vcpu dirty rate information.
 ERST

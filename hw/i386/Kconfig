@@ -23,7 +23,8 @@ config PC
     imply TPM_TIS_ISA
     imply VGA_PCI
     imply VIRTIO_VGA
-    select FDC
+    imply NVDIMM
+    select FDC_ISA
     select I8259
     select I8254
     select PCKBD

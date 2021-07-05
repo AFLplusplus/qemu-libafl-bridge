@@ -25,7 +25,6 @@
 #include "qemu/osdep.h"
 #include "qemu/cutils.h"
 #include "monitor/monitor.h"
-#include "sysemu/sysemu.h"
 #include "qemu/config-file.h"
 #include "qemu/error-report.h"
 #include "qemu/qemu-print.h"
@@ -931,6 +930,12 @@ QemuOptsList qemu_chardev_opts = {
             .type = QEMU_OPT_STRING,
         },{
             .name = "logappend",
+            .type = QEMU_OPT_BOOL,
+        },{
+            .name = "mouse",
+            .type = QEMU_OPT_BOOL,
+        },{
+            .name = "clipboard",
             .type = QEMU_OPT_BOOL,
 #ifdef CONFIG_LINUX
         },{

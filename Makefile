@@ -48,9 +48,11 @@ Makefile: .git-submodule-status
 
 .PHONY: git-submodule-update
 git-submodule-update:
+ifneq ($(GIT_SUBMODULES_ACTION),ignore)
 	$(call quiet-command, \
 		(GIT="$(GIT)" "$(SRC_PATH)/scripts/git-submodule.sh" $(GIT_SUBMODULES_ACTION) $(GIT_SUBMODULES)), \
 		"GIT","$(GIT_SUBMODULES)")
+endif
 
 # 0. ensure the build tree is okay
 
@@ -213,7 +215,7 @@ qemu-%.tar.bz2:
 
 distclean: clean
 	-$(quiet-@)test -f build.ninja && $(NINJA) $(NINJAFLAGS) -t clean -g || :
-	rm -f config-host.mak config-host.h*
+	rm -f config-host.mak config-host.h* config-poison.h
 	rm -f tests/tcg/config-*.mak
 	rm -f config-all-disas.mak config.status
 	rm -f roms/seabios/config.mak roms/vgabios/config.mak

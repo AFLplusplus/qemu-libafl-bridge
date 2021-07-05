@@ -13,11 +13,7 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "cpu.h"
-#include "hw/boards.h"
-#include "exec/address-spaces.h"
 #include "exec/ram_addr.h"
-#include "hw/boards.h"
 #include "hw/s390x/s390-virtio-hcall.h"
 #include "hw/s390x/sclp.h"
 #include "hw/s390x/s390_flic.h"
@@ -806,7 +802,10 @@ DEFINE_CCW_MACHINE(6_1, "6.1", true);
 
 static void ccw_machine_6_0_instance_options(MachineState *machine)
 {
+    static const S390FeatInit qemu_cpu_feat = { S390_FEAT_LIST_QEMU_V6_0 };
+
     ccw_machine_6_1_instance_options(machine);
+    s390_set_qemu_cpu_model(0x2964, 13, 2, qemu_cpu_feat);
 }
 
 static void ccw_machine_6_0_class_options(MachineClass *mc)

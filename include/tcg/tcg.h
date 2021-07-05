@@ -27,13 +27,13 @@
 
 #include "cpu.h"
 #include "exec/memop.h"
-#include "exec/tb-context.h"
 #include "qemu/bitops.h"
 #include "qemu/plugin.h"
 #include "qemu/queue.h"
 #include "tcg/tcg-mo.h"
 #include "tcg-target.h"
 #include "qemu/int128.h"
+#include "tcg/tcg-cond.h"
 
 /* XXX: make safe guess about sizes */
 #define MAX_OP_PER_INSTR 266
@@ -53,6 +53,7 @@
 #define MAX_OPC_PARAM (4 + (MAX_OPC_PARAM_PER_ARG * MAX_OPC_PARAM_ARGS))
 
 #define CPU_TEMP_BUF_NLONGS 128
+#define TCG_STATIC_FRAME_SIZE  (CPU_TEMP_BUF_NLONGS * sizeof(long))
 
 /* Default target word size to pointer size.  */
 #ifndef TCG_TARGET_REG_BITS
@@ -407,74 +408,17 @@ typedef TCGv_ptr TCGv_env;
 /* Used to align parameters.  See the comment before tcgv_i32_temp.  */
 #define TCG_CALL_DUMMY_ARG      ((TCGArg)0)
 
-/* Conditions.  Note that these are laid out for easy manipulation by
-   the functions below:
-     bit 0 is used for inverting;
-     bit 1 is signed,
-     bit 2 is unsigned,
-     bit 3 is used with bit 0 for swapping signed/unsigned.  */
-typedef enum {
-    /* non-signed */
-    TCG_COND_NEVER  = 0 | 0 | 0 | 0,
-    TCG_COND_ALWAYS = 0 | 0 | 0 | 1,
-    TCG_COND_EQ     = 8 | 0 | 0 | 0,
-    TCG_COND_NE     = 8 | 0 | 0 | 1,
-    /* signed */
-    TCG_COND_LT     = 0 | 0 | 2 | 0,
-    TCG_COND_GE     = 0 | 0 | 2 | 1,
-    TCG_COND_LE     = 8 | 0 | 2 | 0,
-    TCG_COND_GT     = 8 | 0 | 2 | 1,
-    /* unsigned */
-    TCG_COND_LTU    = 0 | 4 | 0 | 0,
-    TCG_COND_GEU    = 0 | 4 | 0 | 1,
-    TCG_COND_LEU    = 8 | 4 | 0 | 0,
-    TCG_COND_GTU    = 8 | 4 | 0 | 1,
-} TCGCond;
-
-/* Invert the sense of the comparison.  */
-static inline TCGCond tcg_invert_cond(TCGCond c)
-{
-    return (TCGCond)(c ^ 1);
-}
-
-/* Swap the operands in a comparison.  */
-static inline TCGCond tcg_swap_cond(TCGCond c)
-{
-    return c & 6 ? (TCGCond)(c ^ 9) : c;
-}
-
-/* Create an "unsigned" version of a "signed" comparison.  */
-static inline TCGCond tcg_unsigned_cond(TCGCond c)
-{
-    return c & 2 ? (TCGCond)(c ^ 6) : c;
-}
-
-/* Create a "signed" version of an "unsigned" comparison.  */
-static inline TCGCond tcg_signed_cond(TCGCond c)
-{
-    return c & 4 ? (TCGCond)(c ^ 6) : c;
-}
-
-/* Must a comparison be considered unsigned?  */
-static inline bool is_unsigned_cond(TCGCond c)
-{
-    return (c & 4) != 0;
-}
-
-/* Create a "high" version of a double-word comparison.
-   This removes equality from a LTE or GTE comparison.  */
-static inline TCGCond tcg_high_cond(TCGCond c)
-{
-    switch (c) {
-    case TCG_COND_GE:
-    case TCG_COND_LE:
-    case TCG_COND_GEU:
-    case TCG_COND_LEU:
-        return (TCGCond)(c ^ 8);
-    default:
-        return c;
-    }
-}
+/*
+ * Flags for the bswap opcodes.
+ * If IZ, the input is zero-extended, otherwise unknown.
+ * If OZ or OS, the output is zero- or sign-extended respectively,
+ * otherwise the high bits are undefined.
+ */
+enum {
+    TCG_BSWAP_IZ = 1,
+    TCG_BSWAP_OZ = 2,
+    TCG_BSWAP_OS = 4,
+};
 
 typedef enum TCGTempVal {
     TEMP_VAL_DEAD,
@@ -690,22 +634,12 @@ static inline bool temp_readonly(TCGTemp *ts)
     return ts->kind >= TEMP_FIXED;
 }
 
-extern TCGContext tcg_init_ctx;
 extern __thread TCGContext *tcg_ctx;
 extern const void *tcg_code_gen_epilogue;
 extern uintptr_t tcg_splitwx_diff;
 extern TCGv_env cpu_env;
 
-static inline bool in_code_gen_buffer(const void *p)
-{
-    const TCGContext *s = &tcg_init_ctx;
-    /*
-     * Much like it is valid to have a pointer to the byte past the
-     * end of an array (so long as you don't dereference it), allow
-     * a pointer to the byte past the end of the code gen buffer.
-     */
-    return (size_t)(p - s->code_gen_buffer) <= s->code_gen_buffer_size;
-}
+bool in_code_gen_buffer(const void *p);
 
 #ifdef CONFIG_DEBUG_TCG
 const void *tcg_splitwx_to_rx(void *rw);
@@ -874,7 +808,6 @@ void *tcg_malloc_internal(TCGContext *s, int size);
 void tcg_pool_reset(TCGContext *s);
 TranslationBlock *tcg_tb_alloc(TCGContext *s);
 
-void tcg_region_init(void);
 void tb_destroy(TranslationBlock *tb);
 void tcg_region_reset_all(void);
 
@@ -907,7 +840,7 @@ static inline void *tcg_malloc(int size)
     }
 }
 
-void tcg_context_init(TCGContext *s);
+void tcg_init(size_t tb_size, int splitwx, unsigned max_cpus);
 void tcg_register_thread(void);
 void tcg_prologue_init(TCGContext *s);
 void tcg_func_start(TCGContext *s);
@@ -1083,6 +1016,16 @@ void tcg_op_remove(TCGContext *s, TCGOp *op);
 TCGOp *tcg_op_insert_before(TCGContext *s, TCGOp *op, TCGOpcode opc);
 TCGOp *tcg_op_insert_after(TCGContext *s, TCGOp *op, TCGOpcode opc);
 
+/**
+ * tcg_remove_ops_after:
+ * @op: target operation
+ *
+ * Discard any opcodes emitted since @op.  Expected usage is to save
+ * a starting point with tcg_last_op(), speculatively emit opcodes,
+ * then decide whether or not to keep those opcodes after the fact.
+ */
+void tcg_remove_ops_after(TCGOp *op);
+
 void tcg_optimize(TCGContext *s);
 
 /* Allocate a new temporary and initialize it with a constant. */
@@ -1097,7 +1040,8 @@ TCGv_vec tcg_const_ones_vec_matching(TCGv_vec);
 
 /*
  * Locate or create a read-only temporary that is a constant.
- * This kind of temporary need not and should not be freed.
+ * This kind of temporary need not be freed, but for convenience
+ * will be silently ignored by tcg_temp_free_*.
  */
 TCGTemp *tcg_constant_internal(TCGType type, int64_t val);
 
@@ -1331,7 +1275,6 @@ uint64_t dup_const(unsigned vece, uint64_t c);
         : (VECE) == MO_64 ? (uint64_t)(C)                          \
         : (qemu_build_not_reached_always(), 0))                    \
      : dup_const(VECE, C))
-
 
 /*
  * Memory helpers that will be used by TCG generated code.

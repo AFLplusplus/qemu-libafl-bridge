@@ -3,6 +3,7 @@ config PSERIES
     imply PCI_DEVICES
     imply TEST_DEVICES
     imply VIRTIO_VGA
+    imply NVDIMM
     select DIMM
     select PCI
     select SPAPR_VSCSI
@@ -67,6 +68,15 @@ config SAM460EX
     select USB_EHCI_SYSBUS
     select USB_OHCI
     select FDT_PPC
+
+config PEGASOS2
+    bool
+    select MV64361
+    select VT82C686
+    select IDE_VIA
+    select SMBUS_EEPROM
+# This should come with VT82C686
+    select ACPI_X86
 
 config PREP
     bool

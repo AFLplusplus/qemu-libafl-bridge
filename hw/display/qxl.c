@@ -321,7 +321,7 @@ static ram_addr_t qxl_rom_size(void)
 #define QXL_ROM_SZ 8192
 
     QEMU_BUILD_BUG_ON(QXL_REQUIRED_SZ > QXL_ROM_SZ);
-    return QXL_ROM_SZ;
+    return QEMU_ALIGN_UP(QXL_REQUIRED_SZ, qemu_real_host_page_size);
 }
 
 static void init_qxl_rom(PCIQXLDevice *d)
@@ -2384,7 +2384,7 @@ static bool qxl_monitors_config_needed(void *opaque)
 }
 
 
-static VMStateDescription qxl_memslot = {
+static const VMStateDescription qxl_memslot = {
     .name               = "qxl-memslot",
     .version_id         = QXL_SAVE_VERSION,
     .minimum_version_id = QXL_SAVE_VERSION,
@@ -2396,7 +2396,7 @@ static VMStateDescription qxl_memslot = {
     }
 };
 
-static VMStateDescription qxl_surface = {
+static const VMStateDescription qxl_surface = {
     .name               = "qxl-surface",
     .version_id         = QXL_SAVE_VERSION,
     .minimum_version_id = QXL_SAVE_VERSION,
@@ -2414,7 +2414,7 @@ static VMStateDescription qxl_surface = {
     }
 };
 
-static VMStateDescription qxl_vmstate_monitors_config = {
+static const VMStateDescription qxl_vmstate_monitors_config = {
     .name               = "qxl/monitors-config",
     .version_id         = 1,
     .minimum_version_id = 1,
@@ -2425,7 +2425,7 @@ static VMStateDescription qxl_vmstate_monitors_config = {
     },
 };
 
-static VMStateDescription qxl_vmstate = {
+static const VMStateDescription qxl_vmstate = {
     .name               = "qxl",
     .version_id         = QXL_SAVE_VERSION,
     .minimum_version_id = QXL_SAVE_VERSION,

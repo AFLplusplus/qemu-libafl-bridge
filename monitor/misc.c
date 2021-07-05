@@ -24,7 +24,6 @@
 
 #include "qemu/osdep.h"
 #include "monitor-internal.h"
-#include "cpu.h"
 #include "monitor/qdev.h"
 #include "hw/usb.h"
 #include "hw/pci/pci.h"
@@ -368,17 +367,6 @@ static void hmp_info_history(Monitor *mon, const QDict *qdict)
         monitor_printf(mon, "%d: '%s'\n", i, str);
         i++;
     }
-}
-
-static void hmp_info_cpustats(Monitor *mon, const QDict *qdict)
-{
-    CPUState *cs = mon_get_cpu(mon);
-
-    if (!cs) {
-        monitor_printf(mon, "No CPU available\n");
-        return;
-    }
-    cpu_dump_statistics(cs, 0);
 }
 
 static void hmp_info_trace_events(Monitor *mon, const QDict *qdict)

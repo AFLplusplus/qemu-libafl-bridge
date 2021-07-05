@@ -538,13 +538,50 @@ void HELPER(stzgm_tags)(CPUARMState *env, uint64_t ptr, uint64_t val)
     }
 }
 
+static void mte_sync_check_fail(CPUARMState *env, uint32_t desc,
+                                uint64_t dirty_ptr, uintptr_t ra)
+{
+    int is_write, syn;
+
+    env->exception.vaddress = dirty_ptr;
+
+    is_write = FIELD_EX32(desc, MTEDESC, WRITE);
+    syn = syn_data_abort_no_iss(arm_current_el(env) != 0, 0, 0, 0, 0, is_write,
+                                0x11);
+    raise_exception_ra(env, EXCP_DATA_ABORT, syn, exception_target_el(env), ra);
+    g_assert_not_reached();
+}
+
+static void mte_async_check_fail(CPUARMState *env, uint64_t dirty_ptr,
+                                 uintptr_t ra, ARMMMUIdx arm_mmu_idx, int el)
+{
+    int select;
+
+    if (regime_has_2_ranges(arm_mmu_idx)) {
+        select = extract64(dirty_ptr, 55, 1);
+    } else {
+        select = 0;
+    }
+    env->cp15.tfsr_el[el] |= 1 << select;
+#ifdef CONFIG_USER_ONLY
+    /*
+     * Stand in for a timer irq, setting _TIF_MTE_ASYNC_FAULT,
+     * which then sends a SIGSEGV when the thread is next scheduled.
+     * This cpu will return to the main loop at the end of the TB,
+     * which is rather sooner than "normal".  But the alternative
+     * is waiting until the next syscall.
+     */
+    qemu_cpu_kick(env_cpu(env));
+#endif
+}
+
 /* Record a tag check failure.  */
 static void mte_check_fail(CPUARMState *env, uint32_t desc,
                            uint64_t dirty_ptr, uintptr_t ra)
 {
     int mmu_idx = FIELD_EX32(desc, MTEDESC, MIDX);
     ARMMMUIdx arm_mmu_idx = core_to_aa64_mmu_idx(mmu_idx);
-    int el, reg_el, tcf, select, is_write, syn;
+    int el, reg_el, tcf;
     uint64_t sctlr;
 
     reg_el = regime_el(env, arm_mmu_idx);
@@ -563,21 +600,9 @@ static void mte_check_fail(CPUARMState *env, uint32_t desc,
 
     switch (tcf) {
     case 1:
-        /*
-         * Tag check fail causes a synchronous exception.
-         *
-         * In restore_state_to_opc, we set the exception syndrome
-         * for the load or store operation.  Unwind first so we
-         * may overwrite that with the syndrome for the tag check.
-         */
-        cpu_restore_state(env_cpu(env), ra, true);
-        env->exception.vaddress = dirty_ptr;
-
-        is_write = FIELD_EX32(desc, MTEDESC, WRITE);
-        syn = syn_data_abort_no_iss(arm_current_el(env) != 0, 0, 0, 0, 0,
-                                    is_write, 0x11);
-        raise_exception(env, EXCP_DATA_ABORT, syn, exception_target_el(env));
-        /* noreturn, but fall through to the assert anyway */
+        /* Tag check fail causes a synchronous exception. */
+        mte_sync_check_fail(env, desc, dirty_ptr, ra);
+        break;
 
     case 0:
         /*
@@ -589,30 +614,19 @@ static void mte_check_fail(CPUARMState *env, uint32_t desc,
 
     case 2:
         /* Tag check fail causes asynchronous flag set.  */
-        if (regime_has_2_ranges(arm_mmu_idx)) {
-            select = extract64(dirty_ptr, 55, 1);
-        } else {
-            select = 0;
-        }
-        env->cp15.tfsr_el[el] |= 1 << select;
-#ifdef CONFIG_USER_ONLY
-        /*
-         * Stand in for a timer irq, setting _TIF_MTE_ASYNC_FAULT,
-         * which then sends a SIGSEGV when the thread is next scheduled.
-         * This cpu will return to the main loop at the end of the TB,
-         * which is rather sooner than "normal".  But the alternative
-         * is waiting until the next syscall.
-         */
-        qemu_cpu_kick(env_cpu(env));
-#endif
+        mte_async_check_fail(env, dirty_ptr, ra, arm_mmu_idx, el);
         break;
 
-    default:
-        /* Case 3: Reserved. */
-        qemu_log_mask(LOG_GUEST_ERROR,
-                      "Tag check failure with SCTLR_EL%d.TCF%s "
-                      "set to reserved value %d\n",
-                      reg_el, el ? "" : "0", tcf);
+    case 3:
+        /*
+         * Tag check fail causes asynchronous flag set for stores, or
+         * a synchronous exception for loads.
+         */
+        if (FIELD_EX32(desc, MTEDESC, WRITE)) {
+            mte_async_check_fail(env, dirty_ptr, ra, arm_mmu_idx, el);
+        } else {
+            mte_sync_check_fail(env, desc, dirty_ptr, ra);
+        }
         break;
     }
 }
@@ -736,7 +750,7 @@ static int mte_probe_int(CPUARMState *env, uint32_t desc, uint64_t ptr,
     prev_page = ptr & TARGET_PAGE_MASK;
     next_page = prev_page + TARGET_PAGE_SIZE;
 
-    if (likely(tag_last - prev_page <= TARGET_PAGE_SIZE)) {
+    if (likely(tag_last - prev_page < TARGET_PAGE_SIZE)) {
         /* Memory access stays on one page. */
         tag_size = ((tag_byte_last - tag_byte_first) / (2 * TAG_GRANULE)) + 1;
         mem1 = allocation_tag_mem(env, mmu_idx, ptr, type, sizem1 + 1,

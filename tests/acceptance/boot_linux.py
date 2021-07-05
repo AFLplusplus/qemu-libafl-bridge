@@ -29,7 +29,7 @@ class BootLinuxX8664(LinuxTest):
         """
         self.require_accelerator("tcg")
         self.vm.add_args("-accel", "tcg")
-        self.launch_and_wait()
+        self.launch_and_wait(set_up_ssh_connection=False)
 
     def test_pc_i440fx_kvm(self):
         """
@@ -38,7 +38,7 @@ class BootLinuxX8664(LinuxTest):
         """
         self.require_accelerator("kvm")
         self.vm.add_args("-accel", "kvm")
-        self.launch_and_wait()
+        self.launch_and_wait(set_up_ssh_connection=False)
 
     def test_pc_q35_tcg(self):
         """
@@ -47,7 +47,7 @@ class BootLinuxX8664(LinuxTest):
         """
         self.require_accelerator("tcg")
         self.vm.add_args("-accel", "tcg")
-        self.launch_and_wait()
+        self.launch_and_wait(set_up_ssh_connection=False)
 
     def test_pc_q35_kvm(self):
         """
@@ -56,7 +56,7 @@ class BootLinuxX8664(LinuxTest):
         """
         self.require_accelerator("kvm")
         self.vm.add_args("-accel", "kvm")
-        self.launch_and_wait()
+        self.launch_and_wait(set_up_ssh_connection=False)
 
 
 class BootLinuxAarch64(LinuxTest):
@@ -75,43 +75,43 @@ class BootLinuxAarch64(LinuxTest):
         self.vm.add_args('-device', 'virtio-rng-pci,rng=rng0')
         self.vm.add_args('-object', 'rng-random,id=rng0,filename=/dev/urandom')
 
-    def test_virt_tcg(self):
+    def test_virt_tcg_gicv2(self):
         """
         :avocado: tags=accel:tcg
         :avocado: tags=cpu:max
+        :avocado: tags=device:gicv2
         """
         self.require_accelerator("tcg")
         self.vm.add_args("-accel", "tcg")
         self.vm.add_args("-cpu", "max")
         self.vm.add_args("-machine", "virt,gic-version=2")
         self.add_common_args()
-        self.launch_and_wait()
+        self.launch_and_wait(set_up_ssh_connection=False)
 
-    def test_virt_kvm_gicv2(self):
+    def test_virt_tcg_gicv3(self):
         """
-        :avocado: tags=accel:kvm
-        :avocado: tags=cpu:host
-        :avocado: tags=device:gicv2
-        """
-        self.require_accelerator("kvm")
-        self.vm.add_args("-accel", "kvm")
-        self.vm.add_args("-cpu", "host")
-        self.vm.add_args("-machine", "virt,gic-version=2")
-        self.add_common_args()
-        self.launch_and_wait()
-
-    def test_virt_kvm_gicv3(self):
-        """
-        :avocado: tags=accel:kvm
-        :avocado: tags=cpu:host
+        :avocado: tags=accel:tcg
+        :avocado: tags=cpu:max
         :avocado: tags=device:gicv3
         """
+        self.require_accelerator("tcg")
+        self.vm.add_args("-accel", "tcg")
+        self.vm.add_args("-cpu", "max")
+        self.vm.add_args("-machine", "virt,gic-version=3")
+        self.add_common_args()
+        self.launch_and_wait(set_up_ssh_connection=False)
+
+    def test_virt_kvm(self):
+        """
+        :avocado: tags=accel:kvm
+        :avocado: tags=cpu:host
+        """
         self.require_accelerator("kvm")
         self.vm.add_args("-accel", "kvm")
         self.vm.add_args("-cpu", "host")
-        self.vm.add_args("-machine", "virt,gic-version=3")
+        self.vm.add_args("-machine", "virt,gic-version=host")
         self.add_common_args()
-        self.launch_and_wait()
+        self.launch_and_wait(set_up_ssh_connection=False)
 
 
 class BootLinuxPPC64(LinuxTest):
@@ -128,7 +128,7 @@ class BootLinuxPPC64(LinuxTest):
         """
         self.require_accelerator("tcg")
         self.vm.add_args("-accel", "tcg")
-        self.launch_and_wait()
+        self.launch_and_wait(set_up_ssh_connection=False)
 
 
 class BootLinuxS390X(LinuxTest):
@@ -146,4 +146,4 @@ class BootLinuxS390X(LinuxTest):
         """
         self.require_accelerator("tcg")
         self.vm.add_args("-accel", "tcg")
-        self.launch_and_wait()
+        self.launch_and_wait(set_up_ssh_connection=False)

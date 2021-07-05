@@ -49,6 +49,10 @@ struct PostcopyBlocktimeContext;
 struct MigrationIncomingState {
     QEMUFile *from_src_file;
 
+    /* A hook to allow cleanup at the end of incoming migration */
+    void *transport_data;
+    void (*transport_cleanup)(void *data);
+
     /*
      * Free at the start of the main state load, set as the main thread finishes
      * loading state.
@@ -375,5 +379,8 @@ int foreach_not_ignored_block(RAMBlockIterFunc func, void *opaque);
 void migration_make_urgent_request(void);
 void migration_consume_urgent_request(void);
 bool migration_rate_limit(void);
+void migration_cancel(void);
+
+void populate_vfio_info(MigrationInfo *info);
 
 #endif

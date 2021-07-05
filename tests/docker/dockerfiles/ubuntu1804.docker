@@ -16,6 +16,7 @@ ENV PACKAGES \
     libdrm-dev \
     libepoxy-dev \
     libfdt-dev \
+    libffi-dev \
     libgbm-dev \
     libgtk-3-dev \
     libibverbs-dev \
@@ -48,6 +49,7 @@ ENV PACKAGES \
     make \
     python3-yaml \
     python3-sphinx \
+    python3-sphinx-rtd-theme \
     ninja-build \
     sparse \
     xfslibs-dev

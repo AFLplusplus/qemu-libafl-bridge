@@ -92,9 +92,19 @@ static int command(BlockBackend *blk, const cmdinfo_t *ct, int argc,
         return -EINVAL;
     }
 
-    /* Request additional permissions if necessary for this command. The caller
+    /*
+     * Request additional permissions if necessary for this command. The caller
      * is responsible for restoring the original permissions afterwards if this
-     * is what it wants. */
+     * is what it wants.
+     *
+     * Coverity thinks that blk may be NULL in the following if condition. It's
+     * not so: in init_check_command() we fail if blk is NULL for command with
+     * both CMD_FLAG_GLOBAL and CMD_NOFILE_OK flags unset. And in
+     * qemuio_add_command() we assert that command with non-zero .perm field
+     * doesn't set this flags. So, the following assertion is to silence
+     * Coverity:
+     */
+    assert(blk || !ct->perm);
     if (ct->perm && blk_is_available(blk)) {
         uint64_t orig_perm, orig_shared_perm;
         blk_get_perm(blk, &orig_perm, &orig_shared_perm);
@@ -2457,9 +2467,12 @@ static const cmdinfo_t help_cmd = {
     .oneline    = "help for one or all commands",
 };
 
+/*
+ * Called with aio context of blk acquired. Or with qemu_get_aio_context()
+ * context acquired if blk is NULL.
+ */
 int qemuio_command(BlockBackend *blk, const char *cmd)
 {
-    AioContext *ctx;
     char *input;
     const cmdinfo_t *ct;
     char **v;
@@ -2471,10 +2484,7 @@ int qemuio_command(BlockBackend *blk, const char *cmd)
     if (c) {
         ct = find_command(v[0]);
         if (ct) {
-            ctx = blk ? blk_get_aio_context(blk) : qemu_get_aio_context();
-            aio_context_acquire(ctx);
             ret = command(blk, ct, c, v);
-            aio_context_release(ctx);
         } else {
             fprintf(stderr, "command \"%s\" not found\n", v[0]);
             ret = -EINVAL;

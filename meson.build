@@ -1,5 +1,5 @@
 project('qemu', ['c'], meson_version: '>=0.55.0',
-        default_options: ['warning_level=1', 'c_std=gnu99', 'cpp_std=gnu++11', 'b_colorout=auto'] +
+        default_options: ['warning_level=1', 'c_std=gnu11', 'cpp_std=gnu++11', 'b_colorout=auto'] +
                          (meson.version().version_compare('>=0.56.0') ? [ 'b_staticpic=false' ] : []),
         version: run_command('head', meson.source_root() / 'VERSION').stdout().strip())
 
@@ -87,6 +87,7 @@ if cpu in ['x86', 'x86_64']
   accelerator_targets += {
     'CONFIG_HAX': ['i386-softmmu', 'x86_64-softmmu'],
     'CONFIG_HVF': ['x86_64-softmmu'],
+    'CONFIG_NVMM': ['i386-softmmu', 'x86_64-softmmu'],
     'CONFIG_WHPX': ['i386-softmmu', 'x86_64-softmmu'],
   }
 endif
@@ -162,7 +163,7 @@ if targetos != 'linux' and get_option('multiprocess').enabled()
 endif
 multiprocess_allowed = targetos == 'linux' and not get_option('multiprocess').disabled()
 
-m = cc.find_library('m', required: false)
+libm = cc.find_library('m', required: false)
 util = cc.find_library('util', required: false)
 winmm = []
 socket = []
@@ -170,6 +171,7 @@ version_res = []
 coref = []
 iokit = []
 emulator_link_args = []
+nvmm =not_found
 hvf = not_found
 if targetos == 'windows'
   socket = cc.find_library('ws2_32')
@@ -181,7 +183,7 @@ if targetos == 'windows'
                                       include_directories: include_directories('.'))
 elif targetos == 'darwin'
   coref = dependency('appleframeworks', modules: 'CoreFoundation')
-  iokit = dependency('appleframeworks', modules: 'IOKit')
+  iokit = dependency('appleframeworks', modules: 'IOKit', required: false)
 elif targetos == 'sunos'
   socket = [cc.find_library('socket'),
             cc.find_library('nsl'),
@@ -227,6 +229,14 @@ if not get_option('hax').disabled()
     accelerators += 'CONFIG_HAX'
   endif
 endif
+if targetos == 'netbsd'
+  if cc.has_header_symbol('nvmm.h', 'nvmm_cpu_stop', required: get_option('nvmm'))
+    nvmm = cc.find_library('nvmm', required: get_option('nvmm'))
+  endif
+  if nvmm.found()
+    accelerators += 'CONFIG_NVMM'
+  endif
+endif
 
 tcg_arch = config_host['ARCH']
 if not get_option('tcg').disabled()
@@ -270,6 +280,9 @@ endif
 if 'CONFIG_HVF' not in accelerators and get_option('hvf').enabled()
   error('HVF not available on this platform')
 endif
+if 'CONFIG_NVMM' not in accelerators and get_option('nvmm').enabled()
+  error('NVMM not available on this platform')
+endif
 if 'CONFIG_WHPX' not in accelerators and get_option('whpx').enabled()
   error('WHPX not available on this platform')
 endif
@@ -307,29 +320,10 @@ urcubp = not_found
 if 'CONFIG_TRACE_UST' in config_host
   urcubp = declare_dependency(link_args: config_host['URCU_BP_LIBS'].split())
 endif
-gcrypt = not_found
-if 'CONFIG_GCRYPT' in config_host
-  gcrypt = declare_dependency(compile_args: config_host['GCRYPT_CFLAGS'].split(),
-                              link_args: config_host['GCRYPT_LIBS'].split())
-endif
-nettle = not_found
-if 'CONFIG_NETTLE' in config_host
-  nettle = declare_dependency(compile_args: config_host['NETTLE_CFLAGS'].split(),
-                              link_args: config_host['NETTLE_LIBS'].split())
-endif
-gnutls = not_found
-if 'CONFIG_GNUTLS' in config_host
-  gnutls = declare_dependency(compile_args: config_host['GNUTLS_CFLAGS'].split(),
-                              link_args: config_host['GNUTLS_LIBS'].split())
-endif
 pixman = not_found
 if have_system or have_tools
   pixman = dependency('pixman-1', required: have_system, version:'>=0.21.8',
                       method: 'pkg-config', kwargs: static_kwargs)
-endif
-pam = not_found
-if 'CONFIG_AUTH_PAM' in config_host
-  pam = cc.find_library('pam')
 endif
 libaio = cc.find_library('aio', required: false)
 zlib = dependency('zlib', required: true, kwargs: static_kwargs)
@@ -445,10 +439,14 @@ if 'CONFIG_LIBJACK' in config_host
 endif
 spice = not_found
 spice_headers = not_found
+spice_protocol = not_found
 if 'CONFIG_SPICE' in config_host
   spice = declare_dependency(compile_args: config_host['SPICE_CFLAGS'].split(),
                              link_args: config_host['SPICE_LIBS'].split())
   spice_headers = declare_dependency(compile_args: config_host['SPICE_CFLAGS'].split())
+endif
+if 'CONFIG_SPICE_PROTOCOL' in config_host
+  spice_protocol = declare_dependency(compile_args: config_host['SPICE_PROTOCOL_CFLAGS'].split())
 endif
 rt = cc.find_library('rt', required: false)
 libdl = not_found
@@ -812,6 +810,54 @@ if 'CONFIG_OPENGL' in config_host
                               link_args: config_host['OPENGL_LIBS'].split())
 endif
 
+gnutls = not_found
+if not get_option('gnutls').auto() or have_system
+  gnutls = dependency('gnutls', version: '>=3.5.18',
+                      method: 'pkg-config',
+                      required: get_option('gnutls'),
+                      kwargs: static_kwargs)
+endif
+
+# Nettle has priority over gcrypt
+gcrypt = not_found
+nettle = not_found
+xts = 'private'
+if get_option('nettle').enabled() and get_option('gcrypt').enabled()
+  error('Only one of gcrypt & nettle can be enabled')
+elif (not get_option('nettle').auto() or have_system) and not get_option('gcrypt').enabled()
+  nettle = dependency('nettle', version: '>=3.4',
+                      method: 'pkg-config',
+                      required: get_option('nettle'),
+                      kwargs: static_kwargs)
+  if nettle.found() and cc.has_header('nettle/xts.h', dependencies: nettle)
+    xts = 'nettle'
+  endif
+endif
+if (not get_option('gcrypt').auto() or have_system) and not nettle.found()
+  gcrypt = dependency('libgcrypt', version: '>=1.5',
+                         method: 'config-tool',
+                         required: get_option('gcrypt'),
+                         kwargs: static_kwargs)
+  if gcrypt.found() and cc.compiles('''
+    #include <gcrypt.h>
+    int main(void) {
+      gcry_cipher_hd_t handle;
+      gcry_cipher_open(&handle, GCRY_CIPHER_AES, GCRY_CIPHER_MODE_XTS, 0);
+      return 0;
+    }
+    ''', dependencies: gcrypt)
+    xts = 'gcrypt'
+  endif
+  # Debian has removed -lgpg-error from libgcrypt-config
+  # as it "spreads unnecessary dependencies" which in
+  # turn breaks static builds...
+  if gcrypt.found() and enable_static
+    gcrypt = declare_dependency(dependencies: [
+      gcrypt,
+      cc.find_library('gpg-error', required: true, kwargs: static_kwargs)])
+  endif
+endif
+
 gtk = not_found
 gtkx11 = not_found
 if not get_option('gtk').auto() or (have_system and not cocoa.found())
@@ -834,7 +880,7 @@ if 'CONFIG_VTE' in config_host
                            link_args: config_host['VTE_LIBS'].split())
 endif
 x11 = not_found
-if gtkx11.found() or 'lm32-softmmu' in target_dirs
+if gtkx11.found()
   x11 = dependency('x11', method: 'pkg-config', required: gtkx11.found(),
                    kwargs: static_kwargs)
 endif
@@ -854,6 +900,31 @@ if get_option('vnc').enabled()
   if sasl.found()
     sasl = declare_dependency(dependencies: sasl,
                               compile_args: '-DSTRUCT_IOVEC_DEFINED')
+  endif
+endif
+
+pam = not_found
+if not get_option('auth_pam').auto() or have_system
+  pam = cc.find_library('pam', has_headers: ['security/pam_appl.h'],
+                        required: get_option('auth_pam'),
+                        kwargs: static_kwargs)
+endif
+if pam.found() and not cc.links('''
+   #include <stddef.h>
+   #include <security/pam_appl.h>
+   int main(void) {
+     const char *service_name = "qemu";
+     const char *user = "frank";
+     const struct pam_conv pam_conv = { 0 };
+     pam_handle_t *pamh = NULL;
+     pam_start(service_name, user, &pam_conv, &pamh);
+     return 0;
+   }''', dependencies: pam)
+  pam = not_found
+  if get_option('auth_pam').enabled()
+    error('could not link libpam')
+  else
+    warning('could not link libpam, disabling')
   endif
 endif
 
@@ -905,9 +976,10 @@ if 'CONFIG_XEN_BACKEND' in config_host
                            link_args: config_host['XEN_LIBS'].split())
 endif
 cacard = not_found
-if 'CONFIG_SMARTCARD' in config_host
-  cacard = declare_dependency(compile_args: config_host['SMARTCARD_CFLAGS'].split(),
-                              link_args: config_host['SMARTCARD_LIBS'].split())
+if not get_option('smartcard').auto() or have_system
+  cacard = dependency('libcacard', required: get_option('smartcard'),
+                      version: '>=2.5.1', method: 'pkg-config',
+                      kwargs: static_kwargs)
 endif
 u2f = not_found
 if have_system
@@ -916,15 +988,18 @@ if have_system
                    kwargs: static_kwargs)
 endif
 usbredir = not_found
-if 'CONFIG_USB_REDIR' in config_host
-  usbredir = declare_dependency(compile_args: config_host['USB_REDIR_CFLAGS'].split(),
-                                link_args: config_host['USB_REDIR_LIBS'].split())
+if not get_option('usb_redir').auto() or have_system
+  usbredir = dependency('libusbredirparser-0.5', required: get_option('usb_redir'),
+                        version: '>=0.6', method: 'pkg-config',
+                        kwargs: static_kwargs)
 endif
 libusb = not_found
-if 'CONFIG_USB_LIBUSB' in config_host
-  libusb = declare_dependency(compile_args: config_host['LIBUSB_CFLAGS'].split(),
-                              link_args: config_host['LIBUSB_LIBS'].split())
+if not get_option('libusb').auto() or have_system
+  libusb = dependency('libusb-1.0', required: get_option('libusb'),
+                      version: '>=1.0.13', method: 'pkg-config',
+                      kwargs: static_kwargs)
 endif
+
 libpmem = not_found
 if 'CONFIG_LIBPMEM' in config_host
   libpmem = declare_dependency(compile_args: config_host['LIBPMEM_CFLAGS'].split(),
@@ -935,9 +1010,10 @@ if 'CONFIG_LIBDAXCTL' in config_host
   libdaxctl = declare_dependency(link_args: config_host['LIBDAXCTL_LIBS'].split())
 endif
 tasn1 = not_found
-if 'CONFIG_TASN1' in config_host
-  tasn1 = declare_dependency(compile_args: config_host['TASN1_CFLAGS'].split(),
-                             link_args: config_host['TASN1_LIBS'].split())
+if gnutls.found()
+  tasn1 = dependency('libtasn1',
+                     method: 'pkg-config',
+                     kwargs: static_kwargs)
 endif
 keyutils = dependency('libkeyutils', required: false,
                       method: 'pkg-config', kwargs: static_kwargs)
@@ -1015,6 +1091,23 @@ if not get_option('fuse_lseek').disabled()
   endif
 endif
 
+# libbpf
+libbpf = dependency('libbpf', required: get_option('bpf'), method: 'pkg-config')
+if libbpf.found() and not cc.links('''
+   #include <bpf/libbpf.h>
+   int main(void)
+   {
+     bpf_object__destroy_skeleton(NULL);
+     return 0;
+   }''', dependencies: libbpf)
+  libbpf = not_found
+  if get_option('bpf').enabled()
+    error('libbpf skeleton test failed')
+  else
+    warning('libbpf skeleton test failed, disabling')
+  endif
+endif
+
 if get_option('cfi')
   cfi_flags=[]
   # Check for dependency on LTO
@@ -1054,6 +1147,9 @@ if get_option('cfi')
   add_global_arguments(cfi_flags, native: false, language: ['c', 'cpp', 'objc'])
   add_global_link_arguments(cfi_flags, native: false, language: ['c', 'cpp', 'objc'])
 endif
+
+have_host_block_device = (targetos != 'darwin' or
+    cc.has_header('IOKit/storage/IOMedia.h'))
 
 #################
 # config-host.h #
@@ -1114,6 +1210,7 @@ endif
 config_host_data.set('CONFIG_GTK', gtk.found())
 config_host_data.set('CONFIG_LIBATTR', have_old_libattr)
 config_host_data.set('CONFIG_LIBCAP_NG', libcap_ng.found())
+config_host_data.set('CONFIG_EBPF', libbpf.found())
 config_host_data.set('CONFIG_LIBISCSI', libiscsi.found())
 config_host_data.set('CONFIG_LIBNFS', libnfs.found())
 config_host_data.set('CONFIG_RBD', rbd.found())
@@ -1121,6 +1218,7 @@ config_host_data.set('CONFIG_SDL', sdl.found())
 config_host_data.set('CONFIG_SDL_IMAGE', sdl_image.found())
 config_host_data.set('CONFIG_SECCOMP', seccomp.found())
 config_host_data.set('CONFIG_SNAPPY', snappy.found())
+config_host_data.set('CONFIG_USB_LIBUSB', libusb.found())
 config_host_data.set('CONFIG_VHOST_USER_BLK_SERVER', have_vhost_user_blk_server)
 config_host_data.set('CONFIG_VNC', vnc.found())
 config_host_data.set('CONFIG_VNC_JPEG', jpeg.found())
@@ -1130,6 +1228,10 @@ config_host_data.set('CONFIG_VIRTFS', have_virtfs)
 config_host_data.set('CONFIG_XKBCOMMON', xkbcommon.found())
 config_host_data.set('CONFIG_KEYUTILS', keyutils.found())
 config_host_data.set('CONFIG_GETTID', has_gettid)
+config_host_data.set('CONFIG_GNUTLS', gnutls.found())
+config_host_data.set('CONFIG_GCRYPT', gcrypt.found())
+config_host_data.set('CONFIG_NETTLE', nettle.found())
+config_host_data.set('CONFIG_QEMU_PRIVATE_XTS', xts == 'private')
 config_host_data.set('CONFIG_MALLOC_TRIM', has_malloc_trim)
 config_host_data.set('CONFIG_STATX', has_statx)
 config_host_data.set('CONFIG_ZSTD', zstd.found())
@@ -1148,6 +1250,8 @@ config_host_data.set('HAVE_PTY_H', cc.has_header('pty.h'))
 config_host_data.set('HAVE_SYS_IOCCOM_H', cc.has_header('sys/ioccom.h'))
 config_host_data.set('HAVE_SYS_KCOV_H', cc.has_header('sys/kcov.h'))
 config_host_data.set('HAVE_SYSTEM_FUNCTION', cc.has_function('system', prefix: '#include <stdlib.h>'))
+config_host_data.set('HAVE_HOST_BLOCK_DEVICE', have_host_block_device)
+config_host_data.set('HAVE_SYS_DISK_H', cc.has_header('sys/disk.h'))
 
 config_host_data.set('CONFIG_PREADV', cc.has_function('preadv', prefix: '#include <sys/uio.h>'))
 
@@ -1197,11 +1301,9 @@ disassemblers = {
   'i386' : ['CONFIG_I386_DIS'],
   'x86_64' : ['CONFIG_I386_DIS'],
   'x32' : ['CONFIG_I386_DIS'],
-  'lm32' : ['CONFIG_LM32_DIS'],
   'm68k' : ['CONFIG_M68K_DIS'],
   'microblaze' : ['CONFIG_MICROBLAZE_DIS'],
   'mips' : ['CONFIG_MIPS_DIS'],
-  'moxie' : ['CONFIG_MOXIE_DIS'],
   'nios2' : ['CONFIG_NIOS2_DIS'],
   'or1k' : ['CONFIG_OPENRISC_DIS'],
   'ppc' : ['CONFIG_PPC_DIS'],
@@ -1751,6 +1853,7 @@ modules = {}
 hw_arch = {}
 target_arch = {}
 target_softmmu_arch = {}
+target_user_arch = {}
 
 ###############
 # Trace files #
@@ -1784,6 +1887,7 @@ if have_system
     'backends',
     'backends/tpm',
     'chardev',
+    'ebpf',
     'hw/9pfs',
     'hw/acpi',
     'hw/adc',
@@ -1810,6 +1914,7 @@ if have_system
     'hw/misc/macio',
     'hw/net',
     'hw/net/can',
+    'hw/nvme',
     'hw/nvram',
     'hw/pci',
     'hw/pci-host',
@@ -1846,7 +1951,7 @@ if have_system or have_user
     'target/hppa',
     'target/i386',
     'target/i386/kvm',
-    'target/mips',
+    'target/mips/tcg',
     'target/ppc',
     'target/riscv',
     'target/s390x',
@@ -1882,7 +1987,7 @@ util_ss.add_all(trace_ss)
 util_ss = util_ss.apply(config_all, strict: false)
 libqemuutil = static_library('qemuutil',
                              sources: util_ss.sources() + stub_ss.sources() + genh,
-                             dependencies: [util_ss.dependencies(), m, glib, socket, malloc])
+                             dependencies: [util_ss.dependencies(), libm, glib, socket, malloc, pixman])
 qemuutil = declare_dependency(link_with: libqemuutil,
                               sources: genh + version_res)
 
@@ -1932,16 +2037,6 @@ subdir('softmmu')
 
 common_ss.add(capstone)
 specific_ss.add(files('cpu.c', 'disas.c', 'gdbstub.c'), capstone)
-specific_ss.add(when: 'CONFIG_TCG', if_true: files(
-  'fpu/softfloat.c',
-  'tcg/optimize.c',
-  'tcg/tcg-common.c',
-  'tcg/tcg-op-gvec.c',
-  'tcg/tcg-op-vec.c',
-  'tcg/tcg-op.c',
-  'tcg/tcg.c',
-))
-specific_ss.add(when: 'CONFIG_TCG_INTERPRETER', if_true: files('tcg/tci.c'))
 
 # Work around a gcc bug/misfeature wherein constant propagation looks
 # through an alias:
@@ -1971,10 +2066,15 @@ subdir('net')
 subdir('replay')
 subdir('semihosting')
 subdir('hw')
+subdir('tcg')
+subdir('fpu')
 subdir('accel')
 subdir('plugins')
 subdir('bsd-user')
 subdir('linux-user')
+subdir('ebpf')
+
+common_ss.add(libbpf)
 
 bsd_user_ss.add(files('gdbstub.c'))
 specific_ss.add_all(when: 'CONFIG_BSD_USER', if_true: bsd_user_ss)
@@ -2128,6 +2228,7 @@ common_all = common_ss.apply(config_all, strict: false)
 common_all = static_library('common',
                             build_by_default: false,
                             sources: common_all.sources() + genh,
+                            implicit_include_directories: false,
                             dependencies: common_all.dependencies(),
                             name_suffix: 'fa')
 
@@ -2168,6 +2269,11 @@ foreach target : target_dirs
     abi = config_target['TARGET_ABI_DIR']
     target_type='user'
     qemu_target_name = 'qemu-' + target_name
+    if arch in target_user_arch
+      t = target_user_arch[arch].apply(config_target, strict: false)
+      arch_srcs += t.sources()
+      arch_deps += t.dependencies()
+    endif
     if 'CONFIG_LINUX_USER' in config_target
       base_dir = 'linux-user'
       target_inc += include_directories('linux-user/host/' / config_host['ARCH'])
@@ -2450,7 +2556,7 @@ summary_info += {'genisoimage':       config_host['GENISOIMAGE']}
 if targetos == 'windows' and config_host.has_key('CONFIG_GUEST_AGENT')
   summary_info += {'wixl':            wixl.found() ? wixl.full_path() : false}
 endif
-if slirp_opt != 'disabled'
+if slirp_opt != 'disabled' and 'CONFIG_SLIRP_SMBD' in config_host
   summary_info += {'smbd':            config_host['CONFIG_SMBD_COMMAND']}
 endif
 summary(summary_info, bool_yn: true, section: 'Host binaries')
@@ -2492,15 +2598,15 @@ summary(summary_info, bool_yn: true, section: 'Configurable features')
 summary_info = {}
 summary_info += {'host CPU':          cpu}
 summary_info += {'host endianness':   build_machine.endian()}
-summary_info += {'C compiler':        meson.get_compiler('c').cmd_array()[0]}
-summary_info += {'Host C compiler':   meson.get_compiler('c', native: true).cmd_array()[0]}
+summary_info += {'C compiler':        ' '.join(meson.get_compiler('c').cmd_array())}
+summary_info += {'Host C compiler':   ' '.join(meson.get_compiler('c', native: true).cmd_array())}
 if link_language == 'cpp'
-  summary_info += {'C++ compiler':      meson.get_compiler('cpp').cmd_array()[0]}
+  summary_info += {'C++ compiler':    ' '.join(meson.get_compiler('cpp').cmd_array())}
 else
   summary_info += {'C++ compiler':      false}
 endif
 if targetos == 'darwin'
-  summary_info += {'Objective-C compiler': meson.get_compiler('objc').cmd_array()[0]}
+  summary_info += {'Objective-C compiler': ' '.join(meson.get_compiler('objc').cmd_array())}
 endif
 if targetos == 'windows'
   if 'WIN_SDK' in config_host
@@ -2528,7 +2634,6 @@ summary_info += {'PIE':               get_option('b_pie')}
 summary_info += {'static build':      config_host.has_key('CONFIG_STATIC')}
 summary_info += {'malloc trim support': has_malloc_trim}
 summary_info += {'membarrier':        config_host.has_key('CONFIG_MEMBARRIER')}
-summary_info += {'preadv support':    config_host_data.get('CONFIG_PREADV')}
 summary_info += {'fdatasync':         config_host.has_key('CONFIG_FDATASYNC')}
 summary_info += {'madvise':           config_host.has_key('CONFIG_MADVISE')}
 summary_info += {'posix_madvise':     config_host.has_key('CONFIG_POSIX_MADVISE')}
@@ -2575,6 +2680,7 @@ if have_system
   summary_info += {'HAX support':       config_all.has_key('CONFIG_HAX')}
   summary_info += {'HVF support':       config_all.has_key('CONFIG_HVF')}
   summary_info += {'WHPX support':      config_all.has_key('CONFIG_WHPX')}
+  summary_info += {'NVMM support':      config_all.has_key('CONFIG_NVMM')}
   summary_info += {'Xen support':       config_host.has_key('CONFIG_XEN_BACKEND')}
   if config_host.has_key('CONFIG_XEN_BACKEND')
     summary_info += {'xen ctrl version':  config_host['CONFIG_XEN_CTRL_INTERFACE_VERSION']}
@@ -2615,7 +2721,6 @@ if have_block
   summary_info += {'vvfat support':     config_host.has_key('CONFIG_VVFAT')}
   summary_info += {'qed support':       config_host.has_key('CONFIG_QED')}
   summary_info += {'parallels support': config_host.has_key('CONFIG_PARALLELS')}
-  summary_info += {'sheepdog support':  config_host.has_key('CONFIG_SHEEPDOG')}
   summary_info += {'FUSE exports':      fuse.found()}
 endif
 summary(summary_info, bool_yn: true, section: 'Block layer support')
@@ -2623,17 +2728,16 @@ summary(summary_info, bool_yn: true, section: 'Block layer support')
 # Crypto
 summary_info = {}
 summary_info += {'TLS priority':      config_host['CONFIG_TLS_PRIORITY']}
-summary_info += {'GNUTLS support':    config_host.has_key('CONFIG_GNUTLS')}
+summary_info += {'GNUTLS support':    gnutls.found()}
 # TODO: add back version
-summary_info += {'libgcrypt':         config_host.has_key('CONFIG_GCRYPT')}
-if config_host.has_key('CONFIG_GCRYPT')
-   summary_info += {'  hmac':            config_host.has_key('CONFIG_GCRYPT_HMAC')}
-   summary_info += {'  XTS':             not config_host.has_key('CONFIG_QEMU_PRIVATE_XTS')}
+summary_info += {'libgcrypt':         gcrypt.found()}
+if gcrypt.found()
+   summary_info += {'  XTS':             xts != 'private'}
 endif
 # TODO: add back version
-summary_info += {'nettle':            config_host.has_key('CONFIG_NETTLE')}
-if config_host.has_key('CONFIG_NETTLE')
-   summary_info += {'  XTS':             not config_host.has_key('CONFIG_QEMU_PRIVATE_XTS')}
+summary_info += {'nettle':            nettle.found()}
+if nettle.found()
+   summary_info += {'  XTS':             xts != 'private'}
 endif
 summary_info += {'crypto afalg':      config_host.has_key('CONFIG_AF_ALG')}
 summary_info += {'rng-none':          config_host.has_key('CONFIG_RNG_NONE')}
@@ -2655,8 +2759,8 @@ summary_info += {'pixman':            pixman.found()}
 summary_info += {'VTE support':       config_host.has_key('CONFIG_VTE')}
 # TODO: add back version
 summary_info += {'slirp support':     slirp_opt == 'disabled' ? false : slirp_opt}
-summary_info += {'libtasn1':          config_host.has_key('CONFIG_TASN1')}
-summary_info += {'PAM':               config_host.has_key('CONFIG_AUTH_PAM')}
+summary_info += {'libtasn1':          tasn1.found()}
+summary_info += {'PAM':               pam.found()}
 summary_info += {'iconv support':     iconv.found()}
 summary_info += {'curses support':    curses.found()}
 # TODO: add back version
@@ -2679,14 +2783,15 @@ summary_info += {'RDMA support':      config_host.has_key('CONFIG_RDMA')}
 summary_info += {'PVRDMA support':    config_host.has_key('CONFIG_PVRDMA')}
 summary_info += {'fdt support':       fdt_opt == 'disabled' ? false : fdt_opt}
 summary_info += {'libcap-ng support': libcap_ng.found()}
+summary_info += {'bpf support': libbpf.found()}
 # TODO: add back protocol and server version
 summary_info += {'spice support':     config_host.has_key('CONFIG_SPICE')}
 summary_info += {'rbd support':       rbd.found()}
 summary_info += {'xfsctl support':    config_host.has_key('CONFIG_XFS')}
-summary_info += {'smartcard support': config_host.has_key('CONFIG_SMARTCARD')}
+summary_info += {'smartcard support': cacard.found()}
 summary_info += {'U2F support':       u2f.found()}
-summary_info += {'libusb':            config_host.has_key('CONFIG_USB_LIBUSB')}
-summary_info += {'usb net redir':     config_host.has_key('CONFIG_USB_REDIR')}
+summary_info += {'libusb':            libusb.found()}
+summary_info += {'usb net redir':     usbredir.found()}
 summary_info += {'OpenGL support':    config_host.has_key('CONFIG_OPENGL')}
 summary_info += {'GBM':               config_host.has_key('CONFIG_GBM')}
 summary_info += {'libiscsi support':  libiscsi.found()}

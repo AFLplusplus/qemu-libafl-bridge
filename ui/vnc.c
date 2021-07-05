@@ -25,6 +25,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu-common.h"
 #include "vnc.h"
 #include "vnc-jobs.h"
 #include "trace.h"
@@ -45,6 +46,7 @@
 #include "qapi/qapi-commands-ui.h"
 #include "ui/input.h"
 #include "crypto/hash.h"
+#include "crypto/tlscreds.h"
 #include "crypto/tlscredsanon.h"
 #include "crypto/tlscredsx509.h"
 #include "crypto/random.h"
@@ -596,7 +598,7 @@ bool vnc_display_reload_certs(const char *id, Error **errp)
     }
 
     if (!vd->tlscreds) {
-        error_setg(errp, "vnc tls is not enable");
+        error_setg(errp, "vnc tls is not enabled");
         return false;
     }
 
@@ -1352,6 +1354,9 @@ void vnc_disconnect_finish(VncState *vs)
         /* last client gone */
         vnc_update_server_surface(vs->vd);
     }
+    if (vs->cbpeer.update.notify) {
+        qemu_clipboard_peer_unregister(&vs->cbpeer);
+    }
 
     vnc_unlock_output(vs);
 
@@ -1775,10 +1780,6 @@ uint32_t read_u32(uint8_t *data, size_t offset)
 {
     return ((data[offset] << 24) | (data[offset + 1] << 16) |
             (data[offset + 2] << 8) | data[offset + 3]);
-}
-
-static void client_cut_text(VncState *vs, size_t len, uint8_t *text)
-{
 }
 
 static void check_pointer_type_change(Notifier *notifier, void *data)
@@ -2222,6 +2223,10 @@ static void set_encodings(VncState *vs, int32_t *encodings, size_t n_encodings)
                 send_xvp_message(vs, VNC_XVP_CODE_INIT);
             }
             break;
+        case VNC_ENCODING_CLIPBOARD_EXT:
+            vs->features |= VNC_FEATURE_CLIPBOARD_EXT_MASK;
+            vnc_server_cut_text_caps(vs);
+            break;
         case VNC_ENCODING_COMPRESSLEVEL0 ... VNC_ENCODING_COMPRESSLEVEL0 + 9:
             vs->tight->compression = (enc & 0x0F);
             break;
@@ -2438,7 +2443,7 @@ static int protocol_client_msg(VncState *vs, uint8_t *data, size_t len)
             return 8;
         }
         if (len == 8) {
-            uint32_t dlen = read_u32(data, 4);
+            uint32_t dlen = abs(read_s32(data, 4));
             if (dlen > (1 << 20)) {
                 error_report("vnc: client_cut_text msg payload has %u bytes"
                              " which exceeds our limit of 1MB.", dlen);
@@ -2450,7 +2455,12 @@ static int protocol_client_msg(VncState *vs, uint8_t *data, size_t len)
             }
         }
 
-        client_cut_text(vs, read_u32(data, 4), data + 8);
+        if (read_s32(data, 4) < 0) {
+            vnc_client_cut_text_ext(vs, abs(read_s32(data, 4)),
+                                    read_u32(data, 8), data + 12);
+            break;
+        }
+        vnc_client_cut_text(vs, read_u32(data, 4), data + 8);
         break;
     case VNC_MSG_CLIENT_XVP:
         if (!(vs->features & VNC_FEATURE_XVP)) {
@@ -4071,9 +4081,9 @@ void vnc_display_open(const char *id, Error **errp)
         }
         object_ref(OBJECT(vd->tlscreds));
 
-        if (vd->tlscreds->endpoint != QCRYPTO_TLS_CREDS_ENDPOINT_SERVER) {
-            error_setg(errp,
-                       "Expecting TLS credentials with a server endpoint");
+        if (!qcrypto_tls_creds_check_endpoint(vd->tlscreds,
+                                              QCRYPTO_TLS_CREDS_ENDPOINT_SERVER,
+                                              errp)) {
             goto fail;
         }
     }
@@ -4145,14 +4155,8 @@ void vnc_display_open(const char *id, Error **errp)
     trace_vnc_auth_init(vd, 1, vd->ws_auth, vd->ws_subauth);
 
 #ifdef CONFIG_VNC_SASL
-    if (sasl) {
-        int saslErr = sasl_server_init(NULL, "qemu");
-
-        if (saslErr != SASL_OK) {
-            error_setg(errp, "Failed to initialize SASL auth: %s",
-                       sasl_errstring(saslErr, NULL, NULL));
-            goto fail;
-        }
+    if (sasl && !vnc_sasl_server_init(errp)) {
+        goto fail;
     }
 #endif
     vd->lock_key_sync = lock_key_sync;

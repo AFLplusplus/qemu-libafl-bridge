@@ -36,9 +36,12 @@ Contents:
    multi-thread-tcg
    tcg-plugins
    bitops
+   ui
    reset
    s390-dasd-ipl
    clocks
    qom
    block-coroutine-wrapper
    multi-process
+   ebpf_rss
+   vfio-migration

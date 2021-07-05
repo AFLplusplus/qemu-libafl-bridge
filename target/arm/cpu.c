@@ -36,7 +36,6 @@
 #include "hw/loader.h"
 #include "hw/boards.h"
 #endif
-#include "sysemu/sysemu.h"
 #include "sysemu/tcg.h"
 #include "sysemu/hw_accel.h"
 #include "kvm_arm.h"
@@ -328,6 +327,7 @@ static void arm_cpu_reset(DeviceState *dev)
         env->regs[14] = 0xffffffff;
 
         env->v7m.vecbase[M_REG_S] = cpu->init_svtor & 0xffffff80;
+        env->v7m.vecbase[M_REG_NS] = cpu->init_nsvtor & 0xffffff80;
 
         /* Load the initial SP and PC from offset 0 and 4 in the vector table */
         vecbase = env->v7m.vecbase[env->v7m.secure];
@@ -1273,6 +1273,15 @@ void arm_cpu_post_init(Object *obj)
                                        &cpu->init_svtor,
                                        OBJ_PROP_FLAG_READWRITE);
     }
+    if (arm_feature(&cpu->env, ARM_FEATURE_M)) {
+        /*
+         * Initial value of the NS VTOR (for cores without the Security
+         * extension, this is the only VTOR)
+         */
+        object_property_add_uint32_ptr(obj, "init-nsvtor",
+                                       &cpu->init_nsvtor,
+                                       OBJ_PROP_FLAG_READWRITE);
+    }
 
     qdev_property_add_static(DEVICE(obj), &arm_cpu_cfgend_property);
 
@@ -1464,6 +1473,7 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
 
         u = cpu->isar.id_isar6;
         u = FIELD_DP32(u, ID_ISAR6, JSCVT, 0);
+        u = FIELD_DP32(u, ID_ISAR6, BF16, 0);
         cpu->isar.id_isar6 = u;
 
         u = cpu->isar.mvfr0;
@@ -1504,6 +1514,8 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
 
         t = cpu->isar.id_aa64isar1;
         t = FIELD_DP64(t, ID_AA64ISAR1, FCMA, 0);
+        t = FIELD_DP64(t, ID_AA64ISAR1, BF16, 0);
+        t = FIELD_DP64(t, ID_AA64ISAR1, I8MM, 0);
         cpu->isar.id_aa64isar1 = t;
 
         t = cpu->isar.id_aa64pfr0;
@@ -1518,6 +1530,8 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
         u = cpu->isar.id_isar6;
         u = FIELD_DP32(u, ID_ISAR6, DP, 0);
         u = FIELD_DP32(u, ID_ISAR6, FHM, 0);
+        u = FIELD_DP32(u, ID_ISAR6, BF16, 0);
+        u = FIELD_DP32(u, ID_ISAR6, I8MM, 0);
         cpu->isar.id_isar6 = u;
 
         if (!arm_feature(env, ARM_FEATURE_M)) {
@@ -1943,8 +1957,21 @@ static gchar *arm_gdb_arch_name(CPUState *cs)
     return g_strdup("arm");
 }
 
+#ifndef CONFIG_USER_ONLY
+#include "hw/core/sysemu-cpu-ops.h"
+
+static const struct SysemuCPUOps arm_sysemu_ops = {
+    .get_phys_page_attrs_debug = arm_cpu_get_phys_page_attrs_debug,
+    .asidx_from_attrs = arm_asidx_from_attrs,
+    .write_elf32_note = arm_cpu_write_elf32_note,
+    .write_elf64_note = arm_cpu_write_elf64_note,
+    .virtio_is_big_endian = arm_cpu_virtio_is_big_endian,
+    .legacy_vmsd = &vmstate_arm_cpu,
+};
+#endif
+
 #ifdef CONFIG_TCG
-static struct TCGCPUOps arm_tcg_ops = {
+static const struct TCGCPUOps arm_tcg_ops = {
     .initialize = arm_translate_init,
     .synchronize_from_tb = arm_cpu_synchronize_from_tb,
     .cpu_exec_interrupt = arm_cpu_exec_interrupt,
@@ -1980,12 +2007,7 @@ static void arm_cpu_class_init(ObjectClass *oc, void *data)
     cc->gdb_read_register = arm_cpu_gdb_read_register;
     cc->gdb_write_register = arm_cpu_gdb_write_register;
 #ifndef CONFIG_USER_ONLY
-    cc->get_phys_page_attrs_debug = arm_cpu_get_phys_page_attrs_debug;
-    cc->asidx_from_attrs = arm_asidx_from_attrs;
-    cc->vmsd = &vmstate_arm_cpu;
-    cc->virtio_is_big_endian = arm_cpu_virtio_is_big_endian;
-    cc->write_elf64_note = arm_cpu_write_elf64_note;
-    cc->write_elf32_note = arm_cpu_write_elf32_note;
+    cc->sysemu_ops = &arm_sysemu_ops;
 #endif
     cc->gdb_num_core_regs = 26;
     cc->gdb_core_xml_file = "arm-core.xml";

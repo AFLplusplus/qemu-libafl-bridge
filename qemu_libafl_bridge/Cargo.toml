@@ -2,6 +2,10 @@
 name = "qemu_libafl_bridge"
 version = "0.1.0"
 authors = ["Andrea Fioraldi <andreafioraldi@gmail.com>"]
+description = "Frida backend library for LibAFL"
+repository = "https://github.com/AFLplusplus/qemu-libafl-bridge/"
+license = "MIT OR Apache-2.0"
+readme = "../README.md"
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

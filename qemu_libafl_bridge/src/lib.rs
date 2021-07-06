@@ -100,7 +100,7 @@ impl QemuEmulator {
     }
 
     pub fn exec_path(&self) -> &str {
-        unsafe { from_utf8_unchecked(from_raw_parts(exec_path, strlen(exec_path) + 1)) }
+        unsafe { from_utf8_unchecked(from_raw_parts(exec_path, strlen(exec_path))) }
     }
 
     pub fn new() -> Self {

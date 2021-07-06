@@ -63,10 +63,6 @@ int libafl_qemu_write_reg(int reg, uint8_t* val)
         return 0;
     }
 
-    if (libafl_qemu_mem_buf == NULL) {
-        libafl_qemu_mem_buf = g_byte_array_sized_new(64);
-    }
-
     CPUClass *cc = CPU_GET_CLASS(cpu);
     if (reg < cc->gdb_num_core_regs) {
         return cc->gdb_write_register(cpu, val, reg);
@@ -79,6 +75,10 @@ int libafl_qemu_read_reg(int reg, uint8_t* val)
     CPUState *cpu = current_cpu;
     if (!cpu) {
         return 0;
+    }
+
+    if (libafl_qemu_mem_buf == NULL) {
+        libafl_qemu_mem_buf = g_byte_array_sized_new(64);
     }
 
     CPUClass *cc = CPU_GET_CLASS(cpu);

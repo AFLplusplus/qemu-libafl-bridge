@@ -2,6 +2,7 @@ use core::{mem::transmute, ptr::copy_nonoverlapping};
 use num::Num;
 
 pub mod amd64;
+pub mod x86;
 
 /*
   int libafl_qemu_write_reg(int reg, uint8_t* val);

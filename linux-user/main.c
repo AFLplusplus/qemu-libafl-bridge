@@ -581,6 +581,16 @@ static int parse_args(int argc, char **argv)
             r++;
         }
 
+        if (!strncmp(r, "libafl", 6)) {
+            if (optind >= argc) {
+                (void) fprintf(stderr,
+                    "qemu: missing argument for option '%s'\n", r);
+                exit(EXIT_FAILURE);
+            }
+            optind++;
+            continue;
+        }
+
         for (arginfo = arg_table; arginfo->handle_opt != NULL; arginfo++) {
             if (!strcmp(r, arginfo->argv)) {
                 if (arginfo->has_arg) {

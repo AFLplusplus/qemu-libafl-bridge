@@ -1,6 +1,6 @@
 [package]
 name = "qemu_libafl_bridge"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Andrea Fioraldi <andreafioraldi@gmail.com>"]
 description = "QEMU and LibAFL bridge lib"
 repository = "https://github.com/AFLplusplus/qemu-libafl-bridge/"
@@ -13,3 +13,6 @@ edition = "2018"
 [dependencies]
 num = "0.4"
 num_enum = "0.5.1"
+
+[build-dependencies]
+cc = { version = "1.0" }

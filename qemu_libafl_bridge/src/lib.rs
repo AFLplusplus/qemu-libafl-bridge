@@ -89,4 +89,8 @@ impl QemuEmulator {
     pub fn h2g(&self, addr: isize) -> *mut u8 {
         unsafe { transmute(addr - guest_base) }
     }
+
+    pub fn new() -> Self {
+        Self {}
+    }
 }

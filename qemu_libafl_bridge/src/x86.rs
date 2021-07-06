@@ -12,4 +12,6 @@ pub enum X86Regs {
     Edi = 5,
     Ebp = 6,
     Esp = 7,
+    Eip = 8,
+    Eflags = 9,
 }

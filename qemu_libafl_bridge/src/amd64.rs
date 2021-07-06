@@ -20,4 +20,6 @@ pub enum Amd64Regs {
     R13 = 13,
     R14 = 14,
     R15 = 15,
+    Rip = 16,
+    Rflags = 17,
 }

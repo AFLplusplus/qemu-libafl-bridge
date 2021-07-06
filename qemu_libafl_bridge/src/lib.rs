@@ -1,4 +1,4 @@
-use core::{mem::transmute, ptr::copy_nonoverlapping};
+use core::{convert::Into, mem::transmute, ptr::copy_nonoverlapping};
 use num::Num;
 
 pub mod amd64;
@@ -26,17 +26,17 @@ extern "C" {
 pub struct QemuEmulator {}
 
 impl QemuEmulator {
-    pub fn write_mem(&mut self, addr: isize, buf: &[u8]) {
+    pub fn write_mem<T>(&mut self, addr: isize, buf: &[T]) {
         let host_addr = self.g2h(addr);
-        unsafe { copy_nonoverlapping(buf.as_ptr() as *const u8, host_addr, buf.len()) }
+        unsafe { copy_nonoverlapping(buf.as_ptr() as *const _ as *const u8, host_addr, buf.len()) }
     }
 
-    pub fn read_mem(&mut self, addr: isize, buf: &mut [u8]) {
+    pub fn read_mem<T>(&mut self, addr: isize, buf: &mut [T]) {
         let host_addr = self.g2h(addr);
         unsafe {
             copy_nonoverlapping(
                 host_addr as *const u8,
-                buf.as_mut_ptr() as *mut u8,
+                buf.as_mut_ptr() as *mut _ as *mut u8,
                 buf.len(),
             )
         }
@@ -46,10 +46,12 @@ impl QemuEmulator {
         unsafe { libafl_qemu_num_regs() }
     }
 
-    pub fn write_reg<T>(&mut self, reg: i32, val: T) -> Result<(), String>
+    pub fn write_reg<R, T>(&mut self, reg: R, val: T) -> Result<(), String>
     where
         T: Num + PartialOrd + Copy,
+        R: Into<i32>,
     {
+        let reg = reg.into();
         let success = unsafe { libafl_qemu_write_reg(reg, &val as *const _ as *const u8) };
         if success != 0 {
             Ok(())
@@ -58,10 +60,12 @@ impl QemuEmulator {
         }
     }
 
-    pub fn read_reg<T>(&mut self, reg: i32) -> Result<T, String>
+    pub fn read_reg<R, T>(&mut self, reg: R) -> Result<T, String>
     where
         T: Num + PartialOrd + Copy,
+        R: Into<i32>,
     {
+        let reg = reg.into();
         let mut val = T::zero();
         let success = unsafe { libafl_qemu_read_reg(reg, &mut val as *mut _ as *mut u8) };
         if success != 0 {

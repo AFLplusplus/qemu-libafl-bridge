@@ -31,4 +31,5 @@ __attribute__((weak)) int libafl_qemu_run() {
   return 0;
 }
 
+__attribute__((weak)) char* exec_path = NULL;
 __attribute__((weak)) size_t guest_base = 0;

@@ -1,5 +1,6 @@
 use core::{convert::Into, mem::transmute, ptr::copy_nonoverlapping};
 use num::Num;
+use std::{slice::from_raw_parts, str::from_utf8_unchecked};
 
 pub mod amd64;
 pub mod x86;
@@ -20,6 +21,9 @@ extern "C" {
     fn libafl_qemu_remove_breakpoint(addr: u64) -> i32;
     fn libafl_qemu_run() -> i32;
 
+    fn strlen(s: *const u8) -> usize;
+
+    static exec_path: *const u8;
     static guest_base: isize;
 }
 
@@ -93,6 +97,10 @@ impl QemuEmulator {
 
     pub fn h2g(&self, addr: isize) -> *mut u8 {
         unsafe { transmute(addr - guest_base) }
+    }
+
+    pub fn exec_path(&self) -> &str {
+        unsafe { from_utf8_unchecked(from_raw_parts(exec_path, strlen(exec_path) + 1)) }
     }
 
     pub fn new() -> Self {

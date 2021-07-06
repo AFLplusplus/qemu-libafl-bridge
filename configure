@@ -1565,7 +1565,7 @@ for opt do
       if ! (file "$libafl_bridge" | grep "ar archive" > /dev/null); then
          error_exit "$libafl_bridge is not an ar archive"
       fi
-      QEMU_LDFLAGS="$QEMU_LDFLAGS -Wl,--whole-archive $libafl_bridge -Wl,-no-whole-archive"
+      QEMU_LDFLAGS="$QEMU_LDFLAGS -Wl,--whole-archive $libafl_bridge -Wl,-no-whole-archive -lm -ldl -pthread"
   ;;
   *)
       echo "ERROR: unknown option $opt"

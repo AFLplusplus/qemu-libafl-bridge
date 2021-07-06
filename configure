@@ -1560,7 +1560,12 @@ for opt do
   ;;
   --disable-slirp-smbd) slirp_smbd=no
   ;;
-  --with-libafl-bridge=*) libafl_bridge="$optarg"
+  --with-libafl-bridge=*)
+      libafl_bridge="$optarg"
+      if ! (file "$libafl_bridge" | grep "ar archive" > /dev/null); then
+         error_exit "$libafl_bridge is not an ar archive"
+      fi
+      QEMU_LDFLAGS="$QEMU_LDFLAGS -Wl,--whole-archive $libafl_bridge -Wl,-no-whole-archive"
   ;;
   *)
       echo "ERROR: unknown option $opt"
@@ -1569,8 +1574,6 @@ for opt do
   ;;
   esac
 done
-
-QEMU_LDFLAGS="$QEMU_LDFLAGS $libafl_bridge"
 
 case $git_submodules_action in
     update|validate)

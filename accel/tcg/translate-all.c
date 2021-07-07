@@ -1405,6 +1405,134 @@ tb_link_page(TranslationBlock *tb, tb_page_addr_t phys_pc,
     return tb;
 }
 
+//// --- Begin LibAFL code ---
+
+#include "tcg/tcg-op.h"
+#include "tcg/tcg-internal.h"
+#include "exec/helper-head.h"
+
+void (*libafl_exec_edge_hook)(uint32_t);
+uint32_t (*libafl_gen_edge_hook)(uint64_t, uint64_t);
+
+void libafl_helper_table_add(TCGHelperInfo* info);
+TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
+                                  target_ulong dst_block);
+
+static TCGHelperInfo libafl_exec_edge_hook_info = {
+    .func = NULL, .name = "libafl_exec_edge_hook", \
+    .flags = dh_callflag(void), \
+    .typemask = dh_typemask(void, 0) | dh_typemask(i32, 1)
+};
+static int exec_edge_hook_added = 0;
+
+/* Called with mmap_lock held for user mode emulation.  */
+TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
+                                  target_ulong dst_block)
+{
+    CPUArchState *env = cpu->env_ptr;
+    TranslationBlock *tb;
+    tcg_insn_unit *gen_code_buf;
+    int gen_code_size, search_size;
+
+    assert_memory_lock();
+
+ buffer_overflow1:
+    tb = tcg_tb_alloc(tcg_ctx);
+    if (unlikely(!tb)) {
+        /* flush must be done */
+        tb_flush(cpu);
+        mmap_unlock();
+        /* Make the execution loop process the flush as soon as possible.  */
+        cpu->exception_index = EXCP_INTERRUPT;
+        cpu_loop_exit(cpu);
+    }
+
+    gen_code_buf = tcg_ctx->code_gen_ptr;
+    tb->tc.ptr = gen_code_buf;
+    tb->pc = 0;
+    tb->cs_base = 0;
+    tb->flags = 0;
+    tb->cflags = 0;
+    tb->trace_vcpu_dstate = *cpu->trace_dstate;
+    tcg_ctx->tb_cflags = 0;
+
+    tcg_func_start(tcg_ctx);
+
+    tcg_ctx->cpu = env_cpu(env);
+    
+    uint32_t libafl_id = 0;
+    if (libafl_gen_edge_hook)
+        libafl_id = libafl_gen_edge_hook((uint64_t)src_block, (uint64_t)dst_block);
+    TCGv_i32 tmp0 = tcg_const_i32(libafl_id);
+    TCGTemp *tmp1[1] = { tcgv_i32_temp(tmp0) };
+    if (libafl_exec_edge_hook) {
+        if (!exec_edge_hook_added) {
+            exec_edge_hook_added = 1;
+            libafl_exec_edge_hook_info.func = libafl_exec_edge_hook;
+            libafl_helper_table_add(&libafl_exec_edge_hook_info);
+        }
+        tcg_gen_callN(libafl_exec_edge_hook, NULL, 1, tmp1);
+    }
+    tcg_temp_free_i32(tmp0);
+    tcg_gen_goto_tb(0);
+    tcg_gen_exit_tb(tb, 0);
+
+    tcg_ctx->cpu = NULL;
+
+    trace_translate_block(tb, tb->pc, tb->tc.ptr);
+
+    /* generate machine code */
+    tb->jmp_reset_offset[0] = TB_JMP_RESET_OFFSET_INVALID;
+    tb->jmp_reset_offset[1] = TB_JMP_RESET_OFFSET_INVALID;
+    tcg_ctx->tb_jmp_reset_offset = tb->jmp_reset_offset;
+    if (TCG_TARGET_HAS_direct_jump) {
+        tcg_ctx->tb_jmp_insn_offset = tb->jmp_target_arg;
+        tcg_ctx->tb_jmp_target_addr = NULL;
+    } else {
+        tcg_ctx->tb_jmp_insn_offset = NULL;
+        tcg_ctx->tb_jmp_target_addr = tb->jmp_target_arg;
+    }
+
+    /* ??? Overflow could be handled better here.  In particular, we
+       don't need to re-do gen_intermediate_code, nor should we re-do
+       the tcg optimization currently hidden inside tcg_gen_code.  All
+       that should be required is to flush the TBs, allocate a new TB,
+       re-initialize it per above, and re-do the actual code generation.  */
+    gen_code_size = tcg_gen_code(tcg_ctx, tb);
+    if (unlikely(gen_code_size < 0)) {
+        goto buffer_overflow1;
+    }
+    search_size = encode_search(tb, (void *)gen_code_buf + gen_code_size);
+    if (unlikely(search_size < 0)) {
+        goto buffer_overflow1;
+    }
+    tb->tc.size = gen_code_size;
+
+    qatomic_set(&tcg_ctx->code_gen_ptr, (void *)
+        ROUND_UP((uintptr_t)gen_code_buf + gen_code_size + search_size,
+                 CODE_GEN_ALIGN));
+
+    /* init jump list */
+    qemu_spin_init(&tb->jmp_lock);
+    tb->jmp_list_head = (uintptr_t)NULL;
+    tb->jmp_list_next[0] = (uintptr_t)NULL;
+    tb->jmp_list_next[1] = (uintptr_t)NULL;
+    tb->jmp_dest[0] = (uintptr_t)NULL;
+    tb->jmp_dest[1] = (uintptr_t)NULL;
+
+    /* init original jump addresses which have been set during tcg_gen_code() */
+    if (tb->jmp_reset_offset[0] != TB_JMP_RESET_OFFSET_INVALID) {
+        tb_reset_jump(tb, 0);
+    }
+    if (tb->jmp_reset_offset[1] != TB_JMP_RESET_OFFSET_INVALID) {
+        tb_reset_jump(tb, 1);
+    }
+
+    return tb;
+}
+
+//// --- End LibAFL code ---
+
 /* Called with mmap_lock held for user mode emulation.  */
 TranslationBlock *tb_gen_code(CPUState *cpu,
                               target_ulong pc, target_ulong cs_base,

@@ -566,6 +566,16 @@ static void process_op_defs(TCGContext *s);
 static TCGTemp *tcg_global_reg_new_internal(TCGContext *s, TCGType type,
                                             TCGReg reg, const char *name);
 
+//// --- Begin LibAFL code ---
+
+void libafl_helper_table_add(TCGHelperInfo* info);
+void libafl_helper_table_add(TCGHelperInfo* info) {
+    g_hash_table_insert(helper_table, (gpointer)info->func,
+                        (gpointer)info);
+}
+
+//// --- End LibAFL code ---
+
 static void tcg_context_init(unsigned max_cpus)
 {
     TCGContext *s = &tcg_init_ctx;

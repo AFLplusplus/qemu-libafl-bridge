@@ -412,6 +412,13 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
     return;
 }
 
+//// --- Begin LibAFL code ---
+
+TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
+                                  target_ulong dst_block);
+
+//// --- End LibAFL code ---
+
 static inline TranslationBlock *tb_find(CPUState *cpu,
                                         TranslationBlock *last_tb,
                                         int tb_exit, uint32_t cflags)
@@ -442,7 +449,24 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
 #endif
     /* See if we can patch the calling TB. */
     if (last_tb) {
-        tb_add_jump(last_tb, tb_exit, tb);
+        // tb_add_jump(last_tb, tb_exit, tb);
+        
+        //// --- Begin LibAFL code ---
+
+        // TODO check instrument allow and deny lists
+        if (last_tb->jmp_reset_offset[1] != TB_JMP_RESET_OFFSET_INVALID) {
+            mmap_lock();
+            TranslationBlock *edge = libafl_gen_edge(cpu, last_tb->pc, tb->pc);
+            mmap_unlock();
+
+            tb_add_jump(last_tb, tb_exit, edge);
+            tb_add_jump(edge, 0, tb);
+        } else {
+            tb_add_jump(last_tb, tb_exit, tb);
+        }
+
+        //// --- End LibAFL code ---
+
     }
     return tb;
 }

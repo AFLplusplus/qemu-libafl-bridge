@@ -83,6 +83,7 @@ int libafl_qemu_read_reg(int reg, uint8_t* val)
 
     CPUClass *cc = CPU_GET_CLASS(cpu);
     if (reg < cc->gdb_num_core_regs) {
+        g_byte_array_set_size(libafl_qemu_mem_buf, 0);
         int len = cc->gdb_read_register(cpu, libafl_qemu_mem_buf, reg);
         if (len > 0) {
             memcpy(val, libafl_qemu_mem_buf->data, len);

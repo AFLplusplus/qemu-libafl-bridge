@@ -61,6 +61,38 @@
 #include "tb-context.h"
 #include "internal.h"
 
+//// --- Begin LibAFL code ---
+
+#include "tcg/tcg-op.h"
+#include "tcg/tcg-internal.h"
+#include "exec/helper-head.h"
+
+void libafl_helper_table_add(TCGHelperInfo* info);
+TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
+                                  target_ulong dst_block);
+
+void (*libafl_exec_edge_hook)(uint32_t);
+uint32_t (*libafl_gen_edge_hook)(uint64_t, uint64_t);
+
+static TCGHelperInfo libafl_exec_edge_hook_info = {
+    .func = NULL, .name = "libafl_exec_edge_hook", \
+    .flags = dh_callflag(void), \
+    .typemask = dh_typemask(void, 0) | dh_typemask(i32, 1)
+};
+static int exec_edge_hook_added = 0;
+
+void (*libafl_exec_block_hook)(uint64_t);
+uint32_t (*libafl_gen_block_hook)(uint64_t);
+
+static TCGHelperInfo libafl_exec_block_hook_info = {
+    .func = NULL, .name = "libafl_exec_block_hook", \
+    .flags = dh_callflag(void), \
+    .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1)
+};
+static int exec_block_hook_added = 0;
+
+//// --- End LibAFL code ---
+
 /* #define DEBUG_TB_INVALIDATE */
 /* #define DEBUG_TB_FLUSH */
 /* make various TB consistency checks */
@@ -1407,24 +1439,6 @@ tb_link_page(TranslationBlock *tb, tb_page_addr_t phys_pc,
 
 //// --- Begin LibAFL code ---
 
-#include "tcg/tcg-op.h"
-#include "tcg/tcg-internal.h"
-#include "exec/helper-head.h"
-
-void (*libafl_exec_edge_hook)(uint32_t);
-uint32_t (*libafl_gen_edge_hook)(uint64_t, uint64_t);
-
-void libafl_helper_table_add(TCGHelperInfo* info);
-TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
-                                  target_ulong dst_block);
-
-static TCGHelperInfo libafl_exec_edge_hook_info = {
-    .func = NULL, .name = "libafl_exec_edge_hook", \
-    .flags = dh_callflag(void), \
-    .typemask = dh_typemask(void, 0) | dh_typemask(i32, 1)
-};
-static int exec_edge_hook_added = 0;
-
 /* Called with mmap_lock held for user mode emulation.  */
 TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
                                   target_ulong dst_block)
@@ -1463,17 +1477,17 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     uint32_t libafl_id = 0;
     if (libafl_gen_edge_hook)
         libafl_id = libafl_gen_edge_hook((uint64_t)src_block, (uint64_t)dst_block);
-    TCGv_i32 tmp0 = tcg_const_i32(libafl_id);
-    TCGTemp *tmp1[1] = { tcgv_i32_temp(tmp0) };
-    if (libafl_exec_edge_hook) {
+    if (libafl_exec_edge_hook && libafl_id != (uint32_t)-1) {
         if (!exec_edge_hook_added) {
             exec_edge_hook_added = 1;
             libafl_exec_edge_hook_info.func = libafl_exec_edge_hook;
             libafl_helper_table_add(&libafl_exec_edge_hook_info);
         }
+        TCGv_i32 tmp0 = tcg_const_i32(libafl_id);
+        TCGTemp *tmp1[1] = { tcgv_i32_temp(tmp0) };
         tcg_gen_callN(libafl_exec_edge_hook, NULL, 1, tmp1);
+        tcg_temp_free_i32(tmp0);
     }
-    tcg_temp_free_i32(tmp0);
     tcg_gen_goto_tb(0);
     tcg_gen_exit_tb(tb, 0);
 
@@ -1605,6 +1619,26 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tcg_func_start(tcg_ctx);
 
     tcg_ctx->cpu = env_cpu(env);
+
+    //// --- Begin LibAFL code ---
+
+    uint32_t libafl_id = 0;
+    if (libafl_gen_block_hook)
+        libafl_id = libafl_gen_block_hook((uint64_t)pc);
+    if (libafl_exec_block_hook && libafl_id != (uint32_t)-1) {
+        if (!exec_block_hook_added) {
+            exec_block_hook_added = 1;
+            libafl_exec_block_hook_info.func = libafl_exec_block_hook;
+            libafl_helper_table_add(&libafl_exec_block_hook_info);
+        }
+        TCGv_i64 tmp0 = tcg_const_i64((uint64_t)pc);
+        TCGTemp *tmp1[1] = { tcgv_i64_temp(tmp0) };
+        tcg_gen_callN(libafl_exec_block_hook, NULL, 1, tmp1);
+        tcg_temp_free_i64(tmp0);
+    }
+    
+    //// --- End LibAFL code ---
+
     gen_intermediate_code(cpu, tb, max_insns);
     assert(tb->size != 0);
     tcg_ctx->cpu = NULL;

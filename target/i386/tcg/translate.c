@@ -33,6 +33,12 @@
 #include "trace-tcg.h"
 #include "exec/log.h"
 
+//// --- Begin LibAFL code ---
+
+void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot);
+
+//// --- End LibAFL code ---
+
 #define PREFIX_REPZ   0x01
 #define PREFIX_REPNZ  0x02
 #define PREFIX_LOCK   0x04
@@ -1445,6 +1451,13 @@ static void gen_op(DisasContext *s1, int op, MemOp ot, int d)
             tcg_gen_sub_tl(s1->T0, s1->cc_srcT, s1->T1);
         } else {
             tcg_gen_mov_tl(s1->cc_srcT, s1->T0);
+
+            //// --- Begin LibAFL code ---
+
+            libafl_gen_cmp(s1->pc, s1->T0, s1->T1, ot);
+
+            //// --- End LibAFL code ---
+
             tcg_gen_sub_tl(s1->T0, s1->T0, s1->T1);
             gen_op_st_rm_T0_A0(s1, ot, d);
         }
@@ -1488,6 +1501,13 @@ static void gen_op(DisasContext *s1, int op, MemOp ot, int d)
     case OP_CMPL:
         tcg_gen_mov_tl(cpu_cc_src, s1->T1);
         tcg_gen_mov_tl(s1->cc_srcT, s1->T0);
+
+        //// --- Begin LibAFL code ---
+
+        libafl_gen_cmp(s1->pc, s1->T0, s1->T1, ot);
+
+        //// --- End LibAFL code ---
+
         tcg_gen_sub_tl(cpu_cc_dst, s1->T0, s1->T1);
         set_cc_op(s1, CC_OP_SUBB + ot);
         break;

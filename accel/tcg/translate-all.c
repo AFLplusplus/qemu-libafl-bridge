@@ -70,6 +70,7 @@
 void libafl_helper_table_add(TCGHelperInfo* info);
 TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
                                   target_ulong dst_block);
+void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot);
 
 void (*libafl_exec_edge_hook)(uint32_t);
 uint32_t (*libafl_gen_edge_hook)(uint64_t, uint64_t);
@@ -90,6 +91,90 @@ static TCGHelperInfo libafl_exec_block_hook_info = {
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1)
 };
 static int exec_block_hook_added = 0;
+
+void (*libafl_exec_cmp_hook1)(uint32_t, uint8_t, uint8_t);
+void (*libafl_exec_cmp_hook2)(uint32_t, uint16_t, uint16_t);
+void (*libafl_exec_cmp_hook4)(uint32_t, uint32_t, uint32_t);
+void (*libafl_exec_cmp_hook8)(uint32_t, uint64_t, uint64_t);
+uint32_t (*libafl_gen_cmp_hook)(uint64_t, uint32_t);
+
+static TCGHelperInfo libafl_exec_cmp_hook1_info = {
+    .func = NULL, .name = "libafl_exec_cmp_hook1", \
+    .flags = dh_callflag(void), \
+    .typemask = dh_typemask(void, 0) | dh_typemask(i32, 1)
+    | dh_typemask(tl, 2) | dh_typemask(tl, 3)
+};
+static TCGHelperInfo libafl_exec_cmp_hook2_info = {
+    .func = NULL, .name = "libafl_exec_cmp_hook2", \
+    .flags = dh_callflag(void), \
+    .typemask = dh_typemask(void, 0) | dh_typemask(i32, 1)
+    | dh_typemask(tl, 2) | dh_typemask(tl, 3)
+};
+static TCGHelperInfo libafl_exec_cmp_hook4_info = {
+    .func = NULL, .name = "libafl_exec_cmp_hook4", \
+    .flags = dh_callflag(void), \
+    .typemask = dh_typemask(void, 0) | dh_typemask(i32, 1)
+    | dh_typemask(tl, 2) | dh_typemask(tl, 3)
+};
+static TCGHelperInfo libafl_exec_cmp_hook8_info = {
+    .func = NULL, .name = "libafl_exec_cmp_hook8", \
+    .flags = dh_callflag(void), \
+    .typemask = dh_typemask(void, 0) | dh_typemask(i32, 1)
+    | dh_typemask(tl, 2) | dh_typemask(tl, 3)
+};
+static int exec_cmp_hook_added = 0;
+
+void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot)
+{
+    uint32_t size;
+    void* func;
+    switch (ot & MO_SIZE) {
+      case MO_64:
+        size = 8;
+        func = libafl_exec_cmp_hook8;
+        break;
+      case MO_32:
+        size = 4;
+        func = libafl_exec_cmp_hook4;
+        break;
+      case MO_16:
+        size = 2;
+        func = libafl_exec_cmp_hook2;
+        break;
+      case MO_8:
+        size = 1;
+        func = libafl_exec_cmp_hook1;
+        break;
+      default:
+        return;
+    }
+
+    uint32_t libafl_id = 0;
+    if (libafl_gen_cmp_hook)
+        libafl_id = libafl_gen_cmp_hook((uint64_t)pc, size);
+    if (func && libafl_id != (uint32_t)-1) {
+        if (!exec_cmp_hook_added) {
+            exec_cmp_hook_added = 1;
+            libafl_exec_cmp_hook1_info.func = libafl_exec_cmp_hook1;
+            libafl_helper_table_add(&libafl_exec_cmp_hook1_info);
+            libafl_exec_cmp_hook2_info.func = libafl_exec_cmp_hook2;
+            libafl_helper_table_add(&libafl_exec_cmp_hook2_info);
+            libafl_exec_cmp_hook4_info.func = libafl_exec_cmp_hook4;
+            libafl_helper_table_add(&libafl_exec_cmp_hook4_info);
+            libafl_exec_cmp_hook8_info.func = libafl_exec_cmp_hook8;
+            libafl_helper_table_add(&libafl_exec_cmp_hook8_info);
+        }
+        TCGv_i32 tmp0 = tcg_const_i32(libafl_id);
+        TCGTemp *tmp1[3] = { tcgv_i32_temp(tmp0),
+#if TARGET_LONG_BITS == 32
+                             tcgv_i32_temp(op0), tcgv_i32_temp(op1) };
+#else
+                             tcgv_i64_temp(op0), tcgv_i64_temp(op1) };
+#endif
+        tcg_gen_callN(func, NULL, 3, tmp1);
+        tcg_temp_free_i32(tmp0);
+    }
+}
 
 //// --- End LibAFL code ---
 

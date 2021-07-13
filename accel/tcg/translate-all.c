@@ -69,7 +69,8 @@
 
 void libafl_helper_table_add(TCGHelperInfo* info);
 TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
-                                  target_ulong dst_block);
+                                  target_ulong dst_block, target_ulong cs_base,
+                                  uint32_t flags, int cflags);
 void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot);
 
 void (*libafl_exec_edge_hook)(uint32_t);
@@ -1526,7 +1527,8 @@ tb_link_page(TranslationBlock *tb, tb_page_addr_t phys_pc,
 
 /* Called with mmap_lock held for user mode emulation.  */
 TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
-                                  target_ulong dst_block)
+                                  target_ulong dst_block, target_ulong cs_base,
+                                  uint32_t flags, int cflags)
 {
     CPUArchState *env = cpu->env_ptr;
     TranslationBlock *tb;
@@ -1534,6 +1536,18 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     int gen_code_size, search_size;
 
     assert_memory_lock();
+
+    uint32_t libafl_id = 0;
+    if (libafl_gen_edge_hook)
+        libafl_id = libafl_gen_edge_hook((uint64_t)src_block, (uint64_t)dst_block);
+    if (!libafl_exec_edge_hook || libafl_id == (uint32_t)-1)
+        return NULL;
+
+    if (!exec_edge_hook_added) {
+        exec_edge_hook_added = 1;
+        libafl_exec_edge_hook_info.func = libafl_exec_edge_hook;
+        libafl_helper_table_add(&libafl_exec_edge_hook_info);
+    }
 
  buffer_overflow1:
     tb = tcg_tb_alloc(tcg_ctx);
@@ -1546,12 +1560,14 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
         cpu_loop_exit(cpu);
     }
 
+    libafl_exec_edge_hook(libafl_id);
+
     gen_code_buf = tcg_ctx->code_gen_ptr;
     tb->tc.ptr = gen_code_buf;
     tb->pc = 0;
-    tb->cs_base = 0;
-    tb->flags = 0;
-    tb->cflags = 0;
+    tb->cs_base = cs_base;
+    tb->flags = flags;
+    tb->cflags = cflags;
     tb->trace_vcpu_dstate = *cpu->trace_dstate;
     tcg_ctx->tb_cflags = 0;
 
@@ -1559,20 +1575,11 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
 
     tcg_ctx->cpu = env_cpu(env);
     
-    uint32_t libafl_id = 0;
-    if (libafl_gen_edge_hook)
-        libafl_id = libafl_gen_edge_hook((uint64_t)src_block, (uint64_t)dst_block);
-    if (libafl_exec_edge_hook && libafl_id != (uint32_t)-1) {
-        if (!exec_edge_hook_added) {
-            exec_edge_hook_added = 1;
-            libafl_exec_edge_hook_info.func = libafl_exec_edge_hook;
-            libafl_helper_table_add(&libafl_exec_edge_hook_info);
-        }
-        TCGv_i32 tmp0 = tcg_const_i32(libafl_id);
-        TCGTemp *tmp1[1] = { tcgv_i32_temp(tmp0) };
-        tcg_gen_callN(libafl_exec_edge_hook, NULL, 1, tmp1);
-        tcg_temp_free_i32(tmp0);
-    }
+    TCGv_i32 tmp0 = tcg_const_i32(libafl_id);
+    TCGTemp *tmp1[1] = { tcgv_i32_temp(tmp0) };
+    tcg_gen_callN(libafl_exec_edge_hook, NULL, 1, tmp1);
+    tcg_temp_free_i32(tmp0);
+
     tcg_gen_goto_tb(0);
     tcg_gen_exit_tb(tb, 0);
 

@@ -762,8 +762,6 @@ void tcg_prologue_init(TCGContext *s)
                         (uintptr_t)s->code_buf, prologue_size);
 #endif
 
-    tcg_region_prologue_set(s);
-
 #ifdef DEBUG_DISAS
     if (qemu_loglevel_mask(CPU_LOG_TB_OUT_ASM)) {
         FILE *logfile = qemu_log_lock();
@@ -801,10 +799,10 @@ void tcg_prologue_init(TCGContext *s)
      * For tci, we use NULL as the signal to return from the interpreter,
      * so skip this check.
      */
-    if (TCG_TARGET_HAS_goto_ptr) {
-        tcg_debug_assert(tcg_code_gen_epilogue != NULL);
-    }
+    tcg_debug_assert(tcg_code_gen_epilogue != NULL);
 #endif
+
+    tcg_region_prologue_set(s);
 }
 
 void tcg_func_start(TCGContext *s)
@@ -1186,6 +1184,7 @@ bool tcg_op_supported(TCGOpcode op)
     case INDEX_op_insn_start:
     case INDEX_op_exit_tb:
     case INDEX_op_goto_tb:
+    case INDEX_op_goto_ptr:
     case INDEX_op_qemu_ld_i32:
     case INDEX_op_qemu_st_i32:
     case INDEX_op_qemu_ld_i64:
@@ -1194,9 +1193,6 @@ bool tcg_op_supported(TCGOpcode op)
 
     case INDEX_op_qemu_st8_i32:
         return TCG_TARGET_HAS_qemu_st8_i32;
-
-    case INDEX_op_goto_ptr:
-        return TCG_TARGET_HAS_goto_ptr;
 
     case INDEX_op_mov_i32:
     case INDEX_op_setcond_i32:
@@ -1859,7 +1855,7 @@ static void tcg_dump_ops(TCGContext *s, bool have_prefs)
                 col += qemu_log("plugin(%p)", func);
             }
 
-            col += qemu_log("$0x%x,$%d", info->flags, nb_oargs);
+            col += qemu_log(",$0x%x,$%d", info->flags, nb_oargs);
             for (i = 0; i < nb_oargs; i++) {
                 col += qemu_log(",%s", tcg_get_arg_str(s, buf, sizeof(buf),
                                                        op->args[i]));

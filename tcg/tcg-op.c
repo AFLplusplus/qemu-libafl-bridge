@@ -2741,7 +2741,7 @@ void tcg_gen_goto_tb(unsigned idx)
     /* We only support two chained exits.  */
     tcg_debug_assert(idx <= TB_EXIT_IDXMAX);
 #ifdef CONFIG_DEBUG_TCG
-    /* Verify that we havn't seen this numbered exit before.  */
+    /* Verify that we haven't seen this numbered exit before.  */
     tcg_debug_assert((tcg_ctx->goto_tb_issue_mask & (1 << idx)) == 0);
     tcg_ctx->goto_tb_issue_mask |= 1 << idx;
 #endif
@@ -2754,7 +2754,7 @@ void tcg_gen_goto_tb(unsigned idx)
 
 void tcg_gen_lookup_and_goto_ptr(void)
 {
-    if (TCG_TARGET_HAS_goto_ptr && !qemu_loglevel_mask(CPU_LOG_TB_NOCHAIN)) {
+    if (!qemu_loglevel_mask(CPU_LOG_TB_NOCHAIN)) {
         TCGv_ptr ptr;
 
         plugin_gen_disable_mem_helpers();

@@ -87,7 +87,7 @@ S390 general architecture support
 M: Cornelia Huck <cohuck@redhat.com>
 M: Thomas Huth <thuth@redhat.com>
 S: Supported
-F: default-configs/*/s390x-softmmu.mak
+F: configs/devices/s390x-softmmu/default.mak
 F: gdb-xml/s390*.xml
 F: hw/char/sclp*.[hc]
 F: hw/char/terminal3270.c
@@ -196,7 +196,7 @@ F: target/hexagon/
 F: linux-user/hexagon/
 F: tests/tcg/hexagon/
 F: disas/hexagon.c
-F: default-configs/targets/hexagon-linux-user.mak
+F: configs/targets/hexagon-linux-user/default.mak
 F: docker/dockerfiles/debian-hexagon-cross.docker
 F: docker/dockerfiles/debian-hexagon-cross.docker.d/build-toolchain.sh
 
@@ -229,7 +229,7 @@ R: Jiaxun Yang <jiaxun.yang@flygoat.com>
 R: Aleksandar Rikalo <aleksandar.rikalo@syrmia.com>
 S: Odd Fixes
 F: target/mips/
-F: default-configs/*/*mips*
+F: configs/devices/mips*/*
 F: disas/mips.c
 F: docs/system/cpu-models-mips.rst.inc
 F: hw/intc/mips_gic.c
@@ -255,7 +255,7 @@ S: Maintained
 F: target/nios2/
 F: hw/nios2/
 F: disas/nios2.c
-F: default-configs/*/nios2-softmmu.mak
+F: configs/devices/nios2-softmmu/default.mak
 
 OpenRISC TCG CPUs
 M: Stafford Horne <shorne@gmail.com>
@@ -297,6 +297,8 @@ M: Richard Henderson <richard.henderson@linaro.org>
 M: David Hildenbrand <david@redhat.com>
 S: Maintained
 F: target/s390x/
+F: target/s390x/tcg
+F: target/s390x/cpu_models_*.[ch]
 F: hw/s390x/
 F: disas/s390.c
 F: tests/tcg/s390x/
@@ -342,7 +344,7 @@ F: hw/xtensa/
 F: tests/tcg/xtensa/
 F: disas/xtensa.c
 F: include/hw/xtensa/xtensa-isa.h
-F: default-configs/*/xtensa*.mak
+F: configs/devices/xtensa*/default.mak
 
 TriCore TCG CPUs
 M: Bastian Koppelmann <kbastian@mail.uni-paderborn.de>
@@ -393,9 +395,7 @@ M: Halil Pasic <pasic@linux.ibm.com>
 M: Cornelia Huck <cohuck@redhat.com>
 M: Christian Borntraeger <borntraeger@de.ibm.com>
 S: Supported
-F: target/s390x/kvm.c
-F: target/s390x/kvm_s390x.h
-F: target/s390x/kvm-stub.c
+F: target/s390x/kvm/
 F: target/s390x/ioinst.[ch]
 F: target/s390x/machine.c
 F: target/s390x/sigp.c
@@ -794,6 +794,7 @@ F: hw/input/tsc2005.c
 F: hw/misc/cbus.c
 F: hw/rtc/twl92230.c
 F: include/hw/display/blizzard.h
+F: include/hw/input/lm832x.h
 F: include/hw/input/tsc2xxx.h
 F: include/hw/misc/cbus.h
 F: tests/acceptance/machine_arm_n8x0.py
@@ -846,8 +847,8 @@ F: hw/display/tc6393xb.c
 F: hw/gpio/max7310.c
 F: hw/gpio/zaurus.c
 F: hw/misc/mst_fpga.c
-F: hw/misc/max111x.c
-F: include/hw/misc/max111x.h
+F: hw/adc/max111x.c
+F: include/hw/adc/max111x.h
 F: include/hw/arm/pxa.h
 F: include/hw/arm/sharpsl.h
 F: include/hw/display/tc6393xb.h
@@ -893,6 +894,13 @@ F: hw/*/stellaris*
 F: include/hw/input/gamepad.h
 F: docs/system/arm/stellaris.rst
 
+STM32VLDISCOVERY
+M: Alexandre Iooss <erdnaxe@crans.org>
+L: qemu-arm@nongnu.org
+S: Maintained
+F: hw/arm/stm32vldiscovery.c
+F: docs/system/arm/stm32.rst
+
 Versatile Express
 M: Peter Maydell <peter.maydell@linaro.org>
 L: qemu-arm@nongnu.org
@@ -925,8 +933,10 @@ L: qemu-arm@nongnu.org
 S: Maintained
 F: hw/*/xilinx_*
 F: hw/*/cadence_*
-F: hw/misc/zynq*
-F: include/hw/misc/zynq*
+F: hw/misc/zynq_slcr.c
+F: hw/adc/zynq-xadc.c
+F: include/hw/misc/zynq_slcr.h
+F: include/hw/adc/zynq-xadc.h
 X: hw/ssi/xilinx_*
 
 Xilinx ZynqMP and Versal
@@ -947,6 +957,12 @@ M: Shannon Zhao <shannon.zhaosl@gmail.com>
 L: qemu-arm@nongnu.org
 S: Maintained
 F: hw/arm/virt-acpi-build.c
+
+STM32F100
+M: Alexandre Iooss <erdnaxe@crans.org>
+L: qemu-arm@nongnu.org
+S: Maintained
+F: hw/arm/stm32f100_soc.c
 
 STM32F205
 M: Alistair Francis <alistair@alistair23.me>
@@ -1041,7 +1057,7 @@ AVR Machines
 AVR MCUs
 M: Michael Rolnik <mrolnik@gmail.com>
 S: Maintained
-F: default-configs/*/avr-softmmu.mak
+F: configs/devices/avr-softmmu/default.mak
 F: hw/avr/
 F: include/hw/char/avr_usart.h
 F: hw/char/avr_usart.c
@@ -1069,7 +1085,7 @@ HP B160L
 M: Richard Henderson <richard.henderson@linaro.org>
 R: Helge Deller <deller@gmx.de>
 S: Odd Fixes
-F: default-configs/*/hppa-softmmu.mak
+F: configs/devices/hppa-softmmu/default.mak
 F: hw/hppa/
 F: pc-bios/hppa-firmware.img
 
@@ -1288,7 +1304,7 @@ S: Maintained
 F: hw/ppc/prep.c
 F: hw/ppc/prep_systemio.c
 F: hw/ppc/rs6000_mc.c
-F: hw/pci-host/prep.[hc]
+F: hw/pci-host/raven.c
 F: hw/isa/i82378.c
 F: hw/isa/pc87312.c
 F: hw/dma/i82374.c
@@ -1359,6 +1375,18 @@ F: hw/ppc/pegasos2.c
 F: hw/pci-host/mv64361.c
 F: hw/pci-host/mv643xx.h
 F: include/hw/pci-host/mv64361.h
+
+Virtual Open Firmware (VOF)
+M: Alexey Kardashevskiy <aik@ozlabs.ru>
+R: David Gibson <david@gibson.dropbear.id.au>
+R: Greg Kurz <groug@kaod.org>
+L: qemu-ppc@nongnu.org
+S: Maintained
+F: hw/ppc/spapr_vof*
+F: hw/ppc/vof*
+F: include/hw/ppc/vof*
+F: pc-bios/vof/*
+F: pc-bios/vof*
 
 RISC-V Machines
 ---------------
@@ -1496,7 +1524,7 @@ F: hw/s390x/
 F: include/hw/s390x/
 F: hw/watchdog/wdt_diag288.c
 F: include/hw/watchdog/wdt_diag288.h
-F: default-configs/*/s390x-softmmu.mak
+F: configs/devices/s390x-softmmu/default.mak
 F: tests/acceptance/machine_s390_ccw_virtio.py
 T: git https://gitlab.com/cohuck/qemu.git s390-next
 T: git https://github.com/borntraeger/qemu.git s390-next
@@ -1703,7 +1731,6 @@ F: hw/pci-bridge/*
 F: qapi/pci.json
 F: docs/pci*
 F: docs/specs/*pci*
-F: default-configs/pci.mak
 
 ACPI/SMBIOS
 M: Michael S. Tsirkin <mst@redhat.com>
@@ -1796,7 +1823,8 @@ F: include/hw/sd/sd*
 F: hw/sd/core.c
 F: hw/sd/sd*
 F: hw/sd/ssi-sd.c
-F: tests/qtest/sd*
+F: tests/qtest/fuzz-sdcard-test.c
+F: tests/qtest/sdhci-test.c
 
 USB
 M: Gerd Hoffmann <kraxel@redhat.com>
@@ -1808,7 +1836,6 @@ F: docs/usb2.txt
 F: docs/usb-storage.txt
 F: include/hw/usb.h
 F: include/hw/usb/
-F: default-configs/usb.mak
 
 USB (serial adapter)
 M: Gerd Hoffmann <kraxel@redhat.com>
@@ -1951,6 +1978,15 @@ F: include/hw/virtio/virtio-rng.h
 F: include/sysemu/rng*.h
 F: backends/rng*.c
 F: tests/qtest/virtio-rng-test.c
+
+vhost-user-rng
+M: Mathieu Poirier <mathieu.poirier@linaro.org>
+S: Supported
+F: docs/tools/vhost-user-rng.rst
+F: hw/virtio/vhost-user-rng.c
+F: hw/virtio/vhost-user-rng-pci.c
+F: include/hw/virtio/vhost-user-rng.h
+F: tools/vhost-user-rng/*
 
 virtio-crypto
 M: Gonglei <arei.gonglei@huawei.com>
@@ -2958,14 +2994,14 @@ M: Warner Losh <imp@bsdimp.com>
 R: Kyle Evans <kevans@freebsd.org>
 S: Maintained
 F: bsd-user/
-F: default-configs/targets/*-bsd-user.mak
+F: configs/targets/*-bsd-user.mak
 T: git https://github.com/qemu-bsd-user/qemu-bsd-user bsd-user-rebase-3.1
 
 Linux user
 M: Laurent Vivier <laurent@vivier.eu>
 S: Maintained
 F: linux-user/
-F: default-configs/targets/*linux-user.mak
+F: configs/targets/*linux-user.mak
 F: scripts/qemu-binfmt-conf.sh
 F: scripts/update-syscalltbl.sh
 F: scripts/update-mips-syscall-args.sh
@@ -3060,7 +3096,8 @@ S: Supported
 F: block/vmdk.c
 
 RBD
-M: Jason Dillaman <dillaman@redhat.com>
+M: Ilya Dryomov <idryomov@gmail.com>
+R: Peter Lieven <pl@kamp.de>
 L: qemu-block@nongnu.org
 S: Supported
 F: block/rbd.c

@@ -127,8 +127,8 @@ static int exec_cmp_hook_added = 0;
 
 void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot)
 {
-    uint32_t size;
-    void* func;
+    uint32_t size = 0;
+    void* func = NULL;
     switch (ot & MO_SIZE) {
       case MO_64:
         size = 8;

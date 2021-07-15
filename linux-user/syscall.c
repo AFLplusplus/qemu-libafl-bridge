@@ -13254,6 +13254,13 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
     return ret;
 }
 
+//// --- Begin LibAFL code ---
+
+int (*libafl_syscall_hook)(uint64_t*, int, uint64_t, uint64_t, uint64_t,
+                           uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+
+//// --- End LibAFL code ---
+
 abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
                     abi_long arg2, abi_long arg3, abi_long arg4,
                     abi_long arg5, abi_long arg6, abi_long arg7,
@@ -13283,8 +13290,30 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
         print_syscall(cpu_env, num, arg1, arg2, arg3, arg4, arg5, arg6);
     }
 
+    //// --- Begin LibAFL code ---
+
+    uint64_t ret64;
+    if (libafl_syscall_hook && libafl_syscall_hook(&ret64, num,
+                                                   (uint64_t)arg1,
+                                                   (uint64_t)arg2,
+                                                   (uint64_t)arg3,
+                                                   (uint64_t)arg4,
+                                                   (uint64_t)arg5,
+                                                   (uint64_t)arg6,
+                                                   (uint64_t)arg7,
+                                                   (uint64_t)arg8)) {
+      ret = (abi_ulong)ret64;
+      goto after_syscall;
+    }
+
+    //// --- End LibAFL code ---
+
     ret = do_syscall1(cpu_env, num, arg1, arg2, arg3, arg4,
                       arg5, arg6, arg7, arg8);
+
+    //// --- Begin LibAFL code ---
+after_syscall:
+    //// --- End LibAFL code ---
 
     if (unlikely(qemu_loglevel_mask(LOG_STRACE))) {
         print_syscall_ret(cpu_env, num, ret, arg1, arg2,

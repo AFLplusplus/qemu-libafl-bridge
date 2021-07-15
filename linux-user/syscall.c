@@ -13256,8 +13256,13 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
 
 //// --- Begin LibAFL code ---
 
-int (*libafl_syscall_hook)(uint64_t*, int, uint64_t, uint64_t, uint64_t,
-                           uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+struct syshook_ret {
+    uint64_t retval;
+    bool skip_syscall;
+};
+struct syshook_ret (*libafl_syscall_hook)(int, uint64_t, uint64_t, uint64_t,
+                                          uint64_t, uint64_t, uint64_t,
+                                          uint64_t, uint64_t);
 
 //// --- End LibAFL code ---
 
@@ -13292,18 +13297,20 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
 
     //// --- Begin LibAFL code ---
 
-    uint64_t ret64;
-    if (libafl_syscall_hook && libafl_syscall_hook(&ret64, num,
-                                                   (uint64_t)arg1,
-                                                   (uint64_t)arg2,
-                                                   (uint64_t)arg3,
-                                                   (uint64_t)arg4,
-                                                   (uint64_t)arg5,
-                                                   (uint64_t)arg6,
-                                                   (uint64_t)arg7,
-                                                   (uint64_t)arg8)) {
-      ret = (abi_ulong)ret64;
-      goto after_syscall;
+    if (libafl_syscall_hook) {
+        struct syshook_ret hook_ret = libafl_syscall_hook(num,
+                                                          (uint64_t)arg1,
+                                                          (uint64_t)arg2,
+                                                          (uint64_t)arg3,
+                                                          (uint64_t)arg4,
+                                                          (uint64_t)arg5,
+                                                          (uint64_t)arg6,
+                                                          (uint64_t)arg7,
+                                                          (uint64_t)arg8);
+      if (hook_ret.skip_syscall) {
+          ret = (abi_ulong)hook_ret.retval;
+          goto after_syscall;
+      }
     }
 
     //// --- End LibAFL code ---

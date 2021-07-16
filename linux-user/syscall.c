@@ -13256,6 +13256,52 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
 
 //// --- Begin LibAFL code ---
 
+struct libafl_mapinfo {
+    uint64_t start, end;
+    uint64_t offset;
+    const char* path;
+    int flags, is_priv;
+};
+GSList * libafl_maps_next(GSList *map_info, struct libafl_mapinfo* ret);
+
+GSList * libafl_maps_next(GSList *map_info, struct libafl_mapinfo* ret) {
+    if (!map_info || !ret)
+        return NULL;
+    GSList *s = g_slist_next(map_info);
+    if (!s)
+        return NULL;
+    MapInfo *e = (MapInfo *) s->data;
+
+    if (h2g_valid(e->start)) {
+        unsigned long min = e->start;
+        unsigned long max = e->end;
+        int flags = page_get_flags(h2g(min));
+
+        max = h2g_valid(max - 1) ?
+            max : (uintptr_t) g2h_untagged(GUEST_ADDR_MAX) + 1;
+
+        if (page_check_range(h2g(min), max - min, flags) == -1) {
+            return libafl_maps_next(s, ret);
+        }
+
+        int libafl_flags = 0;
+        if (flags & PAGE_READ) libafl_flags |= PROT_READ;
+        if (flags & PAGE_WRITE_ORG) libafl_flags |= PROT_WRITE;
+        if (flags & PAGE_EXEC) libafl_flags |= PROT_EXEC;
+
+        ret->start = (uint64_t)min;
+        ret->end = (uint64_t)max;
+        ret->offset = (uint64_t)e->offset;
+        ret->path = e->path;
+        ret->flags = libafl_flags;
+        ret->is_priv = e->is_priv;
+        
+        return s;
+    } else {
+        return libafl_maps_next(s, ret);
+    }
+}
+
 struct syshook_ret {
     uint64_t retval;
     bool skip_syscall;

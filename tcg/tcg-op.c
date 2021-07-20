@@ -2864,6 +2864,13 @@ static inline void plugin_gen_mem_callbacks(TCGv vaddr, uint16_t info)
 #endif
 }
 
+//// --- Begin LibAFL code ---
+
+void libafl_gen_read(TCGv addr, MemOp ot);
+void libafl_gen_write(TCGv addr, MemOp ot);
+
+//// --- End LibAFL code ---
+
 void tcg_gen_qemu_ld_i32(TCGv_i32 val, TCGv addr, TCGArg idx, MemOp memop)
 {
     MemOp orig_memop;
@@ -2883,6 +2890,13 @@ void tcg_gen_qemu_ld_i32(TCGv_i32 val, TCGv addr, TCGArg idx, MemOp memop)
     }
 
     addr = plugin_prep_mem_callbacks(addr);
+
+//// --- Begin LibAFL code ---
+
+    libafl_gen_read(addr, memop);
+
+//// --- End LibAFL code ---
+
     gen_ldst_i32(INDEX_op_qemu_ld_i32, val, addr, memop, idx);
     plugin_gen_mem_callbacks(addr, info);
 
@@ -2928,6 +2942,13 @@ void tcg_gen_qemu_st_i32(TCGv_i32 val, TCGv addr, TCGArg idx, MemOp memop)
     }
 
     addr = plugin_prep_mem_callbacks(addr);
+
+//// --- Begin LibAFL code ---
+
+    libafl_gen_write(addr, memop);
+
+//// --- End LibAFL code ---
+
     if (TCG_TARGET_HAS_qemu_st8_i32 && (memop & MO_SIZE) == MO_8) {
         gen_ldst_i32(INDEX_op_qemu_st8_i32, val, addr, memop, idx);
     } else {
@@ -2970,6 +2991,13 @@ void tcg_gen_qemu_ld_i64(TCGv_i64 val, TCGv addr, TCGArg idx, MemOp memop)
     }
 
     addr = plugin_prep_mem_callbacks(addr);
+
+//// --- Begin LibAFL code ---
+
+    libafl_gen_read(addr, memop);
+
+//// --- End LibAFL code ---
+
     gen_ldst_i64(INDEX_op_qemu_ld_i64, val, addr, memop, idx);
     plugin_gen_mem_callbacks(addr, info);
 
@@ -3028,6 +3056,13 @@ void tcg_gen_qemu_st_i64(TCGv_i64 val, TCGv addr, TCGArg idx, MemOp memop)
     }
 
     addr = plugin_prep_mem_callbacks(addr);
+
+//// --- Begin LibAFL code ---
+
+    libafl_gen_write(addr, memop);
+
+//// --- End LibAFL code ---
+
     gen_ldst_i64(INDEX_op_qemu_st_i64, val, addr, memop, idx);
     plugin_gen_mem_callbacks(addr, info);
 

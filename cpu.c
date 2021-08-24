@@ -105,7 +105,7 @@ int libafl_qemu_num_regs(void)
     return cc->gdb_num_core_regs;
 }
 
-static void breakpoint_invalidate(CPUState *cpu, target_ulong pc);
+void libafl_breakpoint_invalidate(CPUState *cpu, target_ulong pc);
 
 int libafl_qemu_set_breakpoint(uint64_t addr)
 {
@@ -113,7 +113,7 @@ int libafl_qemu_set_breakpoint(uint64_t addr)
 
     target_ulong pc = (target_ulong) addr;
     CPU_FOREACH(cpu) {
-        breakpoint_invalidate(cpu, pc);
+        libafl_breakpoint_invalidate(cpu, pc);
     }
 
     struct libafl_breakpoint* bp = malloc(sizeof(struct libafl_breakpoint));
@@ -132,7 +132,7 @@ int libafl_qemu_remove_breakpoint(uint64_t addr)
     while (*bp) {
         if ((*bp)->addr == pc) {
             CPU_FOREACH(cpu) {
-                breakpoint_invalidate(cpu, pc);
+                libafl_breakpoint_invalidate(cpu, pc);
             }
 
             *bp = (*bp)->next;
@@ -330,6 +330,15 @@ void tb_invalidate_phys_addr(target_ulong addr)
     tb_invalidate_phys_page_range(addr, addr + 1);
     mmap_unlock();
 }
+
+//// --- Begin LibAFL code ---
+
+void libafl_breakpoint_invalidate(CPUState *cpu, target_ulong pc)
+{
+    tb_invalidate_phys_addr(pc);
+}
+
+//// --- End LibAFL code ---
 #else
 void tb_invalidate_phys_addr(AddressSpace *as, hwaddr addr, MemTxAttrs attrs)
 {
@@ -350,6 +359,15 @@ void tb_invalidate_phys_addr(AddressSpace *as, hwaddr addr, MemTxAttrs attrs)
     ram_addr = memory_region_get_ram_addr(mr) + addr;
     tb_invalidate_phys_page_range(ram_addr, ram_addr + 1);
 }
+
+//// --- Begin LibAFL code ---
+
+void libafl_breakpoint_invalidate(CPUState *cpu, target_ulong pc)
+{
+    tb_flush(cpu);
+}
+
+//// --- End LibAFL code ---
 #endif
 
 /* Add a breakpoint.  */

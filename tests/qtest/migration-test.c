@@ -27,7 +27,8 @@
 #include "migration-helpers.h"
 #include "tests/migration/migration-test.h"
 
-#if defined(__linux__)
+/* For dirty ring test; so far only x86_64 is supported */
+#if defined(__linux__) && defined(HOST_X86_64)
 #include "linux/kvm.h"
 #endif
 
@@ -787,10 +788,10 @@ static void test_baddest(void)
 
     args->hide_stderr = true;
 
-    if (test_migrate_start(&from, &to, "tcp:0:0", args)) {
+    if (test_migrate_start(&from, &to, "tcp:127.0.0.1:0", args)) {
         return;
     }
-    migrate_qmp(from, "tcp:0:0", "{}");
+    migrate_qmp(from, "tcp:127.0.0.1:0", "{}");
     wait_for_migration_fail(from, false);
     test_migrate_end(from, to, false);
 }
@@ -1395,7 +1396,7 @@ static void test_multifd_tcp_cancel(void)
 
 static bool kvm_dirty_ring_supported(void)
 {
-#if defined(__linux__)
+#if defined(__linux__) && defined(HOST_X86_64)
     int ret, kvm_fd = open("/dev/kvm", O_RDONLY);
 
     if (kvm_fd < 0) {

@@ -31,6 +31,7 @@
 #include "qapi/compat-policy.h"
 #include "qapi/error.h"
 #include "qapi/qmp/qdict.h"
+#include "qapi/qmp/qstring.h"
 #include "qapi/qmp/qjson.h"
 #include "qemu-version.h"
 #include "qemu/cutils.h"
@@ -202,6 +203,7 @@ static struct {
     { .driver = "virtio-vga",           .flag = &default_vga       },
     { .driver = "ati-vga",              .flag = &default_vga       },
     { .driver = "vhost-user-vga",       .flag = &default_vga       },
+    { .driver = "virtio-vga-gl",        .flag = &default_vga       },
 };
 
 static QemuOptsList qemu_rtc_opts = {
@@ -1534,22 +1536,35 @@ static void machine_help_func(const QDict *qdict)
 }
 
 static void
+machine_merge_property(const char *propname, QDict *prop, Error **errp)
+{
+    QDict *opts;
+
+    opts = qdict_new();
+    /* Preserve the caller's reference to prop.  */
+    qobject_ref(prop);
+    qdict_put(opts, propname, prop);
+    keyval_merge(machine_opts_dict, opts, errp);
+    qobject_unref(opts);
+}
+
+static void
 machine_parse_property_opt(QemuOptsList *opts_list, const char *propname,
                            const char *arg, Error **errp)
 {
-    QDict *opts, *prop;
+    QDict *prop = NULL;
     bool help = false;
-    ERRP_GUARD();
 
     prop = keyval_parse(arg, opts_list->implied_opt_name, &help, errp);
     if (help) {
         qemu_opts_print_help(opts_list, true);
+        exit(0);
+    }
+    if (!prop) {
         return;
     }
-    opts = qdict_new();
-    qdict_put(opts, propname, prop);
-    keyval_merge(machine_opts_dict, opts, errp);
-    qobject_unref(opts);
+    machine_merge_property(propname, prop, errp);
+    qobject_unref(prop);
 }
 
 static const char *pid_file;
@@ -2126,6 +2141,7 @@ static void qemu_create_machine(QDict *qdict)
         QDict *default_opts =
             keyval_parse(machine_class->default_machine_opts, NULL, NULL,
                          &error_abort);
+        qemu_apply_legacy_machine_options(default_opts);
         object_set_properties_from_keyval(OBJECT(current_machine), default_opts,
                                           false, &error_abort);
         qobject_unref(default_opts);
@@ -2151,7 +2167,8 @@ static int global_init_func(void *opaque, QemuOpts *opts, Error **errp)
 static bool is_qemuopts_group(const char *group)
 {
     if (g_str_equal(group, "object") ||
-        g_str_equal(group, "machine")) {
+        g_str_equal(group, "machine") ||
+        g_str_equal(group, "smp-opts")) {
         return false;
     }
     return true;
@@ -2171,6 +2188,8 @@ static void qemu_record_config_group(const char *group, QDict *dict,
          */
         assert(!from_json);
         keyval_merge(machine_opts_dict, dict, errp);
+    } else if (g_str_equal(group, "smp-opts")) {
+        machine_merge_property("smp", dict, &error_fatal);
     } else {
         abort();
     }
@@ -2437,13 +2456,15 @@ static void qemu_validate_options(const QDict *machine_opts)
 static void qemu_process_sugar_options(void)
 {
     if (mem_prealloc) {
-        char *val;
-
-        val = g_strdup_printf("%d",
-                 (uint32_t) qemu_opt_get_number(qemu_find_opts_singleton("smp-opts"), "cpus", 1));
-        object_register_sugar_prop("memory-backend", "prealloc-threads", val,
-                                   false);
-        g_free(val);
+        QObject *smp = qdict_get(machine_opts_dict, "smp");
+        if (smp && qobject_type(smp) == QTYPE_QDICT) {
+            QObject *cpus = qdict_get(qobject_to(QDict, smp), "cpus");
+            if (cpus && qobject_type(cpus) == QTYPE_QSTRING) {
+                const char *val = qstring_get_str(qobject_to(QString, cpus));
+                object_register_sugar_prop("memory-backend", "prealloc-threads",
+                                           val, false);
+            }
+        }
         object_register_sugar_prop("memory-backend", "prealloc", "on", false);
     }
 

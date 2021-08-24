@@ -305,10 +305,10 @@ build-tcg-disabled:
     - cd tests/qemu-iotests/
     - ./check -raw 001 002 003 004 005 008 009 010 011 012 021 025 032 033 048
             052 063 077 086 101 104 106 113 148 150 151 152 157 159 160 163
-            170 171 183 184 192 194 197 208 215 221 222 226 227 236 253 277
+            170 171 183 184 192 194 208 221 222 226 227 236 253 277
     - ./check -qcow2 028 051 056 057 058 065 068 082 085 091 095 096 102 122
-            124 132 139 142 144 145 151 152 155 157 165 194 196 197 200 202
-            208 209 215 216 218 222 227 234 246 247 248 250 254 255 257 258
+            124 132 139 142 144 145 151 152 155 157 165 194 196 200 202
+            208 209 216 218 222 227 234 246 247 248 250 254 255 257 258
             260 261 262 263 264 270 272 273 277 279
 
 build-user:
@@ -354,27 +354,15 @@ build-some-softmmu:
     TARGETS: xtensa-softmmu arm-softmmu aarch64-softmmu alpha-softmmu
     MAKE_CHECK_ARGS: check-tcg
 
-# Run check-tcg against linux-user (with plugins)
-# we skip sparc64-linux-user until it has been fixed somewhat
-# we skip cris-linux-user as it doesn't use the common run loop
-build-user-plugins:
+# We build tricore in a very minimal tricore only container
+build-tricore-softmmu:
   extends: .native_build_job_template
   needs:
-    job: amd64-debian-user-cross-container
+    job: tricore-debian-cross-container
   variables:
-    IMAGE: debian-all-test-cross
-    CONFIGURE_ARGS: --disable-tools --disable-system --enable-plugins --enable-debug-tcg --target-list-exclude=sparc64-linux-user,cris-linux-user
-    MAKE_CHECK_ARGS: check-tcg
-  timeout: 1h 30m
-
-build-some-softmmu-plugins:
-  extends: .native_build_job_template
-  needs:
-    job: amd64-debian-user-cross-container
-  variables:
-    IMAGE: debian-all-test-cross
-    CONFIGURE_ARGS: --disable-tools --disable-user --enable-plugins --enable-debug-tcg
-    TARGETS: xtensa-softmmu arm-softmmu aarch64-softmmu alpha-softmmu
+    IMAGE: debian-tricore-cross
+    CONFIGURE_ARGS: --disable-tools --disable-fdt --enable-debug
+    TARGETS: tricore-softmmu
     MAKE_CHECK_ARGS: check-tcg
 
 clang-system:
@@ -428,6 +416,12 @@ build-cfi-aarch64:
     expire_in: 2 days
     paths:
       - build
+  rules:
+    # FIXME: This job is often failing, likely due to out-of-memory problems in
+    # the constrained containers of the shared runners. Thus this is marked as
+    # manual until the situation has been solved.
+    - when: manual
+      allow_failure: true
 
 check-cfi-aarch64:
   extends: .native_test_job_template
@@ -464,6 +458,12 @@ build-cfi-ppc64-s390x:
     expire_in: 2 days
     paths:
       - build
+  rules:
+    # FIXME: This job is often failing, likely due to out-of-memory problems in
+    # the constrained containers of the shared runners. Thus this is marked as
+    # manual until the situation has been solved.
+    - when: manual
+      allow_failure: true
 
 check-cfi-ppc64-s390x:
   extends: .native_test_job_template
@@ -686,6 +686,17 @@ build-tools-and-docs-debian:
 
 # Prepare for GitLab pages deployment. Anything copied into the
 # "public" directory will be deployed to $USER.gitlab.io/$PROJECT
+#
+# GitLab publishes from any branch that triggers a CI pipeline
+#
+# For the main repo we don't want to publish from 'staging'
+# since that content may not be pushed, nor do we wish to
+# publish from 'stable-NNN' branches as that content is outdated.
+# Thus we restrict to just the default branch
+#
+# For contributor forks we want to publish from any repo so
+# that users can see the results of their commits, regardless
+# of what topic branch they're currently using
 pages:
   image: $CI_REGISTRY_IMAGE/qemu/debian-amd64:latest
   stage: test
@@ -704,3 +715,10 @@ pages:
   artifacts:
     paths:
       - public
+  rules:
+    - if: '$CI_PROJECT_NAMESPACE == "qemu-project" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+    - if: '$CI_PROJECT_NAMESPACE == "qemu-project"'
+      when: never
+    - if: '$CI_PROJECT_NAMESPACE != "qemu-project"'
+      when: on_success

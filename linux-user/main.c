@@ -654,7 +654,14 @@ int libafl_qemu_run(void)
 
 //// --- End LibAFL code ---
 
+#ifdef AS_SHARED_LIB
+int qemu_user_init(int argc, char **argv, char **envp);
+__attribute__((section(".init_array"))) static void *ctr = &qemu_user_init;
+
+int qemu_user_init(int argc, char **argv, char **envp)
+#else
 int main(int argc, char **argv, char **envp)
+#endif
 {
     struct target_pt_regs regs1, *regs = &regs1;
     //struct image_info info1, *info = &info1;

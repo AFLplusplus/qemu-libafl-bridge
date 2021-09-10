@@ -449,8 +449,6 @@ slirp_smbd="$default_feature"
 malloc_trim="auto"
 gio="$default_feature"
 
-libafl_bridge=""
-
 # parse CC options second
 for opt do
   optarg=$(expr "x$opt" : 'x[^=]*=\(.*\)')
@@ -1583,12 +1581,10 @@ for opt do
   ;;
   --disable-slirp-smbd) slirp_smbd=no
   ;;
-  --with-libafl-bridge=*)
-      libafl_bridge="$optarg"
-      if ! (file "$libafl_bridge" | grep "ar archive" > /dev/null); then
-         error_exit "$libafl_bridge is not an ar archive"
-      fi
-      QEMU_LDFLAGS="$QEMU_LDFLAGS -Wl,--whole-archive $libafl_bridge -Wl,-no-whole-archive -lm -ldl -pthread"
+  --as-shared-lib)
+      QEMU_LDFLAGS="$QEMU_LDFLAGS -shared"
+      QEMU_CFLAGS="QEMU_CFLAGS -fPIC -DAS_SHARED_LIB=1"
+      QEMU_CXXFLAGS="QEMU_CXXFLAGS -fPIC -DAS_SHARED_LIB=1"
   ;;
   *)
       echo "ERROR: unknown option $opt"

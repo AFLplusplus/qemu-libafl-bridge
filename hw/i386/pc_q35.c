@@ -31,7 +31,6 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "hw/loader.h"
-#include "sysemu/arch_init.h"
 #include "hw/i2c/smbus_eeprom.h"
 #include "hw/rtc/mc146818rtc.h"
 #include "sysemu/kvm.h"
@@ -239,7 +238,7 @@ static void pc_q35_init(MachineState *machine)
                              OBJECT(lpc), &error_abort);
 
     acpi_pcihp = object_property_get_bool(OBJECT(lpc),
-                                          "acpi-pci-hotplug-with-bridge-support",
+                                          ACPI_PM_PROP_ACPI_PCIHP_BRIDGE,
                                           NULL);
 
     if (acpi_pcihp) {
@@ -355,12 +354,23 @@ static void pc_q35_machine_options(MachineClass *m)
     m->max_cpus = 288;
 }
 
-static void pc_q35_6_1_machine_options(MachineClass *m)
+static void pc_q35_6_2_machine_options(MachineClass *m)
 {
     PCMachineClass *pcmc = PC_MACHINE_CLASS(m);
     pc_q35_machine_options(m);
     m->alias = "q35";
     pcmc->default_cpu_version = 1;
+}
+
+DEFINE_Q35_MACHINE(v6_2, "pc-q35-6.2", NULL,
+                   pc_q35_6_2_machine_options);
+
+static void pc_q35_6_1_machine_options(MachineClass *m)
+{
+    pc_q35_6_2_machine_options(m);
+    m->alias = NULL;
+    compat_props_add(m->compat_props, hw_compat_6_1, hw_compat_6_1_len);
+    compat_props_add(m->compat_props, pc_compat_6_1, pc_compat_6_1_len);
 }
 
 DEFINE_Q35_MACHINE(v6_1, "pc-q35-6.1", NULL,

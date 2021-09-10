@@ -107,8 +107,8 @@ the process listing. This is replaced by the new ``password-secret``
 option which lets the password be securely provided on the command
 line using a ``secret`` object instance.
 
-``opened`` property of ``rng-*`` objects (since 6.0.0)
-''''''''''''''''''''''''''''''''''''''''''''''''''''''
+``opened`` property of ``rng-*`` objects (since 6.0)
+''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 The only effect of specifying ``opened=on`` in the command line or QMP
 ``object-add`` is that the device is opened immediately, possibly before all
@@ -116,8 +116,8 @@ other options have been processed.  This will either have no effect (if
 ``opened`` was the last option) or cause errors.  The property is therefore
 useless and should not be specified.
 
-``loaded`` property of ``secret`` and ``secret_keyring`` objects (since 6.0.0)
-''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+``loaded`` property of ``secret`` and ``secret_keyring`` objects (since 6.0)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 The only effect of specifying ``loaded=on`` in the command line or QMP
 ``object-add`` is that the secret is loaded immediately, possibly before all
@@ -138,37 +138,69 @@ an underscore between "window" and "close").
 The ``-no-quit`` is a synonym for ``-display ...,window-close=off`` which
 should be used instead.
 
+``-alt-grab`` and ``-display sdl,alt_grab=on`` (since 6.2)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Use ``-display sdl,grab-mod=lshift-lctrl-lalt`` instead.
+
+``-ctrl-grab`` and ``-display sdl,ctrl_grab=on`` (since 6.2)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Use ``-display sdl,grab-mod=rctrl`` instead.
+
+``-sdl`` (since 6.2)
+''''''''''''''''''''
+
+Use ``-display sdl`` instead.
+
+``-curses`` (since 6.2)
+'''''''''''''''''''''''
+
+Use ``-display curses`` instead.
+
+
+Plugin argument passing through ``arg=<string>`` (since 6.1)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Passing TCG plugins arguments through ``arg=`` is redundant is makes the
+command-line less readable, especially when the argument itself consist of a
+name and a value, e.g. ``-plugin plugin_name,arg="arg_name=arg_value"``.
+Therefore, the usage of ``arg`` is redundant. Single-word arguments are treated
+as short-form boolean values, and passed to plugins as ``arg_name=on``.
+However, short-form booleans are deprecated and full explicit ``arg_name=on``
+form is preferred.
+
 
 QEMU Machine Protocol (QMP) commands
 ------------------------------------
 
-``blockdev-open-tray``, ``blockdev-close-tray`` argument ``device`` (since 2.8.0)
-'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+``blockdev-open-tray``, ``blockdev-close-tray`` argument ``device`` (since 2.8)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 Use argument ``id`` instead.
 
-``eject`` argument ``device`` (since 2.8.0)
-'''''''''''''''''''''''''''''''''''''''''''
+``eject`` argument ``device`` (since 2.8)
+'''''''''''''''''''''''''''''''''''''''''
 
 Use argument ``id`` instead.
 
-``blockdev-change-medium`` argument ``device`` (since 2.8.0)
-''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+``blockdev-change-medium`` argument ``device`` (since 2.8)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 Use argument ``id`` instead.
 
-``block_set_io_throttle`` argument ``device`` (since 2.8.0)
-'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+``block_set_io_throttle`` argument ``device`` (since 2.8)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 Use argument ``id`` instead.
 
-``blockdev-add`` empty string argument ``backing`` (since 2.10.0)
-'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+``blockdev-add`` empty string argument ``backing`` (since 2.10)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 Use argument value ``null`` instead.
 
-``block-commit`` arguments ``base`` and ``top`` (since 3.1.0)
-'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+``block-commit`` arguments ``base`` and ``top`` (since 3.1)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 Use arguments ``base-node`` and ``top-node`` instead.
 
@@ -191,8 +223,8 @@ from Linux upstream kernel, declare it deprecated.
 System emulator CPUS
 --------------------
 
-``Icelake-Client`` CPU Model (since 5.2.0)
-''''''''''''''''''''''''''''''''''''''''''
+``Icelake-Client`` CPU Model (since 5.2)
+''''''''''''''''''''''''''''''''''''''''
 
 ``Icelake-Client`` CPU Models are deprecated. Use ``Icelake-Server`` CPU
 Models instead.
@@ -206,13 +238,6 @@ this CPU is also deprecated.
 
 System emulator machines
 ------------------------
-
-Raspberry Pi ``raspi2`` and ``raspi3`` machines (since 5.2)
-'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-
-The Raspberry Pi machines come in various models (A, A+, B, B+). To be able
-to distinguish which model QEMU is implementing, the ``raspi2`` and ``raspi3``
-machines have been renamed ``raspi2b`` and ``raspi3b``.
 
 Aspeed ``swift-bmc`` machine (since 6.1)
 ''''''''''''''''''''''''''''''''''''''''
@@ -245,8 +270,8 @@ Device options
 Emulated device options
 '''''''''''''''''''''''
 
-``-device virtio-blk,scsi=on|off`` (since 5.0.0)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+``-device virtio-blk,scsi=on|off`` (since 5.0)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The virtio-blk SCSI passthrough feature is a legacy VIRTIO feature.  VIRTIO 1.0
 and later do not support it because the virtio-scsi device was introduced for
@@ -258,14 +283,14 @@ alias.
 Block device options
 ''''''''''''''''''''
 
-``"backing": ""`` (since 2.12.0)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+``"backing": ""`` (since 2.12)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 In order to prevent QEMU from automatically opening an image's backing
 chain, use ``"backing": null`` instead.
 
-``rbd`` keyvalue pair encoded filenames: ``""`` (since 3.1.0)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+``rbd`` keyvalue pair encoded filenames: ``""`` (since 3.1)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Options for ``rbd`` should be specified according to its runtime options,
 like other block drivers.  Legacy parsing of keyvalue pair encoded
@@ -283,8 +308,8 @@ The above, converted to the current supported format::
 linux-user mode CPUs
 --------------------
 
-``ppc64abi32`` CPUs (since 5.2.0)
-'''''''''''''''''''''''''''''''''
+``ppc64abi32`` CPUs (since 5.2)
+'''''''''''''''''''''''''''''''
 
 The ``ppc64abi32`` architecture has a number of issues which regularly
 trip up our CI testing and is suspected to be quite broken. For that
@@ -303,8 +328,8 @@ Related binaries
 Backwards compatibility
 -----------------------
 
-Runnability guarantee of CPU models (since 4.1.0)
-'''''''''''''''''''''''''''''''''''''''''''''''''
+Runnability guarantee of CPU models (since 4.1)
+'''''''''''''''''''''''''''''''''''''''''''''''
 
 Previous versions of QEMU never changed existing CPU models in
 ways that introduced additional host software or hardware

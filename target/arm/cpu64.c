@@ -265,14 +265,17 @@ void arm_cpu_sve_finalize(ARMCPU *cpu, Error **errp)
      * any of the above.  Finally, if SVE is not disabled, then at least one
      * vector length must be enabled.
      */
-    DECLARE_BITMAP(kvm_supported, ARM_MAX_VQ);
     DECLARE_BITMAP(tmp, ARM_MAX_VQ);
     uint32_t vq, max_vq = 0;
 
-    /* Collect the set of vector lengths supported by KVM. */
-    bitmap_zero(kvm_supported, ARM_MAX_VQ);
+    /*
+     * CPU models specify a set of supported vector lengths which are
+     * enabled by default.  Attempting to enable any vector length not set
+     * in the supported bitmap results in an error.  When KVM is enabled we
+     * fetch the supported bitmap from the host.
+     */
     if (kvm_enabled() && kvm_arm_sve_supported()) {
-        kvm_arm_sve_get_vls(CPU(cpu), kvm_supported);
+        kvm_arm_sve_get_vls(CPU(cpu), cpu->sve_vq_supported);
     } else if (kvm_enabled()) {
         assert(!cpu_isar_feature(aa64_sve, cpu));
     }
@@ -299,7 +302,7 @@ void arm_cpu_sve_finalize(ARMCPU *cpu, Error **errp)
              * For KVM we have to automatically enable all supported unitialized
              * lengths, even when the smaller lengths are not all powers-of-two.
              */
-            bitmap_andnot(tmp, kvm_supported, cpu->sve_vq_init, max_vq);
+            bitmap_andnot(tmp, cpu->sve_vq_supported, cpu->sve_vq_init, max_vq);
             bitmap_or(cpu->sve_vq_map, cpu->sve_vq_map, tmp, max_vq);
         } else {
             /* Propagate enabled bits down through required powers-of-two. */
@@ -322,39 +325,30 @@ void arm_cpu_sve_finalize(ARMCPU *cpu, Error **errp)
             /* Disabling a supported length disables all larger lengths. */
             for (vq = 1; vq <= ARM_MAX_VQ; ++vq) {
                 if (test_bit(vq - 1, cpu->sve_vq_init) &&
-                    test_bit(vq - 1, kvm_supported)) {
+                    test_bit(vq - 1, cpu->sve_vq_supported)) {
                     break;
                 }
             }
-            max_vq = vq <= ARM_MAX_VQ ? vq - 1 : ARM_MAX_VQ;
-            bitmap_andnot(cpu->sve_vq_map, kvm_supported,
-                          cpu->sve_vq_init, max_vq);
-            if (max_vq == 0 || bitmap_empty(cpu->sve_vq_map, max_vq)) {
-                error_setg(errp, "cannot disable sve%d", vq * 128);
-                error_append_hint(errp, "Disabling sve%d results in all "
-                                  "vector lengths being disabled.\n",
-                                  vq * 128);
-                error_append_hint(errp, "With SVE enabled, at least one "
-                                  "vector length must be enabled.\n");
-                return;
-            }
         } else {
             /* Disabling a power-of-two disables all larger lengths. */
-            if (test_bit(0, cpu->sve_vq_init)) {
-                error_setg(errp, "cannot disable sve128");
-                error_append_hint(errp, "Disabling sve128 results in all "
-                                  "vector lengths being disabled.\n");
-                error_append_hint(errp, "With SVE enabled, at least one "
-                                  "vector length must be enabled.\n");
-                return;
-            }
-            for (vq = 2; vq <= ARM_MAX_VQ; vq <<= 1) {
+            for (vq = 1; vq <= ARM_MAX_VQ; vq <<= 1) {
                 if (test_bit(vq - 1, cpu->sve_vq_init)) {
                     break;
                 }
             }
-            max_vq = vq <= ARM_MAX_VQ ? vq - 1 : ARM_MAX_VQ;
-            bitmap_complement(cpu->sve_vq_map, cpu->sve_vq_init, max_vq);
+        }
+
+        max_vq = vq <= ARM_MAX_VQ ? vq - 1 : ARM_MAX_VQ;
+        bitmap_andnot(cpu->sve_vq_map, cpu->sve_vq_supported,
+                      cpu->sve_vq_init, max_vq);
+        if (max_vq == 0 || bitmap_empty(cpu->sve_vq_map, max_vq)) {
+            error_setg(errp, "cannot disable sve%d", vq * 128);
+            error_append_hint(errp, "Disabling sve%d results in all "
+                              "vector lengths being disabled.\n",
+                              vq * 128);
+            error_append_hint(errp, "With SVE enabled, at least one "
+                              "vector length must be enabled.\n");
+            return;
         }
 
         max_vq = find_last_bit(cpu->sve_vq_map, max_vq) + 1;
@@ -390,46 +384,44 @@ void arm_cpu_sve_finalize(ARMCPU *cpu, Error **errp)
     assert(max_vq != 0);
     bitmap_clear(cpu->sve_vq_map, max_vq, ARM_MAX_VQ - max_vq);
 
-    if (kvm_enabled()) {
-        /* Ensure the set of lengths matches what KVM supports. */
-        bitmap_xor(tmp, cpu->sve_vq_map, kvm_supported, max_vq);
-        if (!bitmap_empty(tmp, max_vq)) {
-            vq = find_last_bit(tmp, max_vq) + 1;
-            if (test_bit(vq - 1, cpu->sve_vq_map)) {
-                if (cpu->sve_max_vq) {
-                    error_setg(errp, "cannot set sve-max-vq=%d",
-                               cpu->sve_max_vq);
-                    error_append_hint(errp, "This KVM host does not support "
-                                      "the vector length %d-bits.\n",
-                                      vq * 128);
-                    error_append_hint(errp, "It may not be possible to use "
-                                      "sve-max-vq with this KVM host. Try "
-                                      "using only sve<N> properties.\n");
-                } else {
-                    error_setg(errp, "cannot enable sve%d", vq * 128);
-                    error_append_hint(errp, "This KVM host does not support "
-                                      "the vector length %d-bits.\n",
-                                      vq * 128);
-                }
+    /* Ensure the set of lengths matches what is supported. */
+    bitmap_xor(tmp, cpu->sve_vq_map, cpu->sve_vq_supported, max_vq);
+    if (!bitmap_empty(tmp, max_vq)) {
+        vq = find_last_bit(tmp, max_vq) + 1;
+        if (test_bit(vq - 1, cpu->sve_vq_map)) {
+            if (cpu->sve_max_vq) {
+                error_setg(errp, "cannot set sve-max-vq=%d", cpu->sve_max_vq);
+                error_append_hint(errp, "This CPU does not support "
+                                  "the vector length %d-bits.\n", vq * 128);
+                error_append_hint(errp, "It may not be possible to use "
+                                  "sve-max-vq with this CPU. Try "
+                                  "using only sve<N> properties.\n");
             } else {
+                error_setg(errp, "cannot enable sve%d", vq * 128);
+                error_append_hint(errp, "This CPU does not support "
+                                  "the vector length %d-bits.\n", vq * 128);
+            }
+            return;
+        } else {
+            if (kvm_enabled()) {
                 error_setg(errp, "cannot disable sve%d", vq * 128);
                 error_append_hint(errp, "The KVM host requires all "
                                   "supported vector lengths smaller "
                                   "than %d bits to also be enabled.\n",
                                   max_vq * 128);
-            }
-            return;
-        }
-    } else {
-        /* Ensure all required powers-of-two are enabled. */
-        for (vq = pow2floor(max_vq); vq >= 1; vq >>= 1) {
-            if (!test_bit(vq - 1, cpu->sve_vq_map)) {
-                error_setg(errp, "cannot disable sve%d", vq * 128);
-                error_append_hint(errp, "sve%d is required as it "
-                                  "is a power-of-two length smaller than "
-                                  "the maximum, sve%d\n",
-                                  vq * 128, max_vq * 128);
                 return;
+            } else {
+                /* Ensure all required powers-of-two are enabled. */
+                for (vq = pow2floor(max_vq); vq >= 1; vq >>= 1) {
+                    if (!test_bit(vq - 1, cpu->sve_vq_map)) {
+                        error_setg(errp, "cannot disable sve%d", vq * 128);
+                        error_append_hint(errp, "sve%d is required as it "
+                                          "is a power-of-two length smaller "
+                                          "than the maximum, sve%d\n",
+                                          vq * 128, max_vq * 128);
+                        return;
+                    }
+                }
             }
         }
     }
@@ -840,6 +832,8 @@ static void aarch64_max_initfn(Object *obj)
         /* Default to PAUTH on, with the architected algorithm. */
         qdev_property_add_static(DEVICE(obj), &arm_cpu_pauth_property);
         qdev_property_add_static(DEVICE(obj), &arm_cpu_pauth_impdef_property);
+
+        bitmap_fill(cpu->sve_vq_supported, ARM_MAX_VQ);
     }
 
     aarch64_add_sve_properties(obj);
@@ -847,10 +841,58 @@ static void aarch64_max_initfn(Object *obj)
                         cpu_max_set_sve_max_vq, NULL, NULL);
 }
 
+static void aarch64_a64fx_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+
+    cpu->dtb_compatible = "arm,a64fx";
+    set_feature(&cpu->env, ARM_FEATURE_V8);
+    set_feature(&cpu->env, ARM_FEATURE_NEON);
+    set_feature(&cpu->env, ARM_FEATURE_GENERIC_TIMER);
+    set_feature(&cpu->env, ARM_FEATURE_AARCH64);
+    set_feature(&cpu->env, ARM_FEATURE_EL2);
+    set_feature(&cpu->env, ARM_FEATURE_EL3);
+    set_feature(&cpu->env, ARM_FEATURE_PMU);
+    cpu->midr = 0x461f0010;
+    cpu->revidr = 0x00000000;
+    cpu->ctr = 0x86668006;
+    cpu->reset_sctlr = 0x30000180;
+    cpu->isar.id_aa64pfr0 =   0x0000000101111111; /* No RAS Extensions */
+    cpu->isar.id_aa64pfr1 = 0x0000000000000000;
+    cpu->isar.id_aa64dfr0 = 0x0000000010305408;
+    cpu->isar.id_aa64dfr1 = 0x0000000000000000;
+    cpu->id_aa64afr0 = 0x0000000000000000;
+    cpu->id_aa64afr1 = 0x0000000000000000;
+    cpu->isar.id_aa64mmfr0 = 0x0000000000001122;
+    cpu->isar.id_aa64mmfr1 = 0x0000000011212100;
+    cpu->isar.id_aa64mmfr2 = 0x0000000000001011;
+    cpu->isar.id_aa64isar0 = 0x0000000010211120;
+    cpu->isar.id_aa64isar1 = 0x0000000000010001;
+    cpu->isar.id_aa64zfr0 = 0x0000000000000000;
+    cpu->clidr = 0x0000000080000023;
+    cpu->ccsidr[0] = 0x7007e01c; /* 64KB L1 dcache */
+    cpu->ccsidr[1] = 0x2007e01c; /* 64KB L1 icache */
+    cpu->ccsidr[2] = 0x70ffe07c; /* 8MB L2 cache */
+    cpu->dcz_blocksize = 6; /* 256 bytes */
+    cpu->gic_num_lrs = 4;
+    cpu->gic_vpribits = 5;
+    cpu->gic_vprebits = 5;
+
+    /* Suppport of A64FX's vector length are 128,256 and 512bit only */
+    aarch64_add_sve_properties(obj);
+    bitmap_zero(cpu->sve_vq_supported, ARM_MAX_VQ);
+    set_bit(0, cpu->sve_vq_supported); /* 128bit */
+    set_bit(1, cpu->sve_vq_supported); /* 256bit */
+    set_bit(3, cpu->sve_vq_supported); /* 512bit */
+
+    /* TODO:  Add A64FX specific HPC extension registers */
+}
+
 static const ARMCPUInfo aarch64_cpus[] = {
     { .name = "cortex-a57",         .initfn = aarch64_a57_initfn },
     { .name = "cortex-a53",         .initfn = aarch64_a53_initfn },
     { .name = "cortex-a72",         .initfn = aarch64_a72_initfn },
+    { .name = "a64fx",              .initfn = aarch64_a64fx_initfn },
     { .name = "max",                .initfn = aarch64_max_initfn },
 };
 

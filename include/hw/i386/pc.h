@@ -47,10 +47,6 @@ typedef struct PCMachineState {
     bool default_bus_bypass_iommu;
     uint64_t max_fw_size;
 
-    /* NUMA information: */
-    uint64_t numa_nodes;
-    uint64_t *node_mem;
-
     /* ACPI Memory hotplug IO base address */
     hwaddr memhp_io_base;
 } PCMachineState;
@@ -195,6 +191,9 @@ void pc_system_parse_ovmf_flash(uint8_t *flash_ptr, size_t flash_size);
 /* acpi-build.c */
 void pc_madt_cpu_entry(AcpiDeviceIf *adev, int uid,
                        const CPUArchIdList *apic_ids, GArray *entry);
+
+extern GlobalProperty pc_compat_6_1[];
+extern const size_t pc_compat_6_1_len;
 
 extern GlobalProperty pc_compat_6_0[];
 extern const size_t pc_compat_6_0_len;

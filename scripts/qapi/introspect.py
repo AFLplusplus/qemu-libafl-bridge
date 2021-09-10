@@ -15,21 +15,14 @@ from typing import (
     Any,
     Dict,
     Generic,
-    Iterable,
     List,
     Optional,
     Sequence,
-    Tuple,
     TypeVar,
     Union,
 )
 
-from .common import (
-    c_name,
-    gen_endif,
-    gen_if,
-    mcgen,
-)
+from .common import c_name, mcgen
 from .gen import QAPISchemaMonolithicCVisitor
 from .schema import (
     QAPISchema,
@@ -38,6 +31,7 @@ from .schema import (
     QAPISchemaEntity,
     QAPISchemaEnumMember,
     QAPISchemaFeature,
+    QAPISchemaIfCond,
     QAPISchemaObjectType,
     QAPISchemaObjectTypeMember,
     QAPISchemaType,
@@ -91,11 +85,11 @@ class Annotated(Generic[_ValueT]):
     """
     # TODO: Remove after Python 3.7 adds @dataclass:
     # pylint: disable=too-few-public-methods
-    def __init__(self, value: _ValueT, ifcond: Iterable[str],
+    def __init__(self, value: _ValueT, ifcond: QAPISchemaIfCond,
                  comment: Optional[str] = None):
         self.value = value
         self.comment: Optional[str] = comment
-        self.ifcond: Tuple[str, ...] = tuple(ifcond)
+        self.ifcond = ifcond
 
 
 def _tree_to_qlit(obj: JSONValue,
@@ -124,11 +118,11 @@ def _tree_to_qlit(obj: JSONValue,
         ret = ''
         if obj.comment:
             ret += indent(level) + f"/* {obj.comment} */\n"
-        if obj.ifcond:
-            ret += gen_if(obj.ifcond)
+        if obj.ifcond.is_present():
+            ret += obj.ifcond.gen_if()
         ret += _tree_to_qlit(obj.value, level)
-        if obj.ifcond:
-            ret += '\n' + gen_endif(obj.ifcond)
+        if obj.ifcond.is_present():
+            ret += '\n' + obj.ifcond.gen_endif()
         return ret
 
     ret = ''
@@ -254,7 +248,7 @@ const QLitObject %(c_name)s = %(c_string)s;
         return [Annotated(f.name, f.ifcond) for f in features]
 
     def _gen_tree(self, name: str, mtype: str, obj: Dict[str, object],
-                  ifcond: Sequence[str] = (),
+                  ifcond: QAPISchemaIfCond = QAPISchemaIfCond(),
                   features: Sequence[QAPISchemaFeature] = ()) -> None:
         """
         Build and append a SchemaInfo object to self._trees.
@@ -305,7 +299,7 @@ const QLitObject %(c_name)s = %(c_string)s;
         self._gen_tree(name, 'builtin', {'json-type': json_type})
 
     def visit_enum_type(self, name: str, info: Optional[QAPISourceInfo],
-                        ifcond: Sequence[str],
+                        ifcond: QAPISchemaIfCond,
                         features: List[QAPISchemaFeature],
                         members: List[QAPISchemaEnumMember],
                         prefix: Optional[str]) -> None:
@@ -316,14 +310,14 @@ const QLitObject %(c_name)s = %(c_string)s;
         )
 
     def visit_array_type(self, name: str, info: Optional[QAPISourceInfo],
-                         ifcond: Sequence[str],
+                         ifcond: QAPISchemaIfCond,
                          element_type: QAPISchemaType) -> None:
         element = self._use_type(element_type)
         self._gen_tree('[' + element + ']', 'array', {'element-type': element},
                        ifcond)
 
     def visit_object_type_flat(self, name: str, info: Optional[QAPISourceInfo],
-                               ifcond: Sequence[str],
+                               ifcond: QAPISchemaIfCond,
                                features: List[QAPISchemaFeature],
                                members: List[QAPISchemaObjectTypeMember],
                                variants: Optional[QAPISchemaVariants]) -> None:
@@ -336,7 +330,7 @@ const QLitObject %(c_name)s = %(c_string)s;
         self._gen_tree(name, 'object', obj, ifcond, features)
 
     def visit_alternate_type(self, name: str, info: Optional[QAPISourceInfo],
-                             ifcond: Sequence[str],
+                             ifcond: QAPISchemaIfCond,
                              features: List[QAPISchemaFeature],
                              variants: QAPISchemaVariants) -> None:
         self._gen_tree(
@@ -348,7 +342,7 @@ const QLitObject %(c_name)s = %(c_string)s;
         )
 
     def visit_command(self, name: str, info: Optional[QAPISourceInfo],
-                      ifcond: Sequence[str],
+                      ifcond: QAPISchemaIfCond,
                       features: List[QAPISchemaFeature],
                       arg_type: Optional[QAPISchemaObjectType],
                       ret_type: Optional[QAPISchemaType], gen: bool,
@@ -367,7 +361,8 @@ const QLitObject %(c_name)s = %(c_string)s;
         self._gen_tree(name, 'command', obj, ifcond, features)
 
     def visit_event(self, name: str, info: Optional[QAPISourceInfo],
-                    ifcond: Sequence[str], features: List[QAPISchemaFeature],
+                    ifcond: QAPISchemaIfCond,
+                    features: List[QAPISchemaFeature],
                     arg_type: Optional[QAPISchemaObjectType],
                     boxed: bool) -> None:
         assert self._schema is not None

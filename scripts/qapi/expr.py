@@ -259,14 +259,9 @@ def check_flags(expr: _JSONObject, info: QAPISourceInfo) -> None:
 
 def check_if(expr: _JSONObject, info: QAPISourceInfo, source: str) -> None:
     """
-    Normalize and validate the ``if`` member of an object.
+    Validate the ``if`` member of an object.
 
-    The ``if`` member may be either a ``str`` or a ``List[str]``.
-    A ``str`` value will be normalized to ``List[str]``.
-
-    :forms:
-      :sugared: ``Union[str, List[str]]``
-      :canonical: ``List[str]``
+    The ``if`` member may be either a ``str`` or a dict.
 
     :param expr: The expression containing the ``if`` member to validate.
     :param info: QAPI schema source file information.
@@ -275,31 +270,48 @@ def check_if(expr: _JSONObject, info: QAPISourceInfo, source: str) -> None:
     :raise QAPISemError:
         When the "if" member fails validation, or when there are no
         non-empty conditions.
-    :return: None, ``expr`` is normalized in-place as needed.
+    :return: None
     """
+
+    def _check_if(cond: Union[str, object]) -> None:
+        if isinstance(cond, str):
+            if not re.fullmatch(r'[A-Z][A-Z0-9_]*', cond):
+                raise QAPISemError(
+                    info,
+                    "'if' condition '%s' of %s is not a valid identifier"
+                    % (cond, source))
+            return
+
+        if not isinstance(cond, dict):
+            raise QAPISemError(
+                info,
+                "'if' condition of %s must be a string or an object" % source)
+        check_keys(cond, info, "'if' condition of %s" % source, [],
+                   ["all", "any", "not"])
+        if len(cond) != 1:
+            raise QAPISemError(
+                info,
+                "'if' condition of %s has conflicting keys" % source)
+
+        oper, operands = next(iter(cond.items()))
+        if not operands:
+            raise QAPISemError(
+                info, "'if' condition [] of %s is useless" % source)
+
+        if oper == "not":
+            _check_if(operands)
+            return
+        if oper in ("all", "any") and not isinstance(operands, list):
+            raise QAPISemError(
+                info, "'%s' condition of %s must be an array" % (oper, source))
+        for operand in operands:
+            _check_if(operand)
+
     ifcond = expr.get('if')
     if ifcond is None:
         return
 
-    if isinstance(ifcond, list):
-        if not ifcond:
-            raise QAPISemError(
-                info, "'if' condition [] of %s is useless" % source)
-    else:
-        # Normalize to a list
-        ifcond = expr['if'] = [ifcond]
-
-    for elt in ifcond:
-        if not isinstance(elt, str):
-            raise QAPISemError(
-                info,
-                "'if' condition of %s must be a string or a list of strings"
-                % source)
-        if not elt.strip():
-            raise QAPISemError(
-                info,
-                "'if' condition '%s' of %s makes no sense"
-                % (elt, source))
+    _check_if(ifcond)
 
 
 def normalize_members(members: object) -> None:
@@ -617,20 +629,15 @@ def check_exprs(exprs: List[_JSONObject]) -> List[_JSONObject]:
         if 'include' in expr:
             continue
 
-        if 'enum' in expr:
-            meta = 'enum'
-        elif 'union' in expr:
-            meta = 'union'
-        elif 'alternate' in expr:
-            meta = 'alternate'
-        elif 'struct' in expr:
-            meta = 'struct'
-        elif 'command' in expr:
-            meta = 'command'
-        elif 'event' in expr:
-            meta = 'event'
-        else:
-            raise QAPISemError(info, "expression is missing metatype")
+        metas = expr.keys() & {'enum', 'struct', 'union', 'alternate',
+                               'command', 'event'}
+        if len(metas) != 1:
+            raise QAPISemError(
+                info,
+                "expression must have exactly one key"
+                " 'enum', 'struct', 'union', 'alternate',"
+                " 'command', 'event'")
+        meta = metas.pop()
 
         check_name_is_str(expr[meta], info, "'%s'" % meta)
         name = cast(str, expr[meta])

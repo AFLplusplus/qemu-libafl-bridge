@@ -12,7 +12,14 @@
 # See the COPYING file in the top-level directory.
 
 import re
-from typing import Match, Optional, Sequence
+from typing import (
+    Any,
+    Dict,
+    Match,
+    Optional,
+    Sequence,
+    Union,
+)
 
 
 #: Magic string that gets removed along with all space to its right.
@@ -194,22 +201,55 @@ def guardend(name: str) -> str:
                  name=c_fname(name).upper())
 
 
-def gen_if(ifcond: Sequence[str]) -> str:
-    ret = ''
-    for ifc in ifcond:
-        ret += mcgen('''
+def gen_ifcond(ifcond: Optional[Union[str, Dict[str, Any]]],
+               cond_fmt: str, not_fmt: str,
+               all_operator: str, any_operator: str) -> str:
+
+    def do_gen(ifcond: Union[str, Dict[str, Any]], need_parens: bool):
+        if isinstance(ifcond, str):
+            return cond_fmt % ifcond
+        assert isinstance(ifcond, dict) and len(ifcond) == 1
+        if 'not' in ifcond:
+            return not_fmt % do_gen(ifcond['not'], True)
+        if 'all' in ifcond:
+            gen = gen_infix(all_operator, ifcond['all'])
+        else:
+            gen = gen_infix(any_operator, ifcond['any'])
+        if need_parens:
+            gen = '(' + gen + ')'
+        return gen
+
+    def gen_infix(operator: str, operands: Sequence[Any]) -> str:
+        return operator.join([do_gen(o, True) for o in operands])
+
+    if not ifcond:
+        return ''
+    return do_gen(ifcond, False)
+
+
+def cgen_ifcond(ifcond: Optional[Union[str, Dict[str, Any]]]) -> str:
+    return gen_ifcond(ifcond, 'defined(%s)', '!%s', ' && ', ' || ')
+
+
+def docgen_ifcond(ifcond: Optional[Union[str, Dict[str, Any]]]) -> str:
+    # TODO Doc generated for conditions needs polish
+    return gen_ifcond(ifcond, '%s', 'not %s', ' and ', ' or ')
+
+
+def gen_if(cond: str) -> str:
+    if not cond:
+        return ''
+    return mcgen('''
 #if %(cond)s
-''', cond=ifc)
-    return ret
+''', cond=cond)
 
 
-def gen_endif(ifcond: Sequence[str]) -> str:
-    ret = ''
-    for ifc in reversed(ifcond):
-        ret += mcgen('''
+def gen_endif(cond: str) -> str:
+    if not cond:
+        return ''
+    return mcgen('''
 #endif /* %(cond)s */
-''', cond=ifc)
-    return ret
+''', cond=cond)
 
 
 def must_match(pattern: str, string: str) -> Match[str]:

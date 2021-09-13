@@ -655,6 +655,7 @@ int libafl_qemu_run(void)
 //// --- End LibAFL code ---
 
 #ifdef AS_LIB
+int qemu_user_init(int argc, char **argv, char **envp);
 int qemu_user_init(int argc, char **argv, char **envp)
 #else
 int main(int argc, char **argv, char **envp)

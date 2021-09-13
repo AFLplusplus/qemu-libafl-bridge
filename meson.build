@@ -2656,16 +2656,7 @@ foreach target : target_dirs
       exe_name += '-unsigned'
     endif
 
-    if 'AS_SHARED_LIB' in config_host
-        emulator = shared_library(exe_name, exe['sources'],
-               install: true,
-               c_args: c_args,
-               dependencies: arch_deps + deps + exe['dependencies'],
-               objects: lib.extract_all_objects(recursive: true),
-               link_language: link_language,
-               link_depends: [block_syms, qemu_syms] + exe.get('link_depends', []),
-               link_args: link_args)
-    else
+    if 'AS_SHARED_LIB' not in config_host and 'AS_STATIC_LIB' not in config_host
         emulator = executable(exe_name, exe['sources'],
                    install: true,
                    c_args: c_args,
@@ -2675,6 +2666,23 @@ foreach target : target_dirs
                    link_depends: [block_syms, qemu_syms] + exe.get('link_depends', []),
                    link_args: link_args,
                    gui_app: exe['gui'])
+    else
+        if 'AS_SHARED_LIB' in config_host
+            emulator = shared_library(exe_name, exe['sources'],
+                   install: true,
+                   c_args: c_args,
+                   dependencies: arch_deps + deps + exe['dependencies'],
+                   objects: lib.extract_all_objects(recursive: true),
+                   link_language: link_language,
+                   link_depends: [block_syms, qemu_syms] + exe.get('link_depends', []),
+                   link_args: link_args)
+        endif
+        if 'AS_STATIC_LIB' in config_host
+            emulator = static_library(exe_name, exe['sources'],
+                   c_args: c_args,
+                   dependencies: arch_deps + deps + exe['dependencies'],
+                   objects: lib.extract_all_objects(recursive: true))
+        endif
     endif
 
     if targetos == 'darwin'

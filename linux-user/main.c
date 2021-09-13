@@ -654,7 +654,7 @@ int libafl_qemu_run(void)
 
 //// --- End LibAFL code ---
 
-#ifdef AS_SHARED_LIB
+#ifdef AS_LIB
 int qemu_user_init(int argc, char **argv, char **envp);
 __attribute__((section(".init_array"))) void *_qemu_user_init_ctr = &qemu_user_init;
 

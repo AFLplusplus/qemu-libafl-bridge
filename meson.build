@@ -2656,15 +2656,26 @@ foreach target : target_dirs
       exe_name += '-unsigned'
     endif
 
-    emulator = executable(exe_name, exe['sources'],
+    if 'AS_SHARED_LIB' in config_host
+        emulator = shared_library(exe_name, exe['sources'],
                install: true,
                c_args: c_args,
                dependencies: arch_deps + deps + exe['dependencies'],
                objects: lib.extract_all_objects(recursive: true),
                link_language: link_language,
                link_depends: [block_syms, qemu_syms] + exe.get('link_depends', []),
-               link_args: link_args,
-               gui_app: exe['gui'])
+               link_args: link_args)
+    else
+        emulator = executable(exe_name, exe['sources'],
+                   install: true,
+                   c_args: c_args,
+                   dependencies: arch_deps + deps + exe['dependencies'],
+                   objects: lib.extract_all_objects(recursive: true),
+                   link_language: link_language,
+                   link_depends: [block_syms, qemu_syms] + exe.get('link_depends', []),
+                   link_args: link_args,
+                   gui_app: exe['gui'])
+    endif
 
     if targetos == 'darwin'
       icon = 'pc-bios/qemu.rsrc'

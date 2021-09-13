@@ -835,6 +835,7 @@ if test "$mingw32" = "yes" ; then
 fi
 
 werror=""
+as_shared_lib="no"
 
 for opt do
   optarg=$(expr "x$opt" : 'x[^=]*=\(.*\)')
@@ -1582,9 +1583,9 @@ for opt do
   --disable-slirp-smbd) slirp_smbd=no
   ;;
   --as-shared-lib)
-      QEMU_LDFLAGS="$QEMU_LDFLAGS -shared"
-      QEMU_CFLAGS="QEMU_CFLAGS -fPIC -DAS_SHARED_LIB=1"
-      QEMU_CXXFLAGS="QEMU_CXXFLAGS -fPIC -DAS_SHARED_LIB=1"
+      as_shared_lib="yes"
+      QEMU_CFLAGS="$QEMU_CFLAGS -fPIC -DAS_SHARED_LIB=1"
+      QEMU_CXXFLAGS="$QEMU_CXXFLAGS -fPIC -DAS_SHARED_LIB=1"
   ;;
   *)
       echo "ERROR: unknown option $opt"
@@ -4921,6 +4922,10 @@ fi
 
 if test "$secret_keyring" = "yes" ; then
   echo "CONFIG_SECRET_KEYRING=y" >> $config_host_mak
+fi
+
+if test "$as_shared_lib" = "yes" ; then
+  echo "AS_SHARED_LIB=y" >> $config_host_mak
 fi
 
 echo "ROMS=$roms" >> $config_host_mak

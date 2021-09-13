@@ -656,7 +656,7 @@ int libafl_qemu_run(void)
 
 #ifdef AS_SHARED_LIB
 int qemu_user_init(int argc, char **argv, char **envp);
-__attribute__((section(".init_array"))) static void *ctr = &qemu_user_init;
+__attribute__((section(".init_array"))) void *_qemu_user_init_ctr = &qemu_user_init;
 
 int qemu_user_init(int argc, char **argv, char **envp)
 #else

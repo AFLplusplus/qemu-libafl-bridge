@@ -655,9 +655,6 @@ int libafl_qemu_run(void)
 //// --- End LibAFL code ---
 
 #ifdef AS_LIB
-int qemu_user_init(int argc, char **argv, char **envp);
-__attribute__((section(".init_array"))) void *_qemu_user_init_ctr = &qemu_user_init;
-
 int qemu_user_init(int argc, char **argv, char **envp)
 #else
 int main(int argc, char **argv, char **envp)
@@ -934,10 +931,12 @@ int main(int argc, char **argv, char **envp)
 
     libafl_qemu_env = env;
 
+#ifndef AS_LIB
     return libafl_qemu_main();
+#endif
     
     //// --- End LibAFL code ---
 
     /* never exits */
-    // return 0;
+    return 0;
 }

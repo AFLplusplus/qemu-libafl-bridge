@@ -1801,7 +1801,8 @@ if capstone_opt == 'internal'
                                build_by_default: false,
                                sources: capstone_files,
                                c_args: capstone_cargs,
-                               include_directories: 'capstone/include')
+                               include_directories: 'capstone/include',
+                               pic: 'AS_SHARED_LIB' in config_host)
   capstone = declare_dependency(link_with: libcapstone,
                                 include_directories: 'capstone/include/capstone')
 endif
@@ -2209,7 +2210,8 @@ util_ss.add_all(trace_ss)
 util_ss = util_ss.apply(config_all, strict: false)
 libqemuutil = static_library('qemuutil',
                              sources: util_ss.sources() + stub_ss.sources() + genh,
-                             dependencies: [util_ss.dependencies(), libm, threads, glib, socket, malloc, pixman])
+                             dependencies: [util_ss.dependencies(), libm, threads, glib, socket, malloc, pixman],
+                             pic: 'AS_SHARED_LIB' in config_host)
 qemuutil = declare_dependency(link_with: libqemuutil,
                               sources: genh + version_res)
 
@@ -2419,7 +2421,8 @@ qemu_syms = custom_target('qemu.syms', output: 'qemu.syms',
 qom_ss = qom_ss.apply(config_host, strict: false)
 libqom = static_library('qom', qom_ss.sources() + genh,
                         dependencies: [qom_ss.dependencies()],
-                        name_suffix: 'fa')
+                        name_suffix: 'fa',
+                        pic: 'AS_SHARED_LIB' in config_host)
 
 qom = declare_dependency(link_whole: libqom)
 
@@ -2427,7 +2430,8 @@ authz_ss = authz_ss.apply(config_host, strict: false)
 libauthz = static_library('authz', authz_ss.sources() + genh,
                           dependencies: [authz_ss.dependencies()],
                           name_suffix: 'fa',
-                          build_by_default: false)
+                          build_by_default: false,
+                          pic: 'AS_SHARED_LIB' in config_host)
 
 authz = declare_dependency(link_whole: libauthz,
                            dependencies: qom)
@@ -2436,7 +2440,8 @@ crypto_ss = crypto_ss.apply(config_host, strict: false)
 libcrypto = static_library('crypto', crypto_ss.sources() + genh,
                            dependencies: [crypto_ss.dependencies()],
                            name_suffix: 'fa',
-                           build_by_default: false)
+                           build_by_default: false,
+                           pic: 'AS_SHARED_LIB' in config_host)
 
 crypto = declare_dependency(link_whole: libcrypto,
                             dependencies: [authz, qom])
@@ -2446,15 +2451,18 @@ libio = static_library('io', io_ss.sources() + genh,
                        dependencies: [io_ss.dependencies()],
                        link_with: libqemuutil,
                        name_suffix: 'fa',
-                       build_by_default: false)
+                       build_by_default: false,
+                       pic: 'AS_SHARED_LIB' in config_host)
 
 io = declare_dependency(link_whole: libio, dependencies: [crypto, qom])
 
 libmigration = static_library('migration', sources: migration_files + genh,
                               name_suffix: 'fa',
-                              build_by_default: false)
+                              build_by_default: false,
+                              pic: 'AS_SHARED_LIB' in config_host)
 migration = declare_dependency(link_with: libmigration,
-                               dependencies: [zlib, qom, io])
+                               dependencies: [zlib, qom, io],
+                               pic: 'AS_SHARED_LIB' in config_host)
 softmmu_ss.add(migration)
 
 block_ss = block_ss.apply(config_host, strict: false)
@@ -2462,7 +2470,8 @@ libblock = static_library('block', block_ss.sources() + genh,
                           dependencies: block_ss.dependencies(),
                           link_depends: block_syms,
                           name_suffix: 'fa',
-                          build_by_default: false)
+                          build_by_default: false,
+                          pic: 'AS_SHARED_LIB' in config_host)
 
 block = declare_dependency(link_whole: [libblock],
                            link_args: '@block.syms',
@@ -2472,7 +2481,8 @@ blockdev_ss = blockdev_ss.apply(config_host, strict: false)
 libblockdev = static_library('blockdev', blockdev_ss.sources() + genh,
                              dependencies: blockdev_ss.dependencies(),
                              name_suffix: 'fa',
-                             build_by_default: false)
+                             build_by_default: false,
+                             pic: 'AS_SHARED_LIB' in config_host)
 
 blockdev = declare_dependency(link_whole: [libblockdev],
                               dependencies: [block])
@@ -2481,20 +2491,23 @@ qmp_ss = qmp_ss.apply(config_host, strict: false)
 libqmp = static_library('qmp', qmp_ss.sources() + genh,
                         dependencies: qmp_ss.dependencies(),
                         name_suffix: 'fa',
-                        build_by_default: false)
+                        build_by_default: false,
+                        pic: 'AS_SHARED_LIB' in config_host)
 
 qmp = declare_dependency(link_whole: [libqmp])
 
 libchardev = static_library('chardev', chardev_ss.sources() + genh,
                             name_suffix: 'fa',
                             dependencies: [gnutls],
-                            build_by_default: false)
+                            build_by_default: false,
+                            pic: 'AS_SHARED_LIB' in config_host)
 
 chardev = declare_dependency(link_whole: libchardev)
 
 libhwcore = static_library('hwcore', sources: hwcore_files + genh,
                            name_suffix: 'fa',
-                           build_by_default: false)
+                           build_by_default: false,
+                           pic: 'AS_SHARED_LIB' in config_host)
 hwcore = declare_dependency(link_whole: libhwcore)
 common_ss.add(hwcore)
 
@@ -2522,7 +2535,8 @@ common_all = static_library('common',
                             sources: common_all.sources() + genh,
                             implicit_include_directories: false,
                             dependencies: common_all.dependencies(),
-                            name_suffix: 'fa')
+                            name_suffix: 'fa',
+                            pic: 'AS_SHARED_LIB' in config_host)
 
 feature_to_c = find_program('scripts/feature_to_c.sh')
 
@@ -2619,7 +2633,8 @@ foreach target : target_dirs
                  include_directories: target_inc,
                  c_args: c_args,
                  build_by_default: false,
-                 name_suffix: 'fa')
+                 name_suffix: 'fa',
+                 pic: 'AS_SHARED_LIB' in config_host)
 
   if target.endswith('-softmmu')
     execs = [{

@@ -264,6 +264,7 @@ struct BusState {
     HotplugHandler *hotplug_handler;
     int max_index;
     bool realized;
+    bool full;
     int num_children;
 
     /*
@@ -597,6 +598,10 @@ void qdev_init_gpio_in(DeviceState *dev, qemu_irq_handler handler, int n);
  *
  * See qdev_connect_gpio_out() for how code that uses such a device
  * can connect to one of its output GPIO lines.
+ *
+ * There is no need to release the @pins allocated array because it
+ * will be automatically released when @dev calls its instance_finalize()
+ * handler.
  */
 void qdev_init_gpio_out(DeviceState *dev, qemu_irq *pins, int n);
 /**
@@ -796,6 +801,29 @@ void qbus_set_bus_hotplug_handler(BusState *bus);
 static inline bool qbus_is_hotpluggable(BusState *bus)
 {
    return bus->hotplug_handler;
+}
+
+/**
+ * qbus_mark_full: Mark this bus as full, so no more devices can be attached
+ * @bus: Bus to mark as full
+ *
+ * By default, QEMU will allow devices to be plugged into a bus up
+ * to the bus class's device count limit. Calling this function
+ * marks a particular bus as full, so that no more devices can be
+ * plugged into it. In particular this means that the bus will not
+ * be considered as a candidate for plugging in devices created by
+ * the user on the commandline or via the monitor.
+ * If a machine has multiple buses of a given type, such as I2C,
+ * where some of those buses in the real hardware are used only for
+ * internal devices and some are exposed via expansion ports, you
+ * can use this function to mark the internal-only buses as full
+ * after you have created all their internal devices. Then user
+ * created devices will appear on the expansion-port bus where
+ * guest software expects them.
+ */
+static inline void qbus_mark_full(BusState *bus)
+{
+    bus->full = true;
 }
 
 void device_listener_register(DeviceListener *listener);

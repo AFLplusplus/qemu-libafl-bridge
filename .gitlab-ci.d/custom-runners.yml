@@ -17,7 +17,6 @@ variables:
 # setup by the scripts/ci/setup/build-environment.yml task
 # "Install basic packages to build QEMU on Ubuntu 18.04/20.04"
 ubuntu-18.04-s390x-all-linux-static:
- allow_failure: true
  needs: []
  stage: build
  tags:
@@ -37,7 +36,6 @@ ubuntu-18.04-s390x-all-linux-static:
  - make --output-sync -j`nproc` check-tcg V=1
 
 ubuntu-18.04-s390x-all:
- allow_failure: true
  needs: []
  stage: build
  tags:
@@ -54,7 +52,6 @@ ubuntu-18.04-s390x-all:
  - make --output-sync -j`nproc` check V=1
 
 ubuntu-18.04-s390x-alldbg:
- allow_failure: true
  needs: []
  stage: build
  tags:
@@ -62,7 +59,11 @@ ubuntu-18.04-s390x-alldbg:
  - s390x
  rules:
  - if: '$CI_PROJECT_NAMESPACE == "qemu-project" && $CI_COMMIT_BRANCH =~ /^staging/'
+   when: manual
+   allow_failure: true
  - if: "$S390X_RUNNER_AVAILABLE"
+   when: manual
+   allow_failure: true
  script:
  - mkdir build
  - cd build
@@ -72,7 +73,6 @@ ubuntu-18.04-s390x-alldbg:
  - make --output-sync -j`nproc` check V=1
 
 ubuntu-18.04-s390x-clang:
- allow_failure: true
  needs: []
  stage: build
  tags:
@@ -81,8 +81,10 @@ ubuntu-18.04-s390x-clang:
  rules:
  - if: '$CI_PROJECT_NAMESPACE == "qemu-project" && $CI_COMMIT_BRANCH =~ /^staging/'
    when: manual
+   allow_failure: true
  - if: "$S390X_RUNNER_AVAILABLE"
    when: manual
+   allow_failure: true
  script:
  - mkdir build
  - cd build
@@ -91,7 +93,6 @@ ubuntu-18.04-s390x-clang:
  - make --output-sync -j`nproc` check V=1
 
 ubuntu-18.04-s390x-tci:
- allow_failure: true
  needs: []
  stage: build
  tags:
@@ -99,7 +100,11 @@ ubuntu-18.04-s390x-tci:
  - s390x
  rules:
  - if: '$CI_PROJECT_NAMESPACE == "qemu-project" && $CI_COMMIT_BRANCH =~ /^staging/'
+   when: manual
+   allow_failure: true
  - if: "$S390X_RUNNER_AVAILABLE"
+   when: manual
+   allow_failure: true
  script:
  - mkdir build
  - cd build
@@ -107,7 +112,6 @@ ubuntu-18.04-s390x-tci:
  - make --output-sync -j`nproc`
 
 ubuntu-18.04-s390x-notcg:
- allow_failure: true
  needs: []
  stage: build
  tags:
@@ -116,8 +120,10 @@ ubuntu-18.04-s390x-notcg:
  rules:
  - if: '$CI_PROJECT_NAMESPACE == "qemu-project" && $CI_COMMIT_BRANCH =~ /^staging/'
    when: manual
+   allow_failure: true
  - if: "$S390X_RUNNER_AVAILABLE"
    when: manual
+   allow_failure: true
  script:
  - mkdir build
  - cd build
@@ -129,7 +135,6 @@ ubuntu-18.04-s390x-notcg:
 # setup by the scripts/ci/setup/qemu/build-environment.yml task
 # "Install basic packages to build QEMU on Ubuntu 18.04/20.04"
 ubuntu-20.04-aarch64-all-linux-static:
- allow_failure: true
  needs: []
  stage: build
  tags:
@@ -149,7 +154,6 @@ ubuntu-20.04-aarch64-all-linux-static:
  - make --output-sync -j`nproc` check-tcg V=1
 
 ubuntu-20.04-aarch64-all:
- allow_failure: true
  needs: []
  stage: build
  tags:
@@ -157,7 +161,11 @@ ubuntu-20.04-aarch64-all:
  - aarch64
  rules:
  - if: '$CI_PROJECT_NAMESPACE == "qemu-project" && $CI_COMMIT_BRANCH =~ /^staging/'
+   when: manual
+   allow_failure: true
  - if: "$AARCH64_RUNNER_AVAILABLE"
+   when: manual
+   allow_failure: true
  script:
  - mkdir build
  - cd build
@@ -166,7 +174,6 @@ ubuntu-20.04-aarch64-all:
  - make --output-sync -j`nproc` check V=1
 
 ubuntu-20.04-aarch64-alldbg:
- allow_failure: true
  needs: []
  stage: build
  tags:
@@ -184,7 +191,6 @@ ubuntu-20.04-aarch64-alldbg:
  - make --output-sync -j`nproc` check V=1
 
 ubuntu-20.04-aarch64-clang:
- allow_failure: true
  needs: []
  stage: build
  tags:
@@ -193,8 +199,10 @@ ubuntu-20.04-aarch64-clang:
  rules:
  - if: '$CI_PROJECT_NAMESPACE == "qemu-project" && $CI_COMMIT_BRANCH =~ /^staging/'
    when: manual
+   allow_failure: true
  - if: "$AARCH64_RUNNER_AVAILABLE"
    when: manual
+   allow_failure: true
  script:
  - mkdir build
  - cd build
@@ -203,7 +211,6 @@ ubuntu-20.04-aarch64-clang:
  - make --output-sync -j`nproc` check V=1
 
 ubuntu-20.04-aarch64-tci:
- allow_failure: true
  needs: []
  stage: build
  tags:
@@ -211,7 +218,11 @@ ubuntu-20.04-aarch64-tci:
  - aarch64
  rules:
  - if: '$CI_PROJECT_NAMESPACE == "qemu-project" && $CI_COMMIT_BRANCH =~ /^staging/'
+   when: manual
+   allow_failure: true
  - if: "$AARCH64_RUNNER_AVAILABLE"
+   when: manual
+   allow_failure: true
  script:
  - mkdir build
  - cd build
@@ -219,7 +230,6 @@ ubuntu-20.04-aarch64-tci:
  - make --output-sync -j`nproc`
 
 ubuntu-20.04-aarch64-notcg:
- allow_failure: true
  needs: []
  stage: build
  tags:
@@ -228,8 +238,10 @@ ubuntu-20.04-aarch64-notcg:
  rules:
  - if: '$CI_PROJECT_NAMESPACE == "qemu-project" && $CI_COMMIT_BRANCH =~ /^staging/'
    when: manual
+   allow_failure: true
  - if: "$AARCH64_RUNNER_AVAILABLE"
    when: manual
+   allow_failure: true
  script:
  - mkdir build
  - cd build

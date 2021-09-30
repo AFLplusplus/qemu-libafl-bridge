@@ -619,7 +619,7 @@ static int parse_args(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
-    exec_path = argv[optind];
+    exec_path = strdup(argv[optind]);
 
     return optind;
 }

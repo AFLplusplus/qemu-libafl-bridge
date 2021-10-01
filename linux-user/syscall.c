@@ -762,6 +762,23 @@ void target_set_brk(abi_ulong new_brk)
     brk_page = HOST_PAGE_ALIGN(target_brk);
 }
 
+//// --- Begin LibAFL code ---
+
+uint64_t libafl_get_brk(void);
+uint64_t libafl_set_brk(uint64_t new_brk);
+
+uint64_t libafl_get_brk(void) {
+  return (uint64_t)target_brk;
+}
+
+uint64_t libafl_set_brk(uint64_t new_brk) {
+  uint64_t old_brk = (uint64_t)target_brk;
+  target_brk = (abi_ulong)new_brk;
+  return old_brk;
+}
+
+//// --- End LibAFL code ---
+
 //#define DEBUGF_BRK(message, args...) do { fprintf(stderr, (message), ## args); } while (0)
 #define DEBUGF_BRK(message, args...)
 

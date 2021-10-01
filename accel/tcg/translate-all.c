@@ -172,13 +172,13 @@ void libafl_gen_read(TCGv addr, MemOp ot)
             libafl_helper_table_add(&libafl_exec_read_hookN_info);
         }
         TCGv_i64 tmp0 = tcg_const_i64(libafl_id);
-        TCGTemp *tmp1[3] = { tcgv_i64_temp(tmp0),
+        TCGTemp *tmp1[2] = { tcgv_i64_temp(tmp0),
 #if TARGET_LONG_BITS == 32
                              tcgv_i32_temp(addr) };
 #else
                              tcgv_i64_temp(addr) };
 #endif
-        tcg_gen_callN(func, NULL, 3, tmp1);
+        tcg_gen_callN(func, NULL, 2, tmp1);
         tcg_temp_free_i64(tmp0);
     }
 }
@@ -260,13 +260,13 @@ void libafl_gen_write(TCGv addr, MemOp ot)
             libafl_helper_table_add(&libafl_exec_write_hookN_info);
         }
         TCGv_i64 tmp0 = tcg_const_i64(libafl_id);
-        TCGTemp *tmp1[3] = { tcgv_i64_temp(tmp0),
+        TCGTemp *tmp1[2] = { tcgv_i64_temp(tmp0),
 #if TARGET_LONG_BITS == 32
                              tcgv_i32_temp(addr) };
 #else
                              tcgv_i64_temp(addr) };
 #endif
-        tcg_gen_callN(func, NULL, 3, tmp1);
+        tcg_gen_callN(func, NULL, 2, tmp1);
         tcg_temp_free_i64(tmp0);
     }
 }

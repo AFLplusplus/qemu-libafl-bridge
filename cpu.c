@@ -42,12 +42,27 @@
 
 //// --- Begin LibAFL code ---
 
+#include "tcg/tcg-op.h"
+#include "tcg/tcg-internal.h"
+#include "exec/helper-head.h"
+
 struct libafl_breakpoint {
     target_ulong addr;
     struct libafl_breakpoint* next;
 };
 
 struct libafl_breakpoint* libafl_qemu_breakpoints = NULL;
+
+struct libafl_hook {
+    target_ulong addr;
+    void (*callback)(void);
+    TCGHelperInfo helper_info;
+    struct libafl_hook* next;
+};
+
+struct libafl_hook* libafl_qemu_hooks = NULL;
+
+void libafl_helper_table_add(TCGHelperInfo* info);
 
 static GByteArray *libafl_qemu_mem_buf = NULL;
 
@@ -56,6 +71,8 @@ int libafl_qemu_read_reg(int reg, uint8_t* val);
 int libafl_qemu_num_regs(void);
 int libafl_qemu_set_breakpoint(uint64_t addr);
 int libafl_qemu_remove_breakpoint(uint64_t addr);
+int libafl_qemu_insert_hook(uint64_t addr, void (*callback)(void));
+int libafl_qemu_remove_hook(uint64_t addr);
 
 int libafl_qemu_write_reg(int reg, uint8_t* val)
 {
@@ -126,6 +143,7 @@ int libafl_qemu_set_breakpoint(uint64_t addr)
 int libafl_qemu_remove_breakpoint(uint64_t addr)
 {
     CPUState *cpu;
+    int r = 0;
 
     target_ulong pc = (target_ulong) addr;
     struct libafl_breakpoint** bp = &libafl_qemu_breakpoints;
@@ -136,11 +154,54 @@ int libafl_qemu_remove_breakpoint(uint64_t addr)
             }
 
             *bp = (*bp)->next;
-            return 1;
+            r = 1;
         }
         bp = &(*bp)->next;
     }
-    return 0;
+    return r;
+}
+
+int libafl_qemu_insert_hook(uint64_t addr, void (*callback)(void))
+{
+    CPUState *cpu;
+
+    target_ulong pc = (target_ulong) addr;
+    CPU_FOREACH(cpu) {
+        libafl_breakpoint_invalidate(cpu, pc);
+    }
+
+    struct libafl_hook* hk = malloc(sizeof(struct libafl_hook));
+    hk->addr = pc;
+    hk->callback = callback;
+    hk->helper_info.func = callback;
+    hk->helper_info.name = "libafl_hook";
+    hk->helper_info.flags = dh_callflag(void);
+    hk->helper_info.typemask = dh_typemask(void, 0);
+    hk->next = libafl_qemu_hooks;
+    libafl_qemu_hooks = hk;
+    libafl_helper_table_add(&hk->helper_info);
+    return 1;
+}
+
+int libafl_qemu_remove_hook(uint64_t addr)
+{
+    CPUState *cpu;
+    int r = 0;
+
+    target_ulong pc = (target_ulong) addr;
+    struct libafl_hook** hk = &libafl_qemu_hooks;
+    while (*hk) {
+        if ((*hk)->addr == pc) {
+            CPU_FOREACH(cpu) {
+                libafl_breakpoint_invalidate(cpu, pc);
+            }
+
+            *hk = (*hk)->next;
+            r = 1;
+        }
+        hk = &(*hk)->next;
+    }
+    return r;
 }
 
 //// --- End LibAFL code ---

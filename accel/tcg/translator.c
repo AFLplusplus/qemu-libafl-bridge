@@ -20,12 +20,23 @@
 
 //// --- Begin LibAFL code ---
 
+#include "tcg/tcg-internal.h"
+
 struct libafl_breakpoint {
     target_ulong addr;
     struct libafl_breakpoint* next;
 };
 
 extern struct libafl_breakpoint* libafl_qemu_breakpoints;
+
+struct libafl_hook {
+    target_ulong addr;
+    void (*callback)(void);
+    TCGHelperInfo helper_info;
+    struct libafl_hook* next;
+};
+
+extern struct libafl_hook* libafl_qemu_hooks;
 
 //// --- End LibAFL code ---
 
@@ -108,6 +119,14 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
                 gen_helper_libafl_qemu_handle_breakpoint(cpu_env);
             }
             bp = bp->next;
+        }
+
+        struct libafl_hook* hk = libafl_qemu_hooks;
+        while (hk) {
+            if (hk->addr == db->pc_next) {
+                tcg_gen_callN(hk->callback, NULL, 0, NULL);
+            }
+            hk = hk->next;
         }
 
         //// --- End LibAFL code ---

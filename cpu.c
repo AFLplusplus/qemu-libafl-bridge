@@ -55,7 +55,7 @@ struct libafl_breakpoint* libafl_qemu_breakpoints = NULL;
 
 struct libafl_hook {
     target_ulong addr;
-    void (*callback)(void);
+    void (*callback)(uint64_t);
     uint64_t value;
     TCGHelperInfo helper_info;
     struct libafl_hook* next;
@@ -72,7 +72,7 @@ int libafl_qemu_read_reg(int reg, uint8_t* val);
 int libafl_qemu_num_regs(void);
 int libafl_qemu_set_breakpoint(uint64_t addr);
 int libafl_qemu_remove_breakpoint(uint64_t addr);
-int libafl_qemu_set_hook(uint64_t addr, void (*callback)(void), uint64_t value);
+int libafl_qemu_set_hook(uint64_t addr, void (*callback)(uint64_t), uint64_t value);
 int libafl_qemu_remove_hook(uint64_t addr);
 
 int libafl_qemu_write_reg(int reg, uint8_t* val)
@@ -163,7 +163,7 @@ int libafl_qemu_remove_breakpoint(uint64_t addr)
     return r;
 }
 
-int libafl_qemu_set_hook(uint64_t addr, void (*callback)(void), uint64_t value)
+int libafl_qemu_set_hook(uint64_t addr, void (*callback)(uint64_t), uint64_t value)
 {
     CPUState *cpu;
 

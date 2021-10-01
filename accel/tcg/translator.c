@@ -31,7 +31,7 @@ extern struct libafl_breakpoint* libafl_qemu_breakpoints;
 
 struct libafl_hook {
     target_ulong addr;
-    void (*callback)(void);
+    void (*callback)(uint64_t);
     uint64_t value;
     TCGHelperInfo helper_info;
     struct libafl_hook* next;

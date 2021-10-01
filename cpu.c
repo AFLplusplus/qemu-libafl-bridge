@@ -155,8 +155,9 @@ int libafl_qemu_remove_breakpoint(uint64_t addr)
 
             *bp = (*bp)->next;
             r = 1;
+        } else {
+            bp = &(*bp)->next;
         }
-        bp = &(*bp)->next;
     }
     return r;
 }
@@ -198,8 +199,9 @@ int libafl_qemu_remove_hook(uint64_t addr)
 
             *hk = (*hk)->next;
             r = 1;
+        } else {
+            hk = &(*hk)->next;
         }
-        hk = &(*hk)->next;
     }
     return r;
 }

@@ -56,6 +56,7 @@ struct libafl_breakpoint* libafl_qemu_breakpoints = NULL;
 struct libafl_hook {
     target_ulong addr;
     void (*callback)(void);
+    uint64_t value;
     TCGHelperInfo helper_info;
     struct libafl_hook* next;
 };
@@ -71,7 +72,7 @@ int libafl_qemu_read_reg(int reg, uint8_t* val);
 int libafl_qemu_num_regs(void);
 int libafl_qemu_set_breakpoint(uint64_t addr);
 int libafl_qemu_remove_breakpoint(uint64_t addr);
-int libafl_qemu_insert_hook(uint64_t addr, void (*callback)(void));
+int libafl_qemu_set_hook(uint64_t addr, void (*callback)(void), uint64_t value);
 int libafl_qemu_remove_hook(uint64_t addr);
 
 int libafl_qemu_write_reg(int reg, uint8_t* val)
@@ -162,7 +163,7 @@ int libafl_qemu_remove_breakpoint(uint64_t addr)
     return r;
 }
 
-int libafl_qemu_insert_hook(uint64_t addr, void (*callback)(void))
+int libafl_qemu_set_hook(uint64_t addr, void (*callback)(void), uint64_t value)
 {
     CPUState *cpu;
 
@@ -174,10 +175,11 @@ int libafl_qemu_insert_hook(uint64_t addr, void (*callback)(void))
     struct libafl_hook* hk = malloc(sizeof(struct libafl_hook));
     hk->addr = pc;
     hk->callback = callback;
+    hk->value = value;
     hk->helper_info.func = callback;
     hk->helper_info.name = "libafl_hook";
     hk->helper_info.flags = dh_callflag(void);
-    hk->helper_info.typemask = dh_typemask(void, 0);
+    hk->helper_info.typemask = dh_typemask(void, 0) | dh_typemask(i64, 1);
     hk->next = libafl_qemu_hooks;
     libafl_qemu_hooks = hk;
     libafl_helper_table_add(&hk->helper_info);

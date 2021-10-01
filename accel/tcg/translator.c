@@ -32,6 +32,7 @@ extern struct libafl_breakpoint* libafl_qemu_breakpoints;
 struct libafl_hook {
     target_ulong addr;
     void (*callback)(void);
+    uint64_t value;
     TCGHelperInfo helper_info;
     struct libafl_hook* next;
 };
@@ -113,20 +114,23 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
 
         //// --- Begin LibAFL code ---
 
+        struct libafl_hook* hk = libafl_qemu_hooks;
+        while (hk) {
+            if (hk->addr == db->pc_next) {
+                TCGv_i64 tmp0 = tcg_const_i64(hk->value);
+                TCGTemp *tmp1[1] = { tcgv_i64_temp(tmp0) };
+                tcg_gen_callN(hk->callback, NULL, 1, tmp1);
+                tcg_temp_free_i64(tmp0);
+            }
+            hk = hk->next;
+        }
+
         struct libafl_breakpoint* bp = libafl_qemu_breakpoints;
         while (bp) {
             if (bp->addr == db->pc_next) {
                 gen_helper_libafl_qemu_handle_breakpoint(cpu_env);
             }
             bp = bp->next;
-        }
-
-        struct libafl_hook* hk = libafl_qemu_hooks;
-        while (hk) {
-            if (hk->addr == db->pc_next) {
-                tcg_gen_callN(hk->callback, NULL, 0, NULL);
-            }
-            hk = hk->next;
         }
 
         //// --- End LibAFL code ---

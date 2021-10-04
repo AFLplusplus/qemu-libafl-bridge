@@ -63,6 +63,8 @@ struct libafl_hook {
 
 struct libafl_hook* libafl_qemu_hooks = NULL;
 
+CPUArchState *libafl_qemu_env;
+
 void libafl_helper_table_add(TCGHelperInfo* info);
 
 static GByteArray *libafl_qemu_mem_buf = NULL;
@@ -79,7 +81,10 @@ int libafl_qemu_write_reg(int reg, uint8_t* val)
 {
     CPUState *cpu = current_cpu;
     if (!cpu) {
-        return 0;
+        cpu = env_cpu(libafl_qemu_env);
+        if (!cpu) {
+            return 0;
+        }
     }
 
     CPUClass *cc = CPU_GET_CLASS(cpu);
@@ -93,7 +98,10 @@ int libafl_qemu_read_reg(int reg, uint8_t* val)
 {
     CPUState *cpu = current_cpu;
     if (!cpu) {
-        return 0;
+        cpu = env_cpu(libafl_qemu_env);
+        if (!cpu) {
+            return 0;
+        }
     }
 
     if (libafl_qemu_mem_buf == NULL) {
@@ -116,7 +124,10 @@ int libafl_qemu_num_regs(void)
 {
     CPUState *cpu = current_cpu;
     if (!cpu) {
-        return 0;
+        cpu = env_cpu(libafl_qemu_env);
+        if (!cpu) {
+            return 0;
+        }
     }
 
     CPUClass *cc = CPU_GET_CLASS(cpu);

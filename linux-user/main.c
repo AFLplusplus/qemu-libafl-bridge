@@ -630,7 +630,7 @@ uint64_t libafl_load_addr(void);
 int libafl_qemu_main(void);
 int libafl_qemu_run(void);
 
-static CPUArchState *libafl_qemu_env;
+extern CPUArchState *libafl_qemu_env;
 
 struct image_info libafl_image_info;
 

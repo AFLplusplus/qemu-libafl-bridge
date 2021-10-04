@@ -63,7 +63,7 @@ struct libafl_hook {
 
 struct libafl_hook* libafl_qemu_hooks = NULL;
 
-CPUArchState *libafl_qemu_env;
+__thread CPUArchState *libafl_qemu_env;
 
 void libafl_helper_table_add(TCGHelperInfo* info);
 

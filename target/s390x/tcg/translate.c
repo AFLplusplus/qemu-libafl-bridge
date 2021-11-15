@@ -138,6 +138,7 @@ struct DisasFields {
 struct DisasContext {
     DisasContextBase base;
     const DisasInsn *insn;
+    TCGOp *insn_start;
     DisasFields fields;
     uint64_t ex_value;
     /*
@@ -148,7 +149,6 @@ struct DisasContext {
     uint64_t pc_tmp;
     uint32_t ilen;
     enum cc_op cc_op;
-    bool do_debug;
 };
 
 /* Information carried about a condition to be evaluated.  */
@@ -6380,8 +6380,8 @@ static DisasJumpType translate_one(CPUS390XState *env, DisasContext *s)
     /* Search for the insn in the table.  */
     insn = extract_insn(env, s);
 
-    /* Emit insn_start now that we know the ILEN.  */
-    tcg_gen_insn_start(s->base.pc_next, s->cc_op, s->ilen);
+    /* Update insn_start now that we know the ILEN.  */
+    tcg_set_insn_start_param(s->insn_start, 2, s->ilen);
 
     /* Not found means unimplemented/illegal opcode.  */
     if (insn == NULL) {
@@ -6543,7 +6543,6 @@ static void s390x_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
 
     dc->cc_op = CC_OP_DYNAMIC;
     dc->ex_value = dc->base.tb->cs_base;
-    dc->do_debug = dc->base.singlestep_enabled;
 }
 
 static void s390x_tr_tb_start(DisasContextBase *db, CPUState *cs)
@@ -6552,6 +6551,11 @@ static void s390x_tr_tb_start(DisasContextBase *db, CPUState *cs)
 
 static void s390x_tr_insn_start(DisasContextBase *dcbase, CPUState *cs)
 {
+    DisasContext *dc = container_of(dcbase, DisasContext, base);
+
+    /* Delay the set of ilen until we've read the insn. */
+    tcg_gen_insn_start(dc->base.pc_next, dc->cc_op, 0);
+    dc->insn_start = tcg_last_op();
 }
 
 static void s390x_tr_translate_insn(DisasContextBase *dcbase, CPUState *cs)
@@ -6590,10 +6594,8 @@ static void s390x_tr_tb_stop(DisasContextBase *dcbase, CPUState *cs)
         /* FALLTHRU */
     case DISAS_PC_CC_UPDATED:
         /* Exit the TB, either by raising a debug exception or by return.  */
-        if (dc->do_debug) {
-            gen_exception(EXCP_DEBUG);
-        } else if ((dc->base.tb->flags & FLAG_MASK_PER) ||
-                   dc->base.is_jmp == DISAS_PC_STALE_NOCHAIN) {
+        if ((dc->base.tb->flags & FLAG_MASK_PER) ||
+             dc->base.is_jmp == DISAS_PC_STALE_NOCHAIN) {
             tcg_gen_exit_tb(NULL, 0);
         } else {
             tcg_gen_lookup_and_goto_ptr();

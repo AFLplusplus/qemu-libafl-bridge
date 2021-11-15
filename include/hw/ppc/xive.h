@@ -286,6 +286,30 @@ uint8_t xive_esb_set(uint8_t *pq, uint8_t value);
 uint8_t xive_source_esb_get(XiveSource *xsrc, uint32_t srcno);
 uint8_t xive_source_esb_set(XiveSource *xsrc, uint32_t srcno, uint8_t pq);
 
+/*
+ * Source status helpers
+ */
+static inline void xive_source_set_status(XiveSource *xsrc, uint32_t srcno,
+                                          uint8_t status, bool enable)
+{
+    if (enable) {
+        xsrc->status[srcno] |= status;
+    } else {
+        xsrc->status[srcno] &= ~status;
+    }
+}
+
+static inline void xive_source_set_asserted(XiveSource *xsrc, uint32_t srcno,
+                                            bool enable)
+{
+    xive_source_set_status(xsrc, srcno, XIVE_STATUS_ASSERTED, enable);
+}
+
+static inline bool xive_source_is_asserted(XiveSource *xsrc, uint32_t srcno)
+{
+    return xsrc->status[srcno] & XIVE_STATUS_ASSERTED;
+}
+
 void xive_source_pic_print_info(XiveSource *xsrc, uint32_t offset,
                                 Monitor *mon);
 
@@ -334,6 +358,11 @@ struct XiveTCTX {
 
     XivePresenter *xptr;
 };
+
+static inline uint32_t xive_tctx_word2(uint8_t *ring)
+{
+    return *((uint32_t *) &ring[TM_WORD2]);
+}
 
 /*
  * XIVE Router
@@ -457,6 +486,17 @@ struct XiveENDSource {
  * and the least favored level 0xFF.
  */
 #define XIVE_PRIORITY_MAX  7
+
+/*
+ * Convert a priority number to an Interrupt Pending Buffer (IPB)
+ * register, which indicates a pending interrupt at the priority
+ * corresponding to the bit number
+ */
+static inline uint8_t xive_priority_to_ipb(uint8_t priority)
+{
+    return priority > XIVE_PRIORITY_MAX ?
+        0 : 1 << (XIVE_PRIORITY_MAX - priority);
+}
 
 /*
  * XIVE Thread Interrupt Management Aera (TIMA)

@@ -236,11 +236,13 @@ int kvmppc_xive_source_reset_one(XiveSource *xsrc, int srcno, Error **errp)
     SpaprXive *xive = SPAPR_XIVE(xsrc->xive);
     uint64_t state = 0;
 
+    trace_kvm_xive_source_reset(srcno);
+
     assert(xive->fd != -1);
 
     if (xive_source_irq_is_lsi(xsrc, srcno)) {
         state |= KVM_XIVE_LEVEL_SENSITIVE;
-        if (xsrc->status[srcno] & XIVE_STATUS_ASSERTED) {
+        if (xive_source_is_asserted(xsrc, srcno)) {
             state |= KVM_XIVE_LEVEL_ASSERTED;
         }
     }
@@ -299,9 +301,7 @@ static uint8_t xive_esb_read(XiveSource *xsrc, int srcno, uint32_t offset)
 
 static void kvmppc_xive_esb_trigger(XiveSource *xsrc, int srcno)
 {
-    uint64_t *addr = xsrc->esb_mmap + xive_source_esb_page(xsrc, srcno);
-
-    *addr = 0x0;
+    xive_esb_rw(xsrc, srcno, 0, 0, true);
 }
 
 uint64_t kvmppc_xive_esb_rw(XiveSource *xsrc, int srcno, uint32_t offset,
@@ -311,8 +311,6 @@ uint64_t kvmppc_xive_esb_rw(XiveSource *xsrc, int srcno, uint32_t offset,
         return xive_esb_rw(xsrc, srcno, offset, data, 1);
     }
 
-    trace_kvm_xive_source_reset(srcno);
-
     /*
      * Special Load EOI handling for LSI sources. Q bit is never set
      * and the interrupt should be re-triggered if the level is still
@@ -321,7 +319,7 @@ uint64_t kvmppc_xive_esb_rw(XiveSource *xsrc, int srcno, uint32_t offset,
     if (xive_source_irq_is_lsi(xsrc, srcno) &&
         offset == XIVE_ESB_LOAD_EOI) {
         xive_esb_read(xsrc, srcno, XIVE_ESB_SET_PQ_00);
-        if (xsrc->status[srcno] & XIVE_STATUS_ASSERTED) {
+        if (xive_source_is_asserted(xsrc, srcno)) {
             kvmppc_xive_esb_trigger(xsrc, srcno);
         }
         return 0;
@@ -359,11 +357,7 @@ void kvmppc_xive_source_set_irq(void *opaque, int srcno, int val)
             return;
         }
     } else {
-        if (val) {
-            xsrc->status[srcno] |= XIVE_STATUS_ASSERTED;
-        } else {
-            xsrc->status[srcno] &= ~XIVE_STATUS_ASSERTED;
-        }
+        xive_source_set_asserted(xsrc, srcno, val);
     }
 
     kvmppc_xive_esb_trigger(xsrc, srcno);

@@ -30,14 +30,12 @@ import struct
 import subprocess
 import sys
 import time
-from typing import (Any, Callable, Dict, Iterable,
+from typing import (Any, Callable, Dict, Iterable, Iterator,
                     List, Optional, Sequence, TextIO, Tuple, Type, TypeVar)
 import unittest
 
 from contextlib import contextmanager
 
-# pylint: disable=import-error, wrong-import-position
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'python'))
 from qemu.machine import qtest
 from qemu.qmp import QMPMessage
 
@@ -109,13 +107,29 @@ if os.environ.get('VALGRIND_QEMU') == "y" and \
 
     qemu_valgrind = ['valgrind', valgrind_logfile, '--error-exitcode=99']
 
-socket_scm_helper = os.environ.get('SOCKET_SCM_HELPER', 'socket_scm_helper')
-
 luks_default_secret_object = 'secret,id=keysec0,data=' + \
                              os.environ.get('IMGKEYSECRET', '')
 luks_default_key_secret_opt = 'key-secret=keysec0'
 
 sample_img_dir = os.environ['SAMPLE_IMG_DIR']
+
+
+@contextmanager
+def change_log_level(
+        logger_name: str, level: int = logging.CRITICAL) -> Iterator[None]:
+    """
+    Utility function for temporarily changing the log level of a logger.
+
+    This can be used to silence errors that are expected or uninteresting.
+    """
+    _logger = logging.getLogger(logger_name)
+    current_level = _logger.level
+    _logger.setLevel(level)
+
+    try:
+        yield
+    finally:
+        _logger.setLevel(current_level)
 
 
 def unarchive_sample_image(sample, fname):
@@ -600,7 +614,6 @@ class VM(qtest.QEMUQtestMachine):
         super().__init__(qemu_prog, qemu_opts, wrapper=wrapper,
                          name=name,
                          base_temp_dir=test_dir,
-                         socket_scm_helper=socket_scm_helper,
                          sock_dir=sock_dir, qmp_timer=timer)
         self._num_drives = 0
 
@@ -608,7 +621,7 @@ class VM(qtest.QEMUQtestMachine):
         super()._post_shutdown()
         if not qemu_valgrind or not self._popen:
             return
-        valgrind_filename =  f"{test_dir}/{self._popen.pid}.valgrind"
+        valgrind_filename = f"{test_dir}/{self._popen.pid}.valgrind"
         if self.exitcode() == 99:
             with open(valgrind_filename, encoding='utf-8') as f:
                 print(f.read())
@@ -1350,8 +1363,9 @@ class ReproducibleStreamWrapper:
 
 class ReproducibleTestRunner(unittest.TextTestRunner):
     def __init__(self, stream: Optional[TextIO] = None,
-             resultclass: Type[unittest.TestResult] = ReproducibleTestResult,
-             **kwargs: Any) -> None:
+                 resultclass: Type[unittest.TestResult] =
+                 ReproducibleTestResult,
+                 **kwargs: Any) -> None:
         rstream = ReproducibleStreamWrapper(stream or sys.stdout)
         super().__init__(stream=rstream,           # type: ignore
                          descriptions=True,

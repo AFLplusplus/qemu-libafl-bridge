@@ -28,6 +28,8 @@
 #include "qapi/qmp/dispatch.h"
 #include "qapi/qmp/qdict.h"
 #include "qapi/qmp/qerror.h"
+#include "qapi/qmp/qstring.h"
+#include "qapi/qobject-input-visitor.h"
 #include "qemu/config-file.h"
 #include "qemu/error-report.h"
 #include "qemu/help_option.h"
@@ -40,6 +42,7 @@
 #include "qemu/cutils.h"
 #include "hw/qdev-properties.h"
 #include "hw/clock.h"
+#include "hw/boards.h"
 
 /*
  * Aliases were a bad idea from the start.  Let's keep them
@@ -162,6 +165,7 @@ static void qdev_print_devinfos(bool show_no_user)
         [DEVICE_CATEGORY_SOUND]   = "Sound",
         [DEVICE_CATEGORY_MISC]    = "Misc",
         [DEVICE_CATEGORY_CPU]     = "CPU",
+        [DEVICE_CATEGORY_WATCHDOG]= "Watchdog",
         [DEVICE_CATEGORY_MAX]     = "Uncategorized",
     };
     GSList *list, *elt;
@@ -192,22 +196,6 @@ static void qdev_print_devinfos(bool show_no_user)
     }
 
     g_slist_free(list);
-}
-
-static int set_property(void *opaque, const char *name, const char *value,
-                        Error **errp)
-{
-    Object *obj = opaque;
-
-    if (strcmp(name, "driver") == 0)
-        return 0;
-    if (strcmp(name, "bus") == 0)
-        return 0;
-
-    if (!object_property_parse(obj, name, value, errp)) {
-        return -1;
-    }
-    return 0;
 }
 
 static const char *find_typename_by_alias(const char *alias)
@@ -266,6 +254,16 @@ static DeviceClass *qdev_get_device_class(const char **driver, Error **errp)
         error_setg(errp, QERR_INVALID_PARAMETER_VALUE, "driver",
                    "a pluggable device type");
         return NULL;
+    }
+
+    if (object_class_dynamic_cast(oc, TYPE_SYS_BUS_DEVICE)) {
+        /* sysbus devices need to be allowed by the machine */
+        MachineClass *mc = MACHINE_CLASS(object_get_class(qdev_get_machine()));
+        if (!device_type_is_dynamic_sysbus(mc, *driver)) {
+            error_setg(errp, QERR_INVALID_PARAMETER_VALUE, "driver",
+                       "a dynamic sysbus device type for the machine");
+            return NULL;
+        }
     }
 
     return dc;
@@ -578,32 +576,49 @@ static BusState *qbus_find(const char *path, Error **errp)
     return bus;
 }
 
-void qdev_set_id(DeviceState *dev, const char *id)
+/* Takes ownership of @id, will be freed when deleting the device */
+const char *qdev_set_id(DeviceState *dev, char *id, Error **errp)
 {
-    if (id) {
-        dev->id = id;
-    }
+    ObjectProperty *prop;
 
-    if (dev->id) {
-        object_property_add_child(qdev_get_peripheral(), dev->id,
-                                  OBJECT(dev));
+    assert(!dev->id && !dev->realized);
+
+    /*
+     * object_property_[try_]add_child() below will assert the device
+     * has no parent
+     */
+    if (id) {
+        prop = object_property_try_add_child(qdev_get_peripheral(), id,
+                                             OBJECT(dev), NULL);
+        if (prop) {
+            dev->id = id;
+        } else {
+            g_free(id);
+            error_setg(errp, "Duplicate device ID '%s'", id);
+            return NULL;
+        }
     } else {
         static int anon_count;
         gchar *name = g_strdup_printf("device[%d]", anon_count++);
-        object_property_add_child(qdev_get_peripheral_anon(), name,
-                                  OBJECT(dev));
+        prop = object_property_add_child(qdev_get_peripheral_anon(), name,
+                                         OBJECT(dev));
         g_free(name);
     }
+
+    return prop->name;
 }
 
-DeviceState *qdev_device_add(QemuOpts *opts, Error **errp)
+DeviceState *qdev_device_add_from_qdict(const QDict *opts,
+                                        bool from_json, Error **errp)
 {
+    ERRP_GUARD();
     DeviceClass *dc;
     const char *driver, *path;
+    char *id;
     DeviceState *dev = NULL;
     BusState *bus = NULL;
 
-    driver = qemu_opt_get(opts, "driver");
+    driver = qdict_get_try_str(opts, "driver");
     if (!driver) {
         error_setg(errp, QERR_MISSING_PARAMETER, "driver");
         return NULL;
@@ -616,7 +631,7 @@ DeviceState *qdev_device_add(QemuOpts *opts, Error **errp)
     }
 
     /* find bus */
-    path = qemu_opt_get(opts, "bus");
+    path = qdict_get_try_str(opts, "bus");
     if (path != NULL) {
         bus = qbus_find(path, errp);
         if (!bus) {
@@ -636,17 +651,13 @@ DeviceState *qdev_device_add(QemuOpts *opts, Error **errp)
         }
     }
 
-    if (qemu_opt_get(opts, "failover_pair_id")) {
-        if (!opts->id) {
-            error_setg(errp, "Device with failover_pair_id don't have id");
-            return NULL;
+    if (qdev_should_hide_device(opts, from_json, errp)) {
+        if (bus && !qbus_is_hotpluggable(bus)) {
+            error_setg(errp, QERR_BUS_NO_HOTPLUG, bus->name);
         }
-        if (qdev_should_hide_device(opts)) {
-            if (bus && !qbus_is_hotpluggable(bus)) {
-                error_setg(errp, QERR_BUS_NO_HOTPLUG, bus->name);
-            }
-            return NULL;
-        }
+        return NULL;
+    } else if (*errp) {
+        return NULL;
     }
 
     if (phase_check(PHASE_MACHINE_READY) && bus && !qbus_is_hotpluggable(bus)) {
@@ -676,16 +687,28 @@ DeviceState *qdev_device_add(QemuOpts *opts, Error **errp)
         }
     }
 
-    qdev_set_id(dev, qemu_opts_id(opts));
-
-    /* set properties */
-    if (qemu_opt_foreach(opts, set_property, dev, errp)) {
+    /*
+     * set dev's parent and register its id.
+     * If it fails it means the id is already taken.
+     */
+    id = g_strdup(qdict_get_try_str(opts, "id"));
+    if (!qdev_set_id(dev, id, errp)) {
         goto err_del_dev;
     }
 
-    dev->opts = opts;
+    /* set properties */
+    dev->opts = qdict_clone_shallow(opts);
+    qdict_del(dev->opts, "driver");
+    qdict_del(dev->opts, "bus");
+    qdict_del(dev->opts, "id");
+
+    object_set_properties_from_keyval(&dev->parent_obj, dev->opts, from_json,
+                                      errp);
+    if (*errp) {
+        goto err_del_dev;
+    }
+
     if (!qdev_realize(DEVICE(dev), bus, errp)) {
-        dev->opts = NULL;
         goto err_del_dev;
     }
     return dev;
@@ -698,6 +721,19 @@ err_del_dev:
     return NULL;
 }
 
+/* Takes ownership of @opts on success */
+DeviceState *qdev_device_add(QemuOpts *opts, Error **errp)
+{
+    QDict *qdict = qemu_opts_to_qdict(opts, NULL);
+    DeviceState *ret;
+
+    ret = qdev_device_add_from_qdict(qdict, false, errp);
+    if (ret) {
+        qemu_opts_del(opts);
+    }
+    qobject_unref(qdict);
+    return ret;
+}
 
 #define qdev_printf(fmt, ...) monitor_printf(mon, "%*s" fmt, indent, "", ## __VA_ARGS__)
 static void qbus_print(Monitor *mon, BusState *bus, int indent);
@@ -835,18 +871,8 @@ void qmp_device_add(QDict *qdict, QObject **ret_data, Error **errp)
 
 static DeviceState *find_device_state(const char *id, Error **errp)
 {
-    Object *obj;
-
-    if (id[0] == '/') {
-        obj = object_resolve_path(id, NULL);
-    } else {
-        char *root_path = object_get_canonical_path(qdev_get_peripheral());
-        char *path = g_strdup_printf("%s/%s", root_path, id);
-
-        g_free(root_path);
-        obj = object_resolve_path_type(path, TYPE_DEVICE, NULL);
-        g_free(path);
-    }
+    Object *obj = object_resolve_path_at(qdev_get_peripheral(), id);
+    DeviceState *dev;
 
     if (!obj) {
         error_set(errp, ERROR_CLASS_DEVICE_NOT_FOUND,
@@ -854,12 +880,13 @@ static DeviceState *find_device_state(const char *id, Error **errp)
         return NULL;
     }
 
-    if (!object_dynamic_cast(obj, TYPE_DEVICE)) {
+    dev = (DeviceState *)object_dynamic_cast(obj, TYPE_DEVICE);
+    if (!dev) {
         error_setg(errp, "%s is not a hotpluggable device", id);
         return NULL;
     }
 
-    return DEVICE(obj);
+    return dev;
 }
 
 void qdev_unplug(DeviceState *dev, Error **errp)

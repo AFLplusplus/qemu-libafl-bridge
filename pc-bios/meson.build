@@ -1,4 +1,5 @@
-if install_edk2_blobs
+roms = []
+if unpack_edk2_blobs
   fds = [
     'edk2-aarch64-code.fd',
     'edk2-arm-code.fd',
@@ -11,7 +12,7 @@ if install_edk2_blobs
   ]
 
   foreach f : fds
-    custom_target(f,
+    roms += custom_target(f,
                   build_by_default: have_system,
                   output: f,
                   input: '@0@.bz2'.format(f),
@@ -62,6 +63,7 @@ blobs = files(
   'petalogix-s3adsp1800.dtb',
   'petalogix-ml605.dtb',
   'multiboot.bin',
+  'multiboot_dma.bin',
   'linuxboot.bin',
   'linuxboot_dma.bin',
   'kvmvapic.bin',

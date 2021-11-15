@@ -2,9 +2,8 @@
 specific_ss.add(files('control-target.c'))
 
 trace_events_files = []
-dtrace = find_program('dtrace', required: 'CONFIG_TRACE_DTRACE' in config_host)
 foreach dir : [ '.' ] + trace_events_subdirs
-  trace_events_file = meson.source_root() / dir / 'trace-events'
+  trace_events_file = meson.project_source_root() / dir / 'trace-events'
   trace_events_files += [ trace_events_file ]
   group_name = dir == '.' ? 'root' : dir.underscorify()
   group = '--group=' + group_name
@@ -21,7 +20,7 @@ foreach dir : [ '.' ] + trace_events_subdirs
                           input: trace_events_file,
                           command: [ tracetool, group, '--format=c', '@INPUT@', '@OUTPUT@' ],
                           depend_files: tracetool_depends)
-  if 'CONFIG_TRACE_UST' in config_host
+  if 'ust' in get_option('trace_backends')
     trace_ust_h = custom_target(fmt.format('trace-ust', 'h'),
                                 output: fmt.format('trace-ust', 'h'),
                                 input: trace_events_file,
@@ -31,7 +30,7 @@ foreach dir : [ '.' ] + trace_events_subdirs
     genh += trace_ust_h
   endif
   trace_ss.add(trace_h, trace_c)
-  if 'CONFIG_TRACE_DTRACE' in config_host
+  if 'dtrace' in get_option('trace_backends')
     trace_dtrace = custom_target(fmt.format('trace-dtrace', 'dtrace'),
                                  output: fmt.format('trace-dtrace', 'dtrace'),
                                  input: trace_events_file,
@@ -70,13 +69,13 @@ foreach d : [
 ]
   gen = custom_target(d[0],
                 output: d[0],
-                input: meson.source_root() / 'trace-events',
+                input: meson.project_source_root() / 'trace-events',
                 command: [ tracetool, '--group=root', '--format=@0@'.format(d[1]), '@INPUT@', '@OUTPUT@' ],
                 depend_files: tracetool_depends)
   specific_ss.add(when: 'CONFIG_TCG', if_true: gen)
 endforeach
 
-if 'CONFIG_TRACE_UST' in config_host
+if 'ust' in get_option('trace_backends')
   trace_ust_all_h = custom_target('trace-ust-all.h',
                                   output: 'trace-ust-all.h',
                                   input: trace_events_files,
@@ -91,7 +90,11 @@ if 'CONFIG_TRACE_UST' in config_host
   genh += trace_ust_all_h
 endif
 
-trace_ss.add(when: 'CONFIG_TRACE_SIMPLE', if_true: files('simple.c'))
-trace_ss.add(when: 'CONFIG_TRACE_FTRACE', if_true: files('ftrace.c'))
+if 'simple' in get_option('trace_backends')
+  trace_ss.add(files('simple.c'))
+endif
+if 'ftrace' in get_option('trace_backends')
+  trace_ss.add(files('ftrace.c'))
+endif
 trace_ss.add(files('control.c'))
 trace_ss.add(files('qmp.c'))

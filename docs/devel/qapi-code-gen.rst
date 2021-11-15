@@ -200,7 +200,9 @@ Syntax::
              '*if': COND,
              '*features': FEATURES }
     ENUM-VALUE = STRING
-               | { 'name': STRING, '*if': COND }
+               | { 'name': STRING,
+                   '*if': COND,
+                   '*features': FEATURES }
 
 Member 'enum' names the enum type.
 
@@ -706,8 +708,14 @@ QEMU shows a certain behaviour.
 Special features
 ~~~~~~~~~~~~~~~~
 
-Feature "deprecated" marks a command, event, or struct member as
-deprecated.  It is not supported elsewhere so far.
+Feature "deprecated" marks a command, event, enum value, or struct
+member as deprecated.  It is not supported elsewhere so far.
+Interfaces so marked may be withdrawn in future releases in accordance
+with QEMU's deprecation policy.
+
+Feature "unstable" marks a command, event, enum value, or struct
+member as unstable.  It is not supported elsewhere so far.  Interfaces
+so marked may be withdrawn or changed incompatibly in future releases.
 
 
 Naming rules and reserved names
@@ -742,9 +750,8 @@ Member name ``u`` and names starting with ``has-`` or ``has_`` are reserved
 for the generator, which uses them for unions and for tracking
 optional members.
 
-Any name (command, event, type, member, or enum value) beginning with
-``x-`` is marked experimental, and may be withdrawn or changed
-incompatibly in a future release.
+Names beginning with ``x-`` used to signify "experimental".  This
+convention has been replaced by special feature "unstable".
 
 Pragmas ``command-name-exceptions`` and ``member-name-exceptions`` let
 you violate naming rules.  Use for new code is strongly discouraged. See
@@ -949,15 +956,16 @@ definition must have documentation.
 Definition documentation starts with a line naming the definition,
 followed by an optional overview, a description of each argument (for
 commands and events), member (for structs and unions), branch (for
-alternates), or value (for enums), and finally optional tagged
-sections.
+alternates), or value (for enums), a description of each feature (if
+any), and finally optional tagged sections.
 
-Descriptions of arguments can span multiple lines.  The description
-text can start on the line following the '\@argname:', in which case it
-must not be indented at all.  It can also start on the same line as
-the '\@argname:'.  In this case if it spans multiple lines then second
-and subsequent lines must be indented to line up with the first
-character of the first line of the description::
+The description of an argument or feature 'name' starts with
+'\@name:'.  The description text can start on the line following the
+'\@name:', in which case it must not be indented at all.  It can also
+start on the same line as the '\@name:'.  In this case if it spans
+multiple lines then second and subsequent lines must be indented to
+line up with the first character of the first line of the
+description::
 
  # @argone:
  # This is a two line description
@@ -979,6 +987,12 @@ The number of spaces between the ':' and the text is not significant.
 Extensions added after the definition was first released carry a
 '(since x.y.z)' comment.
 
+The feature descriptions must be preceded by a line "Features:", like
+this::
+
+  # Features:
+  # @feature: Description text
+
 A tagged section starts with one of the following words:
 "Note:"/"Notes:", "Since:", "Example"/"Examples", "Returns:", "TODO:".
 The section ends with the start of a new section.
@@ -992,12 +1006,6 @@ multiline argument descriptions.
 
 A 'Since: x.y.z' tagged section lists the release that introduced the
 definition.
-
-The text of a section can start on a new line, in
-which case it must not be indented at all.  It can also start
-on the same line as the 'Note:', 'Returns:', etc tag.  In this
-case if it spans multiple lines then second and subsequent
-lines must be indented to match the first.
 
 An 'Example' or 'Examples' section is automatically rendered
 entirely as literal fixed-width text.  In other sections,
@@ -1157,7 +1165,8 @@ and "variants".
 
 "members" is a JSON array describing the object's common members, if
 any.  Each element is a JSON object with members "name" (the member's
-name), "type" (the name of its type), and optionally "default".  The
+name), "type" (the name of its type), "features" (a JSON array of
+feature strings), and "default".  The latter two are optional.  The
 member is optional if "default" is present.  Currently, "default" can
 only have value null.  Other values are reserved for future
 extensions.  The "members" array is in no particular order; clients
@@ -1231,14 +1240,22 @@ Example: the SchemaInfo for ['str'] ::
       "element-type": "str" }
 
 The SchemaInfo for an enumeration type has meta-type "enum" and
-variant member "values".  The values are listed in no particular
-order; clients must search the entire enum when learning whether a
-particular value is supported.
+variant member "members".
+
+"members" is a JSON array describing the enumeration values.  Each
+element is a JSON object with member "name" (the member's name), and
+optionally "features" (a JSON array of feature strings).  The
+"members" array is in no particular order; clients must search the
+entire array when learning whether a particular value is supported.
 
 Example: the SchemaInfo for MyEnum from section `Enumeration types`_ ::
 
     { "name": "MyEnum", "meta-type": "enum",
-      "values": [ "value1", "value2", "value3" ] }
+      "members": [
+        { "name": "value1" },
+        { "name": "value2" },
+        { "name": "value3" }
+      ] }
 
 The SchemaInfo for a built-in type has the same name as the type in
 the QAPI schema (see section `Built-in Types`_), with one exception

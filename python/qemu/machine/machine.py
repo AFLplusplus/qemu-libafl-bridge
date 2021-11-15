@@ -41,13 +41,18 @@ from typing import (
 )
 
 from qemu.qmp import (  # pylint: disable=import-error
-    QEMUMonitorProtocol,
     QMPMessage,
     QMPReturnValue,
     SocketAddrT,
 )
 
 from . import console_socket
+
+
+if os.environ.get('QEMU_PYTHON_LEGACY_QMP'):
+    from qemu.qmp import QEMUMonitorProtocol
+else:
+    from qemu.aqmp.legacy import QEMUMonitorProtocol
 
 
 LOG = logging.getLogger(__name__)
@@ -98,7 +103,6 @@ class QEMUMachine:
                  name: Optional[str] = None,
                  base_temp_dir: str = "/var/tmp",
                  monitor_address: Optional[SocketAddrT] = None,
-                 socket_scm_helper: Optional[str] = None,
                  sock_dir: Optional[str] = None,
                  drain_console: bool = False,
                  console_log: Optional[str] = None,
@@ -113,7 +117,6 @@ class QEMUMachine:
         @param name: prefix for socket and log file names (default: qemu-PID)
         @param base_temp_dir: default location where temp files are created
         @param monitor_address: address for QMP monitor
-        @param socket_scm_helper: helper program, required for send_fd_scm()
         @param sock_dir: where to create socket (defaults to base_temp_dir)
         @param drain_console: (optional) True to drain console socket to buffer
         @param console_log: (optional) path to console log file
@@ -134,7 +137,6 @@ class QEMUMachine:
         self._base_temp_dir = base_temp_dir
         self._sock_dir = sock_dir or self._base_temp_dir
         self._log_dir = log_dir
-        self._socket_scm_helper = socket_scm_helper
 
         if monitor_address is not None:
             self._monitor_address = monitor_address
@@ -173,6 +175,7 @@ class QEMUMachine:
         self._console_socket: Optional[socket.socket] = None
         self._remove_files: List[str] = []
         self._user_killed = False
+        self._quit_issued = False
 
     def __enter__(self: _T) -> _T:
         return self
@@ -213,48 +216,22 @@ class QEMUMachine:
     def send_fd_scm(self, fd: Optional[int] = None,
                     file_path: Optional[str] = None) -> int:
         """
-        Send an fd or file_path to socket_scm_helper.
+        Send an fd or file_path to the remote via SCM_RIGHTS.
 
-        Exactly one of fd and file_path must be given.
-        If it is file_path, the helper will open that file and pass its own fd.
+        Exactly one of fd and file_path must be given.  If it is
+        file_path, the file will be opened read-only and the new file
+        descriptor will be sent to the remote.
         """
-        # In iotest.py, the qmp should always use unix socket.
-        assert self._qmp.is_scm_available()
-        if self._socket_scm_helper is None:
-            raise QEMUMachineError("No path to socket_scm_helper set")
-        if not os.path.exists(self._socket_scm_helper):
-            raise QEMUMachineError("%s does not exist" %
-                                   self._socket_scm_helper)
-
-        # This did not exist before 3.4, but since then it is
-        # mandatory for our purpose
-        if hasattr(os, 'set_inheritable'):
-            os.set_inheritable(self._qmp.get_sock_fd(), True)
-            if fd is not None:
-                os.set_inheritable(fd, True)
-
-        fd_param = ["%s" % self._socket_scm_helper,
-                    "%d" % self._qmp.get_sock_fd()]
-
         if file_path is not None:
             assert fd is None
-            fd_param.append(file_path)
+            with open(file_path, "rb") as passfile:
+                fd = passfile.fileno()
+                self._qmp.send_fd_scm(fd)
         else:
             assert fd is not None
-            fd_param.append(str(fd))
+            self._qmp.send_fd_scm(fd)
 
-        proc = subprocess.run(
-            fd_param,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-            close_fds=False,
-        )
-        if proc.stdout:
-            LOG.debug(proc.stdout)
-
-        return proc.returncode
+        return 0
 
     @staticmethod
     def _remove_if_exists(path: str) -> None:
@@ -370,9 +347,15 @@ class QEMUMachine:
         # Comprehensive reset for the failed launch case:
         self._early_cleanup()
 
-        if self._qmp_connection:
-            self._qmp.close()
-            self._qmp_connection = None
+        try:
+            self._close_qmp_connection()
+        except Exception as err:  # pylint: disable=broad-except
+            LOG.warning(
+                "Exception closing QMP connection: %s",
+                str(err) if str(err) else type(err).__name__
+            )
+        finally:
+            assert self._qmp_connection is None
 
         self._close_qemu_log_file()
 
@@ -397,6 +380,7 @@ class QEMUMachine:
                 command = ''
             LOG.warning(msg, -int(exitcode), command)
 
+        self._quit_issued = False
         self._user_killed = False
         self._launched = False
 
@@ -447,6 +431,31 @@ class QEMUMachine:
                                        close_fds=False)
         self._post_launch()
 
+    def _close_qmp_connection(self) -> None:
+        """
+        Close the underlying QMP connection, if any.
+
+        Dutifully report errors that occurred while closing, but assume
+        that any error encountered indicates an abnormal termination
+        process and not a failure to close.
+        """
+        if self._qmp_connection is None:
+            return
+
+        try:
+            self._qmp.close()
+        except EOFError:
+            # EOF can occur as an Exception here when using the Async
+            # QMP backend. It indicates that the server closed the
+            # stream. If we successfully issued 'quit' at any point,
+            # then this was expected. If the remote went away without
+            # our permission, it's worth reporting that as an abnormal
+            # shutdown case.
+            if not (self._user_killed or self._quit_issued):
+                raise
+        finally:
+            self._qmp_connection = None
+
     def _early_cleanup(self) -> None:
         """
         Perform any cleanup that needs to happen before the VM exits.
@@ -472,15 +481,13 @@ class QEMUMachine:
         self._subp.kill()
         self._subp.wait(timeout=60)
 
-    def _soft_shutdown(self, timeout: Optional[int],
-                       has_quit: bool = False) -> None:
+    def _soft_shutdown(self, timeout: Optional[int]) -> None:
         """
         Perform early cleanup, attempt to gracefully shut down the VM, and wait
         for it to terminate.
 
         :param timeout: Timeout in seconds for graceful shutdown.
                         A value of None is an infinite wait.
-        :param has_quit: When True, don't attempt to issue 'quit' QMP command
 
         :raise ConnectionReset: On QMP communication errors
         :raise subprocess.TimeoutExpired: When timeout is exceeded waiting for
@@ -489,21 +496,24 @@ class QEMUMachine:
         self._early_cleanup()
 
         if self._qmp_connection:
-            if not has_quit:
-                # Might raise ConnectionReset
-                self._qmp.cmd('quit')
+            try:
+                if not self._quit_issued:
+                    # May raise ExecInterruptedError or StateError if the
+                    # connection dies or has *already* died.
+                    self.qmp('quit')
+            finally:
+                # Regardless, we want to quiesce the connection.
+                self._close_qmp_connection()
 
         # May raise subprocess.TimeoutExpired
         self._subp.wait(timeout=timeout)
 
-    def _do_shutdown(self, timeout: Optional[int],
-                     has_quit: bool = False) -> None:
+    def _do_shutdown(self, timeout: Optional[int]) -> None:
         """
         Attempt to shutdown the VM gracefully; fallback to a hard shutdown.
 
         :param timeout: Timeout in seconds for graceful shutdown.
                         A value of None is an infinite wait.
-        :param has_quit: When True, don't attempt to issue 'quit' QMP command
 
         :raise AbnormalShutdown: When the VM could not be shut down gracefully.
             The inner exception will likely be ConnectionReset or
@@ -511,13 +521,13 @@ class QEMUMachine:
             may result in its own exceptions, likely subprocess.TimeoutExpired.
         """
         try:
-            self._soft_shutdown(timeout, has_quit)
+            self._soft_shutdown(timeout)
         except Exception as exc:
             self._hard_shutdown()
             raise AbnormalShutdown("Could not perform graceful shutdown") \
                 from exc
 
-    def shutdown(self, has_quit: bool = False,
+    def shutdown(self,
                  hard: bool = False,
                  timeout: Optional[int] = 30) -> None:
         """
@@ -527,7 +537,6 @@ class QEMUMachine:
         If the VM has not yet been launched, or shutdown(), wait(), or kill()
         have already been called, this method does nothing.
 
-        :param has_quit: When true, do not attempt to issue 'quit' QMP command.
         :param hard: When true, do not attempt graceful shutdown, and
                      suppress the SIGKILL warning log message.
         :param timeout: Optional timeout in seconds for graceful shutdown.
@@ -541,7 +550,7 @@ class QEMUMachine:
                 self._user_killed = True
                 self._hard_shutdown()
             else:
-                self._do_shutdown(timeout, has_quit)
+                self._do_shutdown(timeout)
         finally:
             self._post_shutdown()
 
@@ -558,7 +567,8 @@ class QEMUMachine:
         :param timeout: Optional timeout in seconds. Default 30 seconds.
                         A value of `None` is an infinite wait.
         """
-        self.shutdown(has_quit=True, timeout=timeout)
+        self._quit_issued = True
+        self.shutdown(timeout=timeout)
 
     def set_qmp_monitor(self, enabled: bool = True) -> None:
         """
@@ -603,7 +613,10 @@ class QEMUMachine:
             conv_keys = True
 
         qmp_args = self._qmp_args(conv_keys, args)
-        return self._qmp.cmd(cmd, args=qmp_args)
+        ret = self._qmp.cmd(cmd, args=qmp_args)
+        if cmd == 'quit' and 'error' not in ret and 'return' in ret:
+            self._quit_issued = True
+        return ret
 
     def command(self, cmd: str,
                 conv_keys: bool = True,
@@ -614,7 +627,10 @@ class QEMUMachine:
         On failure raise an exception.
         """
         qmp_args = self._qmp_args(conv_keys, args)
-        return self._qmp.command(cmd, **qmp_args)
+        ret = self._qmp.command(cmd, **qmp_args)
+        if cmd == 'quit':
+            self._quit_issued = True
+        return ret
 
     def get_qmp_event(self, wait: bool = False) -> Optional[QMPMessage]:
         """
@@ -631,7 +647,6 @@ class QEMUMachine:
         events = self._qmp.get_events(wait=wait)
         events.extend(self._events)
         del self._events[:]
-        self._qmp.clear_events()
         return events
 
     @staticmethod

@@ -266,12 +266,13 @@ class TestRunner(ContextManager['TestRunner']):
                               diff=file_diff(str(f_reference), str(f_bad)))
 
         if f_notrun.exists():
-            return TestResult(status='not run',
-                              description=f_notrun.read_text().strip())
+            return TestResult(
+                status='not run',
+                description=f_notrun.read_text(encoding='utf-8').strip())
 
         casenotrun = ''
         if f_casenotrun.exists():
-            casenotrun = f_casenotrun.read_text()
+            casenotrun = f_casenotrun.read_text(encoding='utf-8')
 
         diff = file_diff(str(f_reference), str(f_bad))
         if diff:
@@ -340,6 +341,7 @@ class TestRunner(ContextManager['TestRunner']):
             elif res.status == 'not run':
                 notrun.append(name)
 
+            sys.stdout.flush()
             if res.interrupted:
                 break
 

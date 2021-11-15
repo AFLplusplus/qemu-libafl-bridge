@@ -204,11 +204,6 @@ static int esp_select(ESPState *s)
     s->ti_size = 0;
     fifo8_reset(&s->fifo);
 
-    if (s->current_req) {
-        /* Started a new command before the old one finished.  Cancel it.  */
-        scsi_req_cancel(s->current_req);
-    }
-
     s->current_dev = scsi_device_find(&s->bus, 0, target, 0);
     if (!s->current_dev) {
         /* No such drive */
@@ -234,6 +229,11 @@ static uint32_t get_cmd(ESPState *s, uint32_t maxlen)
     uint8_t buf[ESP_CMDFIFO_SZ];
     uint32_t dmalen, n;
     int target;
+
+    if (s->current_req) {
+        /* Started a new command before the old one finished.  Cancel it.  */
+        scsi_req_cancel(s->current_req);
+    }
 
     target = s->wregs[ESP_WBUSID] & BUSID_DID;
     if (s->dma) {
@@ -1348,7 +1348,7 @@ static void sysbus_esp_realize(DeviceState *dev, Error **errp)
 
     qdev_init_gpio_in(dev, sysbus_esp_gpio_demux, 2);
 
-    scsi_bus_new(&s->bus, sizeof(s->bus), dev, &esp_scsi_info, NULL);
+    scsi_bus_init(&s->bus, sizeof(s->bus), dev, &esp_scsi_info);
 }
 
 static void sysbus_esp_hard_reset(DeviceState *dev)

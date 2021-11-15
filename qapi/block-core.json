@@ -491,11 +491,11 @@
 # @granularity: granularity of the dirty bitmap in bytes (since 1.4)
 #
 # @recording: true if the bitmap is recording new writes from the guest.
-#             Replaces `active` and `disabled` statuses. (since 4.0)
+#             Replaces ``active`` and ``disabled`` statuses. (since 4.0)
 #
 # @busy: true if the bitmap is in-use by some operation (NBD or jobs)
 #        and cannot be modified via QMP or used by another operation.
-#        Replaces `locked` and `frozen` statuses. (since 4.0)
+#        Replaces ``locked`` and ``frozen`` statuses. (since 4.0)
 #
 # @persistent: true if the bitmap was stored on disk, is scheduled to be stored
 #              on disk, or both. (since 4.0)
@@ -1438,6 +1438,9 @@
 #
 # @x-perf: Performance options. (Since 6.0)
 #
+# Features:
+# @unstable: Member @x-perf is experimental.
+#
 # Note: @on-source-error and @on-target-error only affect background
 #       I/O.  If an error occurs during a guest write request, the device's
 #       rerror/werror actions will be used.
@@ -1452,7 +1455,9 @@
             '*on-source-error': 'BlockdevOnError',
             '*on-target-error': 'BlockdevOnError',
             '*auto-finalize': 'bool', '*auto-dismiss': 'bool',
-            '*filter-node-name': 'str', '*x-perf': 'BackupPerf'  } }
+            '*filter-node-name': 'str',
+            '*x-perf': { 'type': 'BackupPerf',
+                         'features': [ 'unstable' ] } } }
 
 ##
 # @DriveBackup:
@@ -1704,6 +1709,9 @@
 # The operation can be stopped before it has completed using the
 # block-job-cancel command.
 #
+# Features:
+# @deprecated: This command is deprecated. Use @blockdev-backup instead.
+#
 # Returns: - nothing on success
 #          - If @device is not a valid block device, GenericError
 #
@@ -1719,7 +1727,7 @@
 #
 ##
 { 'command': 'drive-backup', 'boxed': true,
-  'data': 'DriveBackup' }
+  'data': 'DriveBackup', 'features': ['deprecated'] }
 
 ##
 # @blockdev-backup:
@@ -1916,9 +1924,13 @@
 #
 # Get the block graph.
 #
+# Features:
+# @unstable: This command is meant for debugging.
+#
 # Since: 4.0
 ##
-{ 'command': 'x-debug-query-block-graph', 'returns': 'XDbgBlockGraph' }
+{ 'command': 'x-debug-query-block-graph', 'returns': 'XDbgBlockGraph',
+  'features': [ 'unstable' ] }
 
 ##
 # @drive-mirror:
@@ -2257,6 +2269,9 @@
 #
 # Get bitmap SHA256.
 #
+# Features:
+# @unstable: This command is meant for debugging.
+#
 # Returns: - BlockDirtyBitmapSha256 on success
 #          - If @node is not a valid block device, DeviceNotFound
 #          - If @name is not found or if hashing has failed, GenericError with an
@@ -2265,7 +2280,8 @@
 # Since: 2.10
 ##
 { 'command': 'x-debug-block-dirty-bitmap-sha256',
-  'data': 'BlockDirtyBitmap', 'returns': 'BlockDirtyBitmapSha256' }
+  'data': 'BlockDirtyBitmap', 'returns': 'BlockDirtyBitmapSha256',
+  'features': [ 'unstable' ] }
 
 ##
 # @blockdev-mirror:
@@ -2495,27 +2511,57 @@
 #
 # Properties for throttle-group objects.
 #
-# The options starting with x- are aliases for the same key without x- in
-# the @limits object. As indicated by the x- prefix, this is not a stable
-# interface and may be removed or changed incompatibly in the future. Use
-# @limits for a supported stable interface.
-#
 # @limits: limits to apply for this throttle group
+#
+# Features:
+# @unstable: All members starting with x- are aliases for the same key
+#            without x- in the @limits object.  This is not a stable
+#            interface and may be removed or changed incompatibly in
+#            the future.  Use @limits for a supported stable
+#            interface.
 #
 # Since: 2.11
 ##
 { 'struct': 'ThrottleGroupProperties',
   'data': { '*limits': 'ThrottleLimits',
-            '*x-iops-total' : 'int', '*x-iops-total-max' : 'int',
-            '*x-iops-total-max-length' : 'int', '*x-iops-read' : 'int',
-            '*x-iops-read-max' : 'int', '*x-iops-read-max-length' : 'int',
-            '*x-iops-write' : 'int', '*x-iops-write-max' : 'int',
-            '*x-iops-write-max-length' : 'int', '*x-bps-total' : 'int',
-            '*x-bps-total-max' : 'int', '*x-bps-total-max-length' : 'int',
-            '*x-bps-read' : 'int', '*x-bps-read-max' : 'int',
-            '*x-bps-read-max-length' : 'int', '*x-bps-write' : 'int',
-            '*x-bps-write-max' : 'int', '*x-bps-write-max-length' : 'int',
-            '*x-iops-size' : 'int' } }
+            '*x-iops-total': { 'type': 'int',
+                               'features': [ 'unstable' ] },
+            '*x-iops-total-max': { 'type': 'int',
+                                   'features': [ 'unstable' ] },
+            '*x-iops-total-max-length': { 'type': 'int',
+                                          'features': [ 'unstable' ] },
+            '*x-iops-read': { 'type': 'int',
+                              'features': [ 'unstable' ] },
+            '*x-iops-read-max': { 'type': 'int',
+                                  'features': [ 'unstable' ] },
+            '*x-iops-read-max-length': { 'type': 'int',
+                                         'features': [ 'unstable' ] },
+            '*x-iops-write': { 'type': 'int',
+                               'features': [ 'unstable' ] },
+            '*x-iops-write-max': { 'type': 'int',
+                                   'features': [ 'unstable' ] },
+            '*x-iops-write-max-length': { 'type': 'int',
+                                          'features': [ 'unstable' ] },
+            '*x-bps-total': { 'type': 'int',
+                              'features': [ 'unstable' ] },
+            '*x-bps-total-max': { 'type': 'int',
+                                  'features': [ 'unstable' ] },
+            '*x-bps-total-max-length': { 'type': 'int',
+                                         'features': [ 'unstable' ] },
+            '*x-bps-read': { 'type': 'int',
+                             'features': [ 'unstable' ] },
+            '*x-bps-read-max': { 'type': 'int',
+                                 'features': [ 'unstable' ] },
+            '*x-bps-read-max-length': { 'type': 'int',
+                                        'features': [ 'unstable' ] },
+            '*x-bps-write': { 'type': 'int',
+                              'features': [ 'unstable' ] },
+            '*x-bps-write-max': { 'type': 'int',
+                                  'features': [ 'unstable' ] },
+            '*x-bps-write-max-length': { 'type': 'int',
+                                         'features': [ 'unstable' ] },
+            '*x-iops-size': { 'type': 'int',
+                              'features': [ 'unstable' ] } } }
 
 ##
 # @block-stream:
@@ -2896,6 +2942,12 @@
 #              for this device (default: none, forward the commands via SG_IO;
 #              since 2.11)
 # @aio: AIO backend (default: threads) (since: 2.8)
+# @aio-max-batch: maximum number of requests to batch together into a single
+#                 submission in the AIO backend. The smallest value between
+#                 this and the aio-max-batch value of the IOThread object is
+#                 chosen.
+#                 0 means that the AIO backend will handle it automatically.
+#                 (default: 0, since 6.2)
 # @locking: whether to enable file locking. If set to 'auto', only enable
 #           when Open File Descriptor (OFD) locking API is available
 #           (default: auto, since 2.10)
@@ -2916,6 +2968,7 @@
 #                          read-only when the last writer is detached. This
 #                          allows giving QEMU write permissions only on demand
 #                          when an operation actually needs write access.
+# @unstable: Member x-check-cache-dropped is meant for debugging.
 #
 # Since: 2.9
 ##
@@ -2924,9 +2977,11 @@
             '*pr-manager': 'str',
             '*locking': 'OnOffAuto',
             '*aio': 'BlockdevAioOptions',
+            '*aio-max-batch': 'int',
             '*drop-cache': {'type': 'bool',
                             'if': 'CONFIG_LINUX'},
-            '*x-check-cache-dropped': 'bool' },
+            '*x-check-cache-dropped': { 'type': 'bool',
+                                        'features': [ 'unstable' ] } },
   'features': [ { 'name': 'dynamic-auto-read-only',
                   'if': 'CONFIG_POSIX' } ] }
 
@@ -3132,6 +3187,7 @@
 
 ##
 # @BlockdevQcow2EncryptionFormat:
+#
 # @aes: AES-CBC with plain64 initialization vectors
 #
 # Since: 2.10
@@ -4040,13 +4096,16 @@
 #                   future requests before a successful reconnect will
 #                   immediately fail. Default 0 (Since 4.2)
 #
+# Features:
+# @unstable: Member @x-dirty-bitmap is experimental.
+#
 # Since: 2.9
 ##
 { 'struct': 'BlockdevOptionsNbd',
   'data': { 'server': 'SocketAddress',
             '*export': 'str',
             '*tls-creds': 'str',
-            '*x-dirty-bitmap': 'str',
+            '*x-dirty-bitmap': { 'type': 'str', 'features': [ 'unstable' ] },
             '*reconnect-delay': 'uint32' } }
 
 ##
@@ -4642,6 +4701,8 @@
 # @adapter-type: The adapter type used to fill in the descriptor. Default: ide.
 # @hwversion: Hardware version. The meaningful options are "4" or "6".
 #             Default: "4".
+# @toolsversion: VMware guest tools version.
+#                Default: "2147483647" (Since 6.2)
 # @zeroed-grain: Whether to enable zeroed-grain feature for sparse subformats.
 #                Default: false.
 #
@@ -4655,6 +4716,7 @@
             '*backing-file':    'str',
             '*adapter-type':    'BlockdevVmdkAdapterType',
             '*hwversion':       'str',
+            '*toolsversion':    'str',
             '*zeroed-grain':    'bool' } }
 
 
@@ -4864,13 +4926,17 @@
 #                   and replacement of an active keyslot
 #                   (possible loss of data if IO error happens)
 #
+# Features:
+# @unstable: This command is experimental.
+#
 # Since: 5.1
 ##
 { 'command': 'x-blockdev-amend',
   'data': { 'job-id': 'str',
             'node-name': 'str',
             'options': 'BlockdevAmendOptions',
-            '*force': 'bool' } }
+            '*force': 'bool' },
+  'features': [ 'unstable' ] }
 
 ##
 # @BlockErrorAction:
@@ -5241,16 +5307,18 @@
 #
 # @node: the name of the node that will be added.
 #
-# Note: this command is experimental, and its API is not stable. It
-#       does not support all kinds of operations, all kinds of children, nor
-#       all block drivers.
+# Features:
+# @unstable: This command is experimental, and its API is not stable.  It
+#            does not support all kinds of operations, all kinds of
+#            children, nor all block drivers.
 #
-#       FIXME Removing children from a quorum node means introducing gaps in the
-#       child indices. This cannot be represented in the 'children' list of
-#       BlockdevOptionsQuorum, as returned by .bdrv_refresh_filename().
+#            FIXME Removing children from a quorum node means introducing
+#            gaps in the child indices. This cannot be represented in the
+#            'children' list of BlockdevOptionsQuorum, as returned by
+#            .bdrv_refresh_filename().
 #
-#       Warning: The data in a new quorum child MUST be consistent with that of
-#       the rest of the array.
+#            Warning: The data in a new quorum child MUST be consistent
+#            with that of the rest of the array.
 #
 # Since: 2.7
 #
@@ -5279,7 +5347,8 @@
 { 'command': 'x-blockdev-change',
   'data' : { 'parent': 'str',
              '*child': 'str',
-             '*node': 'str' } }
+             '*node': 'str' },
+  'features': [ 'unstable' ] }
 
 ##
 # @x-blockdev-set-iothread:
@@ -5296,8 +5365,9 @@
 # @force: true if the node and its children should be moved when a BlockBackend
 #         is already attached
 #
-# Note: this command is experimental and intended for test cases that need
-#       control over IOThreads only.
+# Features:
+# @unstable: This command is experimental and intended for test cases that
+#            need control over IOThreads only.
 #
 # Since: 2.12
 #
@@ -5319,7 +5389,8 @@
 { 'command': 'x-blockdev-set-iothread',
   'data' : { 'node-name': 'str',
              'iothread': 'StrOrNull',
-             '*force': 'bool' } }
+             '*force': 'bool' },
+  'features': [ 'unstable' ] }
 
 ##
 # @QuorumOpType:

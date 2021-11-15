@@ -18,6 +18,7 @@ from typing import (
     Dict,
     Iterator,
     Optional,
+    Sequence,
     Tuple,
 )
 
@@ -29,12 +30,19 @@ from .common import (
     mcgen,
 )
 from .schema import (
+    QAPISchemaFeature,
     QAPISchemaIfCond,
     QAPISchemaModule,
     QAPISchemaObjectType,
     QAPISchemaVisitor,
 )
 from .source import QAPISourceInfo
+
+
+def gen_special_features(features: Sequence[QAPISchemaFeature]) -> str:
+    special_features = [f"1u << QAPI_{feat.name.upper()}"
+                        for feat in features if feat.is_special()]
+    return ' | '.join(special_features) or '0'
 
 
 class QAPIGen:
@@ -296,10 +304,9 @@ class QAPISchemaModularCVisitor(QAPISchemaVisitor):
         self._current_module = old_module
 
     def write(self, output_dir: str, opt_builtins: bool = False) -> None:
-        for name in self._module:
+        for name, (genc, genh) in self._module.items():
             if QAPISchemaModule.is_builtin_module(name) and not opt_builtins:
                 continue
-            (genc, genh) = self._module[name]
             genc.write(output_dir)
             genh.write(output_dir)
 

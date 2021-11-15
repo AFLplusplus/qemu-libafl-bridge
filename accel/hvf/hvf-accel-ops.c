@@ -122,6 +122,7 @@ static void hvf_set_phys_mem(MemoryRegionSection *section, bool add)
     MemoryRegion *area = section->mr;
     bool writeable = !area->readonly && !area->rom_device;
     hv_memory_flags_t flags;
+    uint64_t page_size = qemu_real_host_page_size;
 
     if (!memory_region_is_ram(area)) {
         if (writeable) {
@@ -133,6 +134,12 @@ static void hvf_set_phys_mem(MemoryRegionSection *section, bool add)
              */
              add = false;
         }
+    }
+
+    if (!QEMU_IS_ALIGNED(int128_get64(section->size), page_size) ||
+        !QEMU_IS_ALIGNED(section->offset_within_address_space, page_size)) {
+        /* Not page aligned, so we can not map as RAM */
+        add = false;
     }
 
     mem = hvf_find_overlap_slot(
@@ -295,6 +302,7 @@ static void hvf_region_del(MemoryListener *listener,
 }
 
 static MemoryListener hvf_memory_listener = {
+    .name = "hvf",
     .priority = 10,
     .region_add = hvf_region_add,
     .region_del = hvf_region_del,
@@ -320,7 +328,7 @@ static int hvf_accel_init(MachineState *ms)
 
     s = g_new0(HVFState, 1);
 
-    s->num_slots = 32;
+    s->num_slots = ARRAY_SIZE(s->slots);
     for (x = 0; x < s->num_slots; ++x) {
         s->slots[x].size = 0;
         s->slots[x].slot_id = x;

@@ -26,6 +26,8 @@ Architectural features
    :maxdepth: 1
 
    i386/cpu
+   i386/kvm-pv
+   i386/sgx
 
 .. _pcsys_005freq:
 

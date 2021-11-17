@@ -633,6 +633,7 @@ int libafl_qemu_run(void);
 extern __thread CPUArchState *libafl_qemu_env;
 
 struct image_info libafl_image_info;
+struct linux_binprm bprm;
 
 uint64_t libafl_load_addr(void) {
     return libafl_image_info.load_addr;
@@ -662,7 +663,7 @@ int main(int argc, char **argv, char **envp)
     struct target_pt_regs regs1, *regs = &regs1;
     //struct image_info info1, *info = &info1;
     struct image_info *info = &libafl_image_info;
-    struct linux_binprm bprm;
+    // struct linux_binprm bprm;
     TaskState *ts;
     CPUArchState *env;
     CPUState *cpu;

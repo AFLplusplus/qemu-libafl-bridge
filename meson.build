@@ -59,6 +59,12 @@ supported_cpus = ['ppc', 'ppc64', 's390x', 'riscv', 'x86', 'x86_64',
   'arm', 'aarch64', 'mips', 'mips64', 'sparc', 'sparc64']
 
 cpu = host_machine.cpu_family()
+
+# Unify riscv* to a single family.
+if cpu in ['riscv32', 'riscv64']
+  cpu = 'riscv'
+endif
+
 targetos = host_machine.system()
 
 if cpu in ['x86', 'x86_64']
@@ -566,13 +572,7 @@ endif
 spice_headers = spice.partial_dependency(compile_args: true, includes: true)
 
 rt = cc.find_library('rt', required: false)
-libdl = not_found
-if 'CONFIG_PLUGIN' in config_host
-  libdl = cc.find_library('dl', required: false)
-  if not cc.has_function('dlopen', dependencies: libdl)
-    error('dlopen not found')
-  endif
-endif
+
 libiscsi = not_found
 if not get_option('libiscsi').auto() or have_block
   libiscsi = dependency('libiscsi', version: '>=1.9.0',
@@ -1201,6 +1201,11 @@ keyutils = dependency('libkeyutils', required: false,
 
 has_gettid = cc.has_function('gettid')
 
+# libselinux
+selinux = dependency('libselinux',
+                     required: get_option('selinux'),
+                     method: 'pkg-config', kwargs: static_kwargs)
+
 # Malloc tests
 
 malloc = []
@@ -1479,6 +1484,7 @@ config_host_data.set('CONFIG_SPICE_PROTOCOL', spice_protocol.found())
 config_host_data.set('CONFIG_SPICE', spice.found())
 config_host_data.set('CONFIG_X11', x11.found())
 config_host_data.set('CONFIG_CFI', get_option('cfi'))
+config_host_data.set('CONFIG_SELINUX', selinux.found())
 config_host_data.set('QEMU_VERSION', '"@0@"'.format(meson.project_version()))
 config_host_data.set('QEMU_VERSION_MAJOR', meson.project_version().split('.')[0])
 config_host_data.set('QEMU_VERSION_MINOR', meson.project_version().split('.')[1])
@@ -3088,7 +3094,8 @@ if have_tools
   qemu_io = executable('qemu-io', files('qemu-io.c'),
              dependencies: [block, qemuutil], install: true)
   qemu_nbd = executable('qemu-nbd', files('qemu-nbd.c'),
-               dependencies: [blockdev, qemuutil, gnutls], install: true)
+               dependencies: [blockdev, qemuutil, gnutls, selinux],
+               install: true)
 
   subdir('storage-daemon')
   subdir('contrib/rdmacm-mux')
@@ -3464,6 +3471,7 @@ summary_info += {'libdaxctl support': libdaxctl}
 summary_info += {'libudev':           libudev}
 # Dummy dependency, keep .found()
 summary_info += {'FUSE lseek':        fuse_lseek.found()}
+summary_info += {'selinux':           selinux}
 summary(summary_info, bool_yn: true, section: 'Dependencies')
 
 if not supported_cpus.contains(cpu)

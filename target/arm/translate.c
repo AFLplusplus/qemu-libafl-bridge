@@ -5429,6 +5429,12 @@ static bool store_reg_kind(DisasContext *s, int rd,
     g_assert_not_reached();
 }
 
+//// --- Begin LibAFL code ---
+
+void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot);
+
+//// --- End LibAFL code ---
+
 /*
  * Data Processing (register)
  *
@@ -5444,6 +5450,24 @@ static bool op_s_rrr_shi(DisasContext *s, arg_s_rrr_shi *a,
     tmp2 = load_reg(s, a->rm);
     gen_arm_shift_im(tmp2, a->shty, a->shim, logic_cc);
     tmp1 = load_reg(s, a->rn);
+
+//// --- Begin LibAFL code ---
+
+    if (gen == gen_sub_CC || /*gen == gen_add_CC ||*/ gen == gen_rsb_CC) {
+#ifdef TARGET_AARCH64
+      TCGv tmp1_64 = tcg_temp_new();
+      TCGv tmp2_64 = tcg_temp_new();
+      tcg_gen_extu_i32_i64(tmp1_64, tmp1);
+      tcg_gen_extu_i32_i64(tmp2_64, tmp2);
+      libafl_gen_cmp(s->pc_curr, tmp1_64, tmp2_64, MO_32);
+      tcg_temp_free(tmp1_64);
+      tcg_temp_free(tmp2_64);
+#else
+      libafl_gen_cmp(s->pc_curr, tmp1, tmp2, MO_32);
+#endif
+    }
+
+//// --- End LibAFL code ---
 
     gen(tmp1, tmp1, tmp2);
     tcg_temp_free_i32(tmp2);
@@ -5536,6 +5560,24 @@ static bool op_s_rri_rot(DisasContext *s, arg_s_rri_rot *a,
     }
     tmp2 = tcg_const_i32(imm);
     tmp1 = load_reg(s, a->rn);
+
+//// --- Begin LibAFL code ---
+
+    if (gen == gen_sub_CC || /*gen == gen_add_CC ||*/ gen == gen_rsb_CC) {
+#ifdef TARGET_AARCH64
+      TCGv tmp1_64 = tcg_temp_new();
+      TCGv tmp2_64 = tcg_temp_new();
+      tcg_gen_extu_i32_i64(tmp1_64, tmp1);
+      tcg_gen_extu_i32_i64(tmp2_64, tmp2);
+      libafl_gen_cmp(s->pc_curr, tmp1_64, tmp2_64, MO_32);
+      tcg_temp_free(tmp1_64);
+      tcg_temp_free(tmp2_64);
+#else
+      libafl_gen_cmp(s->pc_curr, tmp1, tmp2, MO_32);
+#endif
+    }
+
+//// --- End LibAFL code ---
 
     gen(tmp1, tmp1, tmp2);
     tcg_temp_free_i32(tmp2);

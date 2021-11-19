@@ -72,7 +72,9 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
                                   target_ulong dst_block, target_ulong cs_base,
                                   uint32_t flags, int cflags);
 void libafl_gen_read(TCGv addr, MemOp ot);
+void libafl_gen_read_N(TCGv addr, uint32_t size);
 void libafl_gen_write(TCGv addr, MemOp ot);
+void libafl_gen_write_N(TCGv addr, uint32_t size);
 void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot);
 
 void (*libafl_exec_edge_hook)(uint64_t id);
@@ -183,6 +185,41 @@ void libafl_gen_read(TCGv addr, MemOp ot)
     }
 }
 
+void libafl_gen_read_N(TCGv addr, uint32_t size)
+{
+    uint32_t libafl_id = 0;
+    if (libafl_gen_read_hook)
+        libafl_id = libafl_gen_read_hook(size);
+    if (libafl_id != (uint32_t)-1) {
+        if (!exec_read_hook_added) {
+            exec_read_hook_added = 1;
+            libafl_exec_read_hook1_info.func = libafl_exec_read_hook1;
+            libafl_helper_table_add(&libafl_exec_read_hook1_info);
+            libafl_exec_read_hook2_info.func = libafl_exec_read_hook2;
+            libafl_helper_table_add(&libafl_exec_read_hook2_info);
+            libafl_exec_read_hook4_info.func = libafl_exec_read_hook4;
+            libafl_helper_table_add(&libafl_exec_read_hook4_info);
+            libafl_exec_read_hook8_info.func = libafl_exec_read_hook8;
+            libafl_helper_table_add(&libafl_exec_read_hook8_info);
+            libafl_exec_read_hookN_info.func = libafl_exec_read_hookN;
+            libafl_helper_table_add(&libafl_exec_read_hookN_info);
+        }
+        TCGv_i64 tmp0 = tcg_const_i64(libafl_id);
+        TCGv_i32 tmp1 = tcg_const_i32(size);
+        TCGTemp *tmp2[3] = { tcgv_i64_temp(tmp0),
+#if TARGET_LONG_BITS == 32
+                             tcgv_i32_temp(addr),
+#else
+                             tcgv_i64_temp(addr),
+#endif
+                             tcgv_i32_temp(tmp1)
+        };
+        tcg_gen_callN(libafl_exec_read_hookN, NULL, 3, tmp2);
+        tcg_temp_free_i32(tmp1);
+        tcg_temp_free_i64(tmp0);
+    }
+}
+
 void (*libafl_exec_write_hook1)(uint64_t id, uint64_t addr);
 void (*libafl_exec_write_hook2)(uint64_t id, uint64_t addr);
 void (*libafl_exec_write_hook4)(uint64_t id, uint64_t addr);
@@ -267,6 +304,41 @@ void libafl_gen_write(TCGv addr, MemOp ot)
                              tcgv_i64_temp(addr) };
 #endif
         tcg_gen_callN(func, NULL, 2, tmp1);
+        tcg_temp_free_i64(tmp0);
+    }
+}
+
+void libafl_gen_write_N(TCGv addr, uint32_t size)
+{
+    uint32_t libafl_id = 0;
+    if (libafl_gen_write_hook)
+        libafl_id = libafl_gen_write_hook(size);
+    if (libafl_id != (uint32_t)-1) {
+        if (!exec_write_hook_added) {
+            exec_write_hook_added = 1;
+            libafl_exec_write_hook1_info.func = libafl_exec_write_hook1;
+            libafl_helper_table_add(&libafl_exec_write_hook1_info);
+            libafl_exec_write_hook2_info.func = libafl_exec_write_hook2;
+            libafl_helper_table_add(&libafl_exec_write_hook2_info);
+            libafl_exec_write_hook4_info.func = libafl_exec_write_hook4;
+            libafl_helper_table_add(&libafl_exec_write_hook4_info);
+            libafl_exec_write_hook8_info.func = libafl_exec_write_hook8;
+            libafl_helper_table_add(&libafl_exec_write_hook8_info);
+            libafl_exec_write_hookN_info.func = libafl_exec_write_hookN;
+            libafl_helper_table_add(&libafl_exec_write_hookN_info);
+        }
+        TCGv_i64 tmp0 = tcg_const_i64(libafl_id);
+        TCGv_i32 tmp1 = tcg_const_i32(size);
+        TCGTemp *tmp2[3] = { tcgv_i64_temp(tmp0),
+#if TARGET_LONG_BITS == 32
+                             tcgv_i32_temp(addr),
+#else
+                             tcgv_i64_temp(addr),
+#endif
+                             tcgv_i32_temp(tmp1)
+        };
+        tcg_gen_callN(libafl_exec_write_hookN, NULL, 3, tmp2);
+        tcg_temp_free_i32(tmp1);
         tcg_temp_free_i64(tmp0);
     }
 }

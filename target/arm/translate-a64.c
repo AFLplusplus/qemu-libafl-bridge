@@ -4184,6 +4184,12 @@ static void disas_pc_rel_adr(DisasContext *s, uint32_t insn)
     tcg_gen_movi_i64(cpu_reg(s, rd), base + offset);
 }
 
+//// --- Begin LibAFL code ---
+
+void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot);
+
+//// --- End LibAFL code ---
+
 /*
  * Add/subtract (immediate)
  *
@@ -4214,6 +4220,16 @@ static void disas_add_sub_imm(DisasContext *s, uint32_t insn)
     if (shift) {
         imm <<= 12;
     }
+
+//// --- Begin LibAFL code ---
+
+    if (rd == 31 && sub_op) { // cmp xX, imm
+      TCGv_i64 tcg_imm = tcg_const_i64(imm);
+      libafl_gen_cmp(s->pc_curr, tcg_rn, tcg_imm, is_64bit ? MO_64 : MO_32);
+      tcg_temp_free_i64(tcg_imm);
+    }
+
+//// --- End LibAFL code ---
 
     tcg_result = tcg_temp_new_i64();
     if (!setflags) {
@@ -4877,6 +4893,13 @@ static void disas_add_sub_ext_reg(DisasContext *s, uint32_t insn)
     tcg_rm = read_cpu_reg(s, rm, sf);
     ext_and_shift_reg(tcg_rm, tcg_rm, option, imm3);
 
+//// --- Begin LibAFL code ---
+
+    if (rd == 31 && sub_op) // cmp xX, xY
+      libafl_gen_cmp(s->pc_curr, tcg_rn, tcg_rm, sf ? MO_64 : MO_32);
+
+//// --- End LibAFL code ---
+
     tcg_result = tcg_temp_new_i64();
 
     if (!setflags) {
@@ -4940,6 +4963,13 @@ static void disas_add_sub_reg(DisasContext *s, uint32_t insn)
     tcg_rm = read_cpu_reg(s, rm, sf);
 
     shift_reg_imm(tcg_rm, tcg_rm, sf, shift_type, imm6);
+
+//// --- Begin LibAFL code ---
+
+    if (rd == 31 && sub_op) // cmp xX, xY
+      libafl_gen_cmp(s->pc_curr, tcg_rn, tcg_rm, sf ? MO_64 : MO_32);
+
+//// --- End LibAFL code ---
 
     tcg_result = tcg_temp_new_i64();
 
@@ -5222,6 +5252,12 @@ static void disas_cc(DisasContext *s, uint32_t insn)
         tcg_y = cpu_reg(s, y);
     }
     tcg_rn = cpu_reg(s, rn);
+
+//// --- Begin LibAFL code ---
+
+    libafl_gen_cmp(s->pc_curr, tcg_rn, tcg_y, sf ? MO_64 : MO_32);
+
+//// --- End LibAFL code ---
 
     /* Set the flags for the new comparison.  */
     tcg_tmp = tcg_temp_new_i64();

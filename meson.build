@@ -2797,8 +2797,7 @@ libmigration = static_library('migration', sources: migration_files + genh,
                               build_by_default: false,
                               pic: 'AS_SHARED_LIB' in config_host)
 migration = declare_dependency(link_with: libmigration,
-                               dependencies: [zlib, qom, io],
-                               pic: 'AS_SHARED_LIB' in config_host)
+                               dependencies: [zlib, qom, io])
 softmmu_ss.add(migration)
 
 block_ss = block_ss.apply(config_host, strict: false)

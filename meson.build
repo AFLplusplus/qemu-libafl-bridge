@@ -67,6 +67,14 @@ endif
 
 targetos = host_machine.system()
 
+if cpu not in supported_cpus
+  host_arch = 'unknown'
+elif cpu == 'x86'
+  host_arch = 'i386'
+else
+  host_arch = cpu
+endif
+
 if cpu in ['x86', 'x86_64']
   kvm_targets = ['i386-softmmu', 'x86_64-softmmu']
 elif cpu == 'aarch64'
@@ -335,9 +343,9 @@ if targetos == 'netbsd'
   endif
 endif
 
-tcg_arch = config_host['ARCH']
+tcg_arch = host_arch
 if not get_option('tcg').disabled()
-  if cpu not in supported_cpus
+  if host_arch == 'unknown'
     if get_option('tcg_interpreter')
       warning('Unsupported CPU @0@, will use TCG with TCI (slow)'.format(cpu))
     else
@@ -353,11 +361,11 @@ if not get_option('tcg').disabled()
   endif
   if get_option('tcg_interpreter')
     tcg_arch = 'tci'
-  elif config_host['ARCH'] == 'sparc64'
+  elif host_arch == 'sparc64'
     tcg_arch = 'sparc'
-  elif config_host['ARCH'] in ['x86_64', 'x32']
+  elif host_arch == 'x86_64'
     tcg_arch = 'i386'
-  elif config_host['ARCH'] == 'ppc64'
+  elif host_arch == 'ppc64'
     tcg_arch = 'ppc'
   endif
   add_project_arguments('-iquote', meson.current_source_dir() / 'tcg' / tcg_arch,
@@ -874,11 +882,15 @@ if not get_option('glusterfs').auto() or have_block
     ''', dependencies: glusterfs)
   endif
 endif
+
 libssh = not_found
-if 'CONFIG_LIBSSH' in config_host
-  libssh = declare_dependency(compile_args: config_host['LIBSSH_CFLAGS'].split(),
-                              link_args: config_host['LIBSSH_LIBS'].split())
+if not get_option('libssh').auto() or have_block
+  libssh = dependency('libssh', version: '>=0.8.7',
+                    method: 'pkg-config',
+                    required: get_option('libssh'),
+                    kwargs: static_kwargs)
 endif
+
 libbzip2 = not_found
 if not get_option('bzip2').auto() or have_block
   libbzip2 = cc.find_library('bz2', has_headers: ['bzlib.h'],
@@ -1422,6 +1434,8 @@ config_host_data.set_quoted('CONFIG_QEMU_LOCALSTATEDIR', get_option('prefix') / 
 config_host_data.set_quoted('CONFIG_QEMU_MODDIR', get_option('prefix') / qemu_moddir)
 config_host_data.set_quoted('CONFIG_SYSCONFDIR', get_option('prefix') / get_option('sysconfdir'))
 
+config_host_data.set('HOST_' + host_arch.to_upper(), 1)
+
 config_host_data.set('CONFIG_ATTR', libattr.found())
 config_host_data.set('CONFIG_BRLAPI', brlapi.found())
 config_host_data.set('CONFIG_COCOA', cocoa.found())
@@ -1451,6 +1465,7 @@ config_host_data.set('CONFIG_EBPF', libbpf.found())
 config_host_data.set('CONFIG_LIBDAXCTL', libdaxctl.found())
 config_host_data.set('CONFIG_LIBISCSI', libiscsi.found())
 config_host_data.set('CONFIG_LIBNFS', libnfs.found())
+config_host_data.set('CONFIG_LIBSSH', libssh.found())
 config_host_data.set('CONFIG_LINUX_AIO', libaio.found())
 config_host_data.set('CONFIG_LINUX_IO_URING', linux_io_uring.found())
 config_host_data.set('CONFIG_LIBPMEM', libpmem.found())
@@ -1770,8 +1785,6 @@ foreach k, v: config_host
       v = '"' + '", "'.join(v.split()) + '", '
     endif
     config_host_data.set(k, v)
-  elif k == 'ARCH'
-    config_host_data.set('HOST_' + v.to_upper(), 1)
   elif strings.contains(k)
     config_host_data.set_quoted(k, v)
   elif k.startswith('CONFIG_')
@@ -1801,7 +1814,6 @@ disassemblers = {
   'hppa' : ['CONFIG_HPPA_DIS'],
   'i386' : ['CONFIG_I386_DIS'],
   'x86_64' : ['CONFIG_I386_DIS'],
-  'x32' : ['CONFIG_I386_DIS'],
   'm68k' : ['CONFIG_M68K_DIS'],
   'microblaze' : ['CONFIG_MICROBLAZE_DIS'],
   'mips' : ['CONFIG_MIPS_DIS'],
@@ -1915,7 +1927,7 @@ foreach target : target_dirs
   endif
 
   foreach k, v: disassemblers
-    if config_host['ARCH'].startswith(k) or config_target['TARGET_BASE_ARCH'].startswith(k)
+    if host_arch.startswith(k) or config_target['TARGET_BASE_ARCH'].startswith(k)
       foreach sym: v
         config_target += { sym: 'y' }
         config_all_disas += { sym: 'y' }
@@ -2364,13 +2376,12 @@ genh += hxdep
 authz_ss = ss.source_set()
 blockdev_ss = ss.source_set()
 block_ss = ss.source_set()
-bsd_user_ss = ss.source_set()
 chardev_ss = ss.source_set()
 common_ss = ss.source_set()
+common_user_ss = ss.source_set()
 crypto_ss = ss.source_set()
 hwcore_ss = ss.source_set()
 io_ss = ss.source_set()
-linux_user_ss = ss.source_set()
 qmp_ss = ss.source_set()
 qom_ss = ss.source_set()
 softmmu_ss = ss.source_set()
@@ -2612,14 +2623,24 @@ subdir('tcg')
 subdir('fpu')
 subdir('accel')
 subdir('plugins')
-subdir('bsd-user')
-subdir('linux-user')
 subdir('ebpf')
 
-specific_ss.add_all(when: 'CONFIG_BSD_USER', if_true: bsd_user_ss)
+common_user_inc = []
 
-linux_user_ss.add(files('thunk.c'))
-specific_ss.add_all(when: 'CONFIG_LINUX_USER', if_true: linux_user_ss)
+subdir('common-user')
+subdir('bsd-user')
+subdir('linux-user')
+
+common_user_ss = common_user_ss.apply(config_all, strict: false)
+common_user = static_library('common-user',
+                             sources: common_user_ss.sources(),
+                             dependencies: common_user_ss.dependencies(),
+                             include_directories: common_user_inc,
+                             name_suffix: 'fa',
+                             build_by_default: false)
+common_user = declare_dependency(link_with: common_user)
+
+user_ss.add(common_user)
 
 # needed for fuzzing binaries
 subdir('tests/qtest/libqos')
@@ -2860,7 +2881,7 @@ emulators = {}
 foreach target : target_dirs
   config_target = config_target_mak[target]
   target_name = config_target['TARGET_NAME']
-  arch = config_target['TARGET_BASE_ARCH']
+  target_base_arch = config_target['TARGET_BASE_ARCH']
   arch_srcs = [config_target_h[target]]
   arch_deps = []
   c_args = ['-DNEED_CPU_H',
@@ -2876,11 +2897,11 @@ foreach target : target_dirs
   if target.endswith('-softmmu')
     qemu_target_name = 'qemu-system-' + target_name
     target_type='system'
-    t = target_softmmu_arch[arch].apply(config_target, strict: false)
+    t = target_softmmu_arch[target_base_arch].apply(config_target, strict: false)
     arch_srcs += t.sources()
     arch_deps += t.dependencies()
 
-    hw_dir = target_name == 'sparc64' ? 'sparc64' : arch
+    hw_dir = target_name == 'sparc64' ? 'sparc64' : target_base_arch
     hw = hw_arch[hw_dir].apply(config_target, strict: false)
     arch_srcs += hw.sources()
     arch_deps += hw.dependencies()
@@ -2891,14 +2912,14 @@ foreach target : target_dirs
     abi = config_target['TARGET_ABI_DIR']
     target_type='user'
     qemu_target_name = 'qemu-' + target_name
-    if arch in target_user_arch
-      t = target_user_arch[arch].apply(config_target, strict: false)
+    if target_base_arch in target_user_arch
+      t = target_user_arch[target_base_arch].apply(config_target, strict: false)
       arch_srcs += t.sources()
       arch_deps += t.dependencies()
     endif
     if 'CONFIG_LINUX_USER' in config_target
       base_dir = 'linux-user'
-      target_inc += include_directories('linux-user/host/' / config_host['ARCH'])
+      target_inc += include_directories('linux-user/host/' / host_arch)
     endif
     if 'CONFIG_BSD_USER' in config_target
       base_dir = 'bsd-user'
@@ -2930,7 +2951,7 @@ foreach target : target_dirs
     arch_srcs += gdbstub_xml
   endif
 
-  t = target_arch[arch].apply(config_target, strict: false)
+  t = target_arch[target_base_arch].apply(config_target, strict: false)
   arch_srcs += t.sources()
   arch_deps += t.dependencies()
 
@@ -3464,7 +3485,7 @@ endif
 summary_info += {'seccomp support':   seccomp}
 summary_info += {'GlusterFS support': glusterfs}
 summary_info += {'TPM support':       config_host.has_key('CONFIG_TPM')}
-summary_info += {'libssh support':    config_host.has_key('CONFIG_LIBSSH')}
+summary_info += {'libssh support':    libssh}
 summary_info += {'lzo support':       lzo}
 summary_info += {'snappy support':    snappy}
 summary_info += {'bzip2 support':     libbzip2}

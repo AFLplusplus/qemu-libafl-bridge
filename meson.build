@@ -2208,7 +2208,8 @@ if have_system
                               build_by_default: false,
                               sources: slirp_files,
                               c_args: slirp_cargs,
-                              include_directories: slirp_inc)
+                              include_directories: slirp_inc,
+                              pic: 'AS_SHARED_LIB' in config_host)
     slirp = declare_dependency(link_with: libslirp,
                                dependencies: slirp_deps,
                                include_directories: slirp_inc)
@@ -2268,7 +2269,8 @@ if have_system
     libfdt = static_library('fdt',
                             build_by_default: false,
                             sources: fdt_files,
-                            include_directories: fdt_inc)
+                            include_directories: fdt_inc,
+                            pic: 'AS_SHARED_LIB' in config_host)
     fdt = declare_dependency(link_with: libfdt,
                              include_directories: fdt_inc)
   endif
@@ -2605,7 +2607,8 @@ if get_option('b_lto')
     pagevary_flags += '-fno-sanitize=cfi-icall'
   endif
   pagevary = static_library('page-vary-common', sources: pagevary,
-                            c_args: pagevary_flags)
+                            c_args: pagevary_flags,
+                            pic: 'AS_SHARED_LIB' in config_host)
   pagevary = declare_dependency(link_with: pagevary)
 endif
 common_ss.add(pagevary)
@@ -2637,7 +2640,8 @@ common_user = static_library('common-user',
                              dependencies: common_user_ss.dependencies(),
                              include_directories: common_user_inc,
                              name_suffix: 'fa',
-                             build_by_default: false)
+                             build_by_default: false,
+                             pic: 'AS_SHARED_LIB' in config_host)
 common_user = declare_dependency(link_with: common_user)
 
 user_ss.add(common_user)
@@ -2738,7 +2742,8 @@ if enable_modules
                               input: modinfo_files,
                               command: [modinfo_generate, '@INPUT@'],
                               capture: true)
-  modinfo_lib = static_library('modinfo', modinfo_src)
+  modinfo_lib = static_library('modinfo', modinfo_src,
+                               pic: 'AS_SHARED_LIB' in config_host)
   modinfo_dep = declare_dependency(link_whole: modinfo_lib)
   softmmu_ss.add(modinfo_dep)
 endif

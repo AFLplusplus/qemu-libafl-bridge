@@ -13193,9 +13193,12 @@ struct syshook_ret {
     uint64_t retval;
     bool skip_syscall;
 };
-struct syshook_ret (*libafl_syscall_hook)(int, uint64_t, uint64_t, uint64_t,
-                                          uint64_t, uint64_t, uint64_t,
-                                          uint64_t, uint64_t);
+struct syshook_ret (*libafl_pre_syscall_hook)(int, uint64_t, uint64_t, uint64_t,
+                                              uint64_t, uint64_t, uint64_t,
+                                              uint64_t, uint64_t);
+uint64_t (*libafl_post_syscall_hook)(uint64_t, int, uint64_t, uint64_t,
+                                     uint64_t, uint64_t, uint64_t, uint64_t,
+                                     uint64_t, uint64_t);
 
 //// --- End LibAFL code ---
 
@@ -13230,8 +13233,8 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
 
     //// --- Begin LibAFL code ---
 
-    if (libafl_syscall_hook) {
-        struct syshook_ret hook_ret = libafl_syscall_hook(num,
+    if (libafl_pre_syscall_hook) {
+        struct syshook_ret hook_ret = libafl_pre_syscall_hook(num,
                                                           (uint64_t)arg1,
                                                           (uint64_t)arg2,
                                                           (uint64_t)arg3,
@@ -13252,6 +13255,19 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
                       arg5, arg6, arg7, arg8);
 
     //// --- Begin LibAFL code ---
+
+    if (libafl_post_syscall_hook) {
+        ret = (abi_ulong)libafl_post_syscall_hook((uint64_t)ret, num,
+                                                  (uint64_t)arg1,
+                                                  (uint64_t)arg2,
+                                                  (uint64_t)arg3,
+                                                  (uint64_t)arg4,
+                                                  (uint64_t)arg5,
+                                                  (uint64_t)arg6,
+                                                  (uint64_t)arg7,
+                                                  (uint64_t)arg8);
+    }
+
 after_syscall:
     //// --- End LibAFL code ---
 

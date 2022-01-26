@@ -297,7 +297,6 @@ M: David Hildenbrand <david@redhat.com>
 S: Maintained
 F: target/s390x/
 F: target/s390x/tcg
-F: target/s390x/cpu_models_*.[ch]
 F: hw/s390x/
 F: disas/s390.c
 F: tests/tcg/s390x/
@@ -396,16 +395,10 @@ M: Halil Pasic <pasic@linux.ibm.com>
 M: Christian Borntraeger <borntraeger@linux.ibm.com>
 S: Supported
 F: target/s390x/kvm/
-F: target/s390x/ioinst.[ch]
 F: target/s390x/machine.c
 F: target/s390x/sigp.c
-F: target/s390x/cpu_features*.[ch]
-F: target/s390x/cpu_models.[ch]
 F: hw/s390x/pv.c
 F: include/hw/s390x/pv.h
-F: hw/intc/s390_flic.c
-F: hw/intc/s390_flic_kvm.c
-F: include/hw/s390x/s390_flic.h
 F: gdb-xml/s390*.xml
 T: git https://github.com/borntraeger/qemu.git s390-next
 L: qemu-s390x@nongnu.org
@@ -781,6 +774,8 @@ M: Peter Maydell <peter.maydell@linaro.org>
 L: qemu-arm@nongnu.org
 S: Odd Fixes
 F: hw/arm/musicpal.c
+F: hw/net/mv88w8618_eth.c
+F: include/hw/net/mv88w8618_eth.h
 F: docs/system/arm/musicpal.rst
 
 Nuvoton NPCM7xx
@@ -1245,7 +1240,7 @@ F: hw/openrisc/openrisc_sim.c
 
 PowerPC Machines
 ----------------
-405
+405 (ref405ep and taihu)
 L: qemu-ppc@nongnu.org
 S: Orphan
 F: hw/ppc/ppc405_boards.c
@@ -1281,6 +1276,7 @@ New World (mac99)
 M: Mark Cave-Ayland <mark.cave-ayland@ilande.co.uk>
 L: qemu-ppc@nongnu.org
 S: Odd Fixes
+F: docs/system/ppc/powermac.rst
 F: hw/ppc/mac_newworld.c
 F: hw/pci-host/uninorth.c
 F: hw/pci-bridge/dec.[hc]
@@ -1299,6 +1295,7 @@ Old World (g3beige)
 M: Mark Cave-Ayland <mark.cave-ayland@ilande.co.uk>
 L: qemu-ppc@nongnu.org
 S: Odd Fixes
+F: docs/system/ppc/powermac.rst
 F: hw/ppc/mac_oldworld.c
 F: hw/pci-host/grackle.c
 F: hw/misc/macio/
@@ -1312,6 +1309,7 @@ PReP
 M: Hervé Poussineau <hpoussin@reactos.org>
 L: qemu-ppc@nongnu.org
 S: Maintained
+F: docs/system/ppc/prep.rst
 F: hw/ppc/prep.c
 F: hw/ppc/prep_systemio.c
 F: hw/ppc/rs6000_mc.c
@@ -1324,7 +1322,7 @@ F: include/hw/isa/pc87312.h
 F: include/hw/rtc/m48t59.h
 F: tests/avocado/ppc_prep_40p.py
 
-sPAPR
+sPAPR (pseries)
 M: Cédric Le Goater <clg@kaod.org>
 M: Daniel Henrique Barboza <danielhb413@gmail.com>
 R: David Gibson <david@gibson.dropbear.id.au>
@@ -1336,8 +1334,8 @@ F: include/hw/*/spapr*
 F: hw/*/xics*
 F: include/hw/*/xics*
 F: pc-bios/slof.bin
-F: docs/specs/ppc-spapr-hcalls.txt
-F: docs/specs/ppc-spapr-hotplug.txt
+F: docs/system/ppc/pseries.rst
+F: docs/specs/ppc-spapr-*
 F: tests/qtest/spapr*
 F: tests/qtest/libqos/*spapr*
 F: tests/qtest/rtas*
@@ -1348,6 +1346,7 @@ PowerNV (Non-Virtualized)
 M: Cédric Le Goater <clg@kaod.org>
 L: qemu-ppc@nongnu.org
 S: Maintained
+F: docs/system/ppc/powernv.rst
 F: hw/ppc/pnv*
 F: hw/intc/pnv*
 F: hw/intc/xics_pnv.c
@@ -1528,13 +1527,10 @@ S390 Machines
 S390 Virtio-ccw
 M: Halil Pasic <pasic@linux.ibm.com>
 M: Christian Borntraeger <borntraeger@linux.ibm.com>
+M: Eric Farman <farman@linux.ibm.com>
 S: Supported
-F: hw/char/sclp*.[hc]
-F: hw/char/terminal3270.c
 F: hw/s390x/
 F: include/hw/s390x/
-F: hw/watchdog/wdt_diag288.c
-F: include/hw/watchdog/wdt_diag288.h
 F: configs/devices/s390x-softmmu/default.mak
 F: tests/avocado/machine_s390_ccw_virtio.py
 T: git https://github.com/borntraeger/qemu.git s390-next
@@ -1557,6 +1553,38 @@ M: Eric Farman <farman@linux.ibm.com>
 S: Supported
 F: hw/s390x/s390-pci*
 F: include/hw/s390x/s390-pci*
+L: qemu-s390x@nongnu.org
+
+S390 channel subsystem
+M: Halil Pasic <pasic@linux.ibm.com>
+M: Christian Borntraeger <borntraeger@linux.ibm.com>
+M: Eric Farman <farman@linux.ibm.com>
+S: Supported
+F: hw/s390x/ccw-device.[ch]
+F: hw/s390x/css.c
+F: hw/s390x/css-bridge.c
+F: include/hw/s390x/css.h
+F: include/hw/s390x/css-bridge.h
+F: include/hw/s390x/ioinst.h
+F: target/s390x/ioinst.c
+L: qemu-s390x@nongnu.org
+
+S390 CPU models
+M: David Hildenbrand <david@redhat.com>
+S: Maintained
+F: target/s390x/cpu_features*.[ch]
+F: target/s390x/cpu_models.[ch]
+L: qemu-s390x@nongnu.org
+
+S390 SCLP-backed devices
+M: Halil Pasic <pasic@linux.ibm.com>
+M: Christian Borntraeger <borntraeger@linux.ibm.com>
+S: Supported
+F: include/hw/s390x/event-facility.h
+F: include/hw/s390x/sclp.h
+F: hw/char/sclp*.[hc]
+F: hw/s390x/event-facility.c
+F: hw/s390x/sclp*.c
 L: qemu-s390x@nongnu.org
 
 X86 Machines
@@ -1630,7 +1658,8 @@ F: pc-bios/bios-microvm.bin
 Machine core
 M: Eduardo Habkost <eduardo@habkost.net>
 M: Marcel Apfelbaum <marcel.apfelbaum@gmail.com>
-R: Philippe Mathieu-Daudé <philmd@redhat.com>
+R: Philippe Mathieu-Daudé <f4bug@amsat.org>
+R: Yanan Wang <wangyanan55@huawei.com>
 S: Supported
 F: cpu.c
 F: hw/core/cpu.c
@@ -1776,6 +1805,13 @@ F: docs/specs/acpi_mem_hotplug.rst
 F: docs/specs/acpi_pci_hotplug.rst
 F: docs/specs/acpi_hw_reduced_hotplug.rst
 
+ACPI/VIOT
+M: Jean-Philippe Brucker <jean-philippe@linaro.org>
+R: Ani Sinha <ani@anisinha.ca>
+S: Supported
+F: hw/acpi/viot.c
+F: hw/acpi/viot.h
+
 ACPI/HEST/GHES
 R: Dongjiu Geng <gengdongjiu1@gmail.com>
 L: qemu-arm@nongnu.org
@@ -1810,7 +1846,7 @@ F: docs/virtio-net-failover.rst
 T: git https://github.com/jasowang/qemu.git net
 
 Parallel NOR Flash devices
-M: Philippe Mathieu-Daudé <philmd@redhat.com>
+M: Philippe Mathieu-Daudé <f4bug@amsat.org>
 T: git https://gitlab.com/philmd/qemu.git pflash-next
 S: Maintained
 F: hw/block/pflash_cfi*.c
@@ -1924,6 +1960,7 @@ virtio-balloon
 M: Michael S. Tsirkin <mst@redhat.com>
 M: David Hildenbrand <david@redhat.com>
 S: Maintained
+F: docs/interop/virtio-balloon-stats.rst
 F: hw/virtio/virtio-balloon*.c
 F: include/hw/virtio/virtio-balloon.h
 F: softmmu/balloon.c
@@ -1954,9 +1991,11 @@ T: git https://github.com/stefanha/qemu.git block
 virtio-ccw
 M: Cornelia Huck <cohuck@redhat.com>
 M: Halil Pasic <pasic@linux.ibm.com>
+M: Eric Farman <farman@linux.ibm.com>
 S: Supported
 F: hw/s390x/virtio-ccw*.[hc]
 F: hw/s390x/vhost-vsock-ccw.c
+F: hw/s390x/vhost-user-fs-ccw.c
 T: git https://gitlab.com/cohuck/qemu.git s390-next
 T: git https://github.com/borntraeger/qemu.git s390-next
 L: qemu-s390x@nongnu.org
@@ -2226,7 +2265,7 @@ F: hw/isa/piix4.c
 F: include/hw/southbridge/piix.h
 
 Firmware configuration (fw_cfg)
-M: Philippe Mathieu-Daudé <philmd@redhat.com>
+M: Philippe Mathieu-Daudé <f4bug@amsat.org>
 R: Gerd Hoffmann <kraxel@redhat.com>
 S: Supported
 F: docs/specs/fw_cfg.txt
@@ -2294,6 +2333,48 @@ F: hw/intc/mips_gic.c
 F: hw/timer/mips_gictimer.c
 F: include/hw/intc/mips_gic.h
 F: include/hw/timer/mips_gictimer.h
+
+S390 3270 device
+M: Halil Pasic <pasic@linux.ibm.com>
+M: Christian Borntraeger <borntraeger@linux.ibm.com>
+S: Odd fixes
+F: include/hw/s390x/3270-ccw.h
+F: hw/char/terminal3270.c
+F: hw/s390x/3270-ccw.c
+L: qemu-s390x@nongnu.org
+
+S390 diag 288 watchdog
+M: Halil Pasic <pasic@linux.ibm.com>
+M: Christian Borntraeger <borntraeger@linux.ibm.com>
+S: Supported
+F: hw/watchdog/wdt_diag288.c
+F: include/hw/watchdog/wdt_diag288.h
+L: qemu-s390x@nongnu.org
+
+S390 storage key device
+M: Halil Pasic <pasic@linux.ibm.com>
+M: Christian Borntraeger <borntraeger@linux.ibm.com>
+S: Supported
+F: hw/s390x/storage-keys.h
+F: hw/390x/s390-skeys*.c
+L: qemu-s390x@nongnu.org
+
+S390 storage attribute device
+M: Halil Pasic <pasic@linux.ibm.com>
+M: Christian Borntraeger <borntraeger@linux.ibm.com>
+S: Supported
+F: hw/s390x/storage-attributes.h
+F: hw/s390/s390-stattrib*.c
+L: qemu-s390x@nongnu.org
+
+S390 floating interrupt controller
+M: Halil Pasic <pasic@linux.ibm.com>
+M: Christian Borntraeger <borntraeger@linux.ibm.com>
+M: David Hildenbrand <david@redhat.com>
+S: Supported
+F: hw/intc/s390_flic*.c
+F: include/hw/s390x/s390_flic.h
+L: qemu-s390x@nongnu.org
 
 Subsystems
 ----------
@@ -2524,7 +2605,7 @@ F: scripts/coccinelle/errp-guard.cocci
 
 GDB stub
 M: Alex Bennée <alex.bennee@linaro.org>
-R: Philippe Mathieu-Daudé <philmd@redhat.com>
+R: Philippe Mathieu-Daudé <f4bug@amsat.org>
 S: Maintained
 F: gdbstub*
 F: include/exec/gdbstub.h
@@ -2535,7 +2616,7 @@ Memory API
 M: Paolo Bonzini <pbonzini@redhat.com>
 M: Peter Xu <peterx@redhat.com>
 M: David Hildenbrand <david@redhat.com>
-R: Philippe Mathieu-Daudé <philmd@redhat.com>
+R: Philippe Mathieu-Daudé <f4bug@amsat.org>
 S: Supported
 F: include/exec/ioport.h
 F: include/exec/memop.h
@@ -2728,6 +2809,14 @@ F: scripts/qemu-guest-agent/
 F: tests/unit/test-qga.c
 T: git https://github.com/mdroth/qemu.git qga
 
+QEMU Guest Agent Win32
+M: Konstantin Kostiuk <kkostiuk@redhat.com>
+S: Maintained
+F: qga/*win32*
+F: qga/vss-win32/
+F: qga/installer/
+T: git https://github.com/kostyanf14/qemu.git qga-win32
+
 QOM
 M: Paolo Bonzini <pbonzini@redhat.com>
 R: Daniel P. Berrange <berrange@redhat.com>
@@ -2873,11 +2962,15 @@ D-Bus
 M: Marc-André Lureau <marcandre.lureau@redhat.com>
 S: Maintained
 F: backends/dbus-vmstate.c
-F: tests/dbus-vmstate*
+F: ui/dbus*
+F: audio/dbus*
 F: util/dbus.c
+F: include/ui/dbus*
 F: include/qemu/dbus.h
-F: docs/interop/dbus.rst
-F: docs/interop/dbus-vmstate.rst
+F: docs/interop/dbus*
+F: docs/sphinx/dbus*
+F: docs/sphinx/fakedbusdoc.py
+F: tests/qtest/dbus*
 
 Seccomp
 M: Eduardo Otubo <otubo@redhat.com>
@@ -2977,12 +3070,13 @@ F: docs/COLO-FT.txt
 
 COLO Proxy
 M: Zhang Chen <chen.zhang@intel.com>
-M: Li Zhijian <lizhijian@cn.fujitsu.com>
+M: Li Zhijian <lizhijian@fujitsu.com>
 S: Supported
 F: docs/colo-proxy.txt
 F: net/colo*
 F: net/filter-rewriter.c
 F: net/filter-mirror.c
+F: tests/qtest/test-filter*
 
 Record/replay
 M: Pavel Dovgalyuk <pavel.dovgaluk@ispras.ru>
@@ -3024,14 +3118,14 @@ F: include/hw/i2c/smbus_slave.h
 F: include/hw/i2c/smbus_eeprom.h
 
 Firmware schema specifications
-M: Philippe Mathieu-Daudé <philmd@redhat.com>
+M: Philippe Mathieu-Daudé <f4bug@amsat.org>
 R: Daniel P. Berrange <berrange@redhat.com>
 R: Kashyap Chamarthy <kchamart@redhat.com>
 S: Maintained
 F: docs/interop/firmware.json
 
 EDK2 Firmware
-M: Philippe Mathieu-Daudé <philmd@redhat.com>
+M: Philippe Mathieu-Daudé <f4bug@amsat.org>
 R: Gerd Hoffmann <kraxel@redhat.com>
 S: Supported
 F: hw/i386/*ovmf*
@@ -3138,6 +3232,11 @@ M: Richard Henderson <richard.henderson@linaro.org>
 S: Maintained
 F: tcg/i386/
 F: disas/i386.c
+
+LoongArch64 TCG target
+M: WANG Xuerui <git@xen0n.name>
+S: Maintained
+F: tcg/loongarch64/
 
 MIPS TCG target
 M: Philippe Mathieu-Daudé <f4bug@amsat.org>
@@ -3264,7 +3363,7 @@ F: block/null.c
 NVMe Block Driver
 M: Stefan Hajnoczi <stefanha@redhat.com>
 R: Fam Zheng <fam@euphon.net>
-R: Philippe Mathieu-Daudé <philmd@redhat.com>
+R: Philippe Mathieu-Daudé <f4bug@amsat.org>
 L: qemu-block@nongnu.org
 S: Supported
 F: block/nvme*
@@ -3507,7 +3606,7 @@ F: tests/tcg/Makefile.include
 Integration Testing with the Avocado framework
 W: https://trello.com/b/6Qi1pxVn/avocado-qemu
 R: Cleber Rosa <crosa@redhat.com>
-R: Philippe Mathieu-Daudé <philmd@redhat.com>
+R: Philippe Mathieu-Daudé <f4bug@amsat.org>
 R: Wainer dos Santos Moschetta <wainersm@redhat.com>
 R: Beraldo Leal <bleal@redhat.com>
 S: Odd Fixes

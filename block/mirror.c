@@ -771,13 +771,6 @@ static int mirror_exit_common(Job *job)
     block_job_remove_all_bdrv(bjob);
     bdrv_replace_node(mirror_top_bs, mirror_top_bs->backing->bs, &error_abort);
 
-    /* We just changed the BDS the job BB refers to (with either or both of the
-     * bdrv_replace_node() calls), so switch the BB back so the cleanup does
-     * the right thing. We don't need any permissions any more now. */
-    blk_remove_bs(bjob->blk);
-    blk_set_perm(bjob->blk, 0, BLK_PERM_ALL, &error_abort);
-    blk_insert_bs(bjob->blk, mirror_top_bs, &error_abort);
-
     bs_opaque->job = NULL;
 
     bdrv_drained_end(src);
@@ -1146,10 +1139,7 @@ static void mirror_complete(Job *job, Error **errp)
         replace_aio_context = bdrv_get_aio_context(s->to_replace);
         aio_context_acquire(replace_aio_context);
 
-        /* TODO Translate this into permission system. Current definition of
-         * GRAPH_MOD would require to request it for the parents; they might
-         * not even be BlockDriverStates, however, so a BdrvChild can't address
-         * them. May need redefinition of GRAPH_MOD. */
+        /* TODO Translate this into child freeze system. */
         error_setg(&s->replace_blocker,
                    "block device is in use by block-job-complete");
         bdrv_op_block_all(s->to_replace, s->replace_blocker);
@@ -1673,7 +1663,7 @@ static BlockJob *mirror_start_job(
     s = block_job_create(job_id, driver, NULL, mirror_top_bs,
                          BLK_PERM_CONSISTENT_READ,
                          BLK_PERM_CONSISTENT_READ | BLK_PERM_WRITE_UNCHANGED |
-                         BLK_PERM_WRITE | BLK_PERM_GRAPH_MOD, speed,
+                         BLK_PERM_WRITE, speed,
                          creation_flags, cb, opaque, errp);
     if (!s) {
         goto fail;
@@ -1717,9 +1707,7 @@ static BlockJob *mirror_start_job(
             target_perms |= BLK_PERM_RESIZE;
         }
 
-        target_shared_perms |= BLK_PERM_CONSISTENT_READ
-                            |  BLK_PERM_WRITE
-                            |  BLK_PERM_GRAPH_MOD;
+        target_shared_perms |= BLK_PERM_CONSISTENT_READ | BLK_PERM_WRITE;
     } else if (bdrv_chain_contains(bs, bdrv_skip_filters(target))) {
         /*
          * We may want to allow this in the future, but it would
@@ -1728,10 +1716,6 @@ static BlockJob *mirror_start_job(
         error_setg(errp, "Cannot mirror to a filter on top of a node in the "
                    "source's backing chain");
         goto fail;
-    }
-
-    if (backing_mode != MIRROR_LEAVE_BACKING_CHAIN) {
-        target_perms |= BLK_PERM_GRAPH_MOD;
     }
 
     s->target = blk_new(s->common.job.aio_context,

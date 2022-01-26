@@ -258,7 +258,6 @@ int do_sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
     return 0;
 }
 
-#if !defined(TARGET_NIOS2)
 /* Just set the guest's signal mask to the specified value; the
  * caller is assumed to have called block_signals() already.
  */
@@ -268,7 +267,6 @@ void set_sigmask(const sigset_t *set)
 
     ts->signal_mask = *set;
 }
-#endif
 
 /* sigaltstack management */
 
@@ -406,7 +404,12 @@ static inline void host_to_target_siginfo_noswap(target_siginfo_t *tinfo,
         case TARGET_SIGCHLD:
             tinfo->_sifields._sigchld._pid = info->si_pid;
             tinfo->_sifields._sigchld._uid = info->si_uid;
-            tinfo->_sifields._sigchld._status = info->si_status;
+            if (si_code == CLD_EXITED)
+                tinfo->_sifields._sigchld._status = info->si_status;
+            else
+                tinfo->_sifields._sigchld._status
+                    = host_to_target_signal(info->si_status & 0x7f)
+                        | (info->si_status & ~0x7f);
             tinfo->_sifields._sigchld._utime = info->si_utime;
             tinfo->_sifields._sigchld._stime = info->si_stime;
             si_type = QEMU_SI_CHLD;
@@ -731,7 +734,7 @@ static void QEMU_NORETURN dump_core_and_abort(int target_sig)
     struct sigaction act;
 
     host_sig = target_to_host_signal(target_sig);
-    trace_user_force_sig(env, target_sig, host_sig);
+    trace_user_dump_core_and_abort(env, target_sig, host_sig);
     gdb_signalled(env, target_sig);
 
     /* dump core if supported by target binary format */
@@ -777,8 +780,8 @@ static void QEMU_NORETURN dump_core_and_abort(int target_sig)
 
 /* queue a signal so that it will be send to the virtual CPU as soon
    as possible */
-int queue_signal(CPUArchState *env, int sig, int si_type,
-                 target_siginfo_t *info)
+void queue_signal(CPUArchState *env, int sig, int si_type,
+                  target_siginfo_t *info)
 {
     CPUState *cpu = env_cpu(env);
     TaskState *ts = cpu->opaque;
@@ -791,7 +794,6 @@ int queue_signal(CPUArchState *env, int sig, int si_type,
     ts->sync_signal.pending = sig;
     /* signal that a new signal is pending */
     qatomic_set(&ts->signal_pending, 1);
-    return 1; /* indicates that the signal was queued */
 }
 
 

@@ -74,17 +74,16 @@ static void gd_clipboard_clear(GtkClipboard *clipboard,
     gd->cbowner[s] = false;
 }
 
-static void gd_clipboard_notify(Notifier *notifier, void *data)
+static void gd_clipboard_update_info(GtkDisplayState *gd,
+                                     QemuClipboardInfo *info)
 {
-    GtkDisplayState *gd = container_of(notifier, GtkDisplayState, cbpeer.update);
-    QemuClipboardInfo *info = data;
     QemuClipboardSelection s = info->selection;
     bool self_update = info->owner == &gd->cbpeer;
 
     if (info != qemu_clipboard_info(s)) {
         gd->cbpending[s] = 0;
         if (!self_update) {
-            GtkTargetList *list;
+            g_autoptr(GtkTargetList) list = NULL;
             GtkTargetEntry *targets;
             gint n_targets;
 
@@ -95,15 +94,16 @@ static void gd_clipboard_notify(Notifier *notifier, void *data)
             targets = gtk_target_table_new_from_list(list, &n_targets);
 
             gtk_clipboard_clear(gd->gtkcb[s]);
-            gd->cbowner[s] = true;
-            gtk_clipboard_set_with_data(gd->gtkcb[s],
-                                        targets, n_targets,
-                                        gd_clipboard_get_data,
-                                        gd_clipboard_clear,
-                                        gd);
+            if (targets) {
+                gd->cbowner[s] = true;
+                gtk_clipboard_set_with_data(gd->gtkcb[s],
+                                            targets, n_targets,
+                                            gd_clipboard_get_data,
+                                            gd_clipboard_clear,
+                                            gd);
 
-            gtk_target_table_free(targets, n_targets);
-            gtk_target_list_unref(list);
+                gtk_target_table_free(targets, n_targets);
+            }
         }
         return;
     }
@@ -116,6 +116,22 @@ static void gd_clipboard_notify(Notifier *notifier, void *data)
      * Clipboard got updated, with data probably.  No action here, we
      * are waiting for updates in gd_clipboard_get_data().
      */
+}
+
+static void gd_clipboard_notify(Notifier *notifier, void *data)
+{
+    GtkDisplayState *gd =
+        container_of(notifier, GtkDisplayState, cbpeer.notifier);
+    QemuClipboardNotify *notify = data;
+
+    switch (notify->type) {
+    case QEMU_CLIPBOARD_UPDATE_INFO:
+        gd_clipboard_update_info(gd, notify->info);
+        return;
+    case QEMU_CLIPBOARD_RESET_SERIAL:
+        /* ignore */
+        return;
+    }
 }
 
 static void gd_clipboard_request(QemuClipboardInfo *info,
@@ -172,7 +188,7 @@ static void gd_owner_change(GtkClipboard *clipboard,
 void gd_clipboard_init(GtkDisplayState *gd)
 {
     gd->cbpeer.name = "gtk";
-    gd->cbpeer.update.notify = gd_clipboard_notify;
+    gd->cbpeer.notifier.notify = gd_clipboard_notify;
     gd->cbpeer.request = gd_clipboard_request;
     qemu_clipboard_peer_register(&gd->cbpeer);
 

@@ -552,7 +552,7 @@ QemuCocoaView *cocoaView;
     info.width = frameSize.width;
     info.height = frameSize.height;
 
-    dpy_set_ui_info(dcl.con, &info);
+    dpy_set_ui_info(dcl.con, &info, TRUE);
 }
 
 - (void)viewDidMoveToWindow
@@ -970,21 +970,27 @@ QemuCocoaView *cocoaView;
              */
 
             /*
-             * When deltaY is zero, it means that this scrolling event was
-             * either horizontal, or so fine that it only appears in
-             * scrollingDeltaY. So we drop the event.
+             * We shouldn't have got a scroll event when deltaY and delta Y
+             * are zero, hence no harm in dropping the event
              */
-            if ([event deltaY] != 0) {
+            if ([event deltaY] != 0 || [event deltaX] != 0) {
             /* Determine if this is a scroll up or scroll down event */
-                buttons = ([event deltaY] > 0) ?
+                if ([event deltaY] != 0) {
+                  buttons = ([event deltaY] > 0) ?
                     INPUT_BUTTON_WHEEL_UP : INPUT_BUTTON_WHEEL_DOWN;
+                } else if ([event deltaX] != 0) {
+                  buttons = ([event deltaX] > 0) ?
+                    INPUT_BUTTON_WHEEL_LEFT : INPUT_BUTTON_WHEEL_RIGHT;
+                }
+
                 qemu_input_queue_btn(dcl.con, buttons, true);
                 qemu_input_event_sync();
                 qemu_input_queue_btn(dcl.con, buttons, false);
                 qemu_input_event_sync();
             }
+
             /*
-             * Since deltaY also reports scroll wheel events we prevent mouse
+             * Since deltaX/deltaY also report scroll wheel events we prevent mouse
              * movement code from executing.
              */
             mouse_event = false;
@@ -1808,14 +1814,12 @@ static void cocoa_clipboard_request(QemuClipboardInfo *info,
 
 static QemuClipboardPeer cbpeer = {
     .name = "cocoa",
-    .update = { .notify = cocoa_clipboard_notify },
+    .notifier = { .notify = cocoa_clipboard_notify },
     .request = cocoa_clipboard_request
 };
 
-static void cocoa_clipboard_notify(Notifier *notifier, void *data)
+static void cocoa_clipboard_update_info(QemuClipboardInfo *info)
 {
-    QemuClipboardInfo *info = data;
-
     if (info->owner == &cbpeer || info->selection != QEMU_CLIPBOARD_SELECTION_CLIPBOARD) {
         return;
     }
@@ -1829,6 +1833,20 @@ static void cocoa_clipboard_notify(Notifier *notifier, void *data)
     }
 
     qemu_event_set(&cbevent);
+}
+
+static void cocoa_clipboard_notify(Notifier *notifier, void *data)
+{
+    QemuClipboardNotify *notify = data;
+
+    switch (notify->type) {
+    case QEMU_CLIPBOARD_UPDATE_INFO:
+        cocoa_clipboard_update_info(notify->info);
+        return;
+    case QEMU_CLIPBOARD_RESET_SERIAL:
+        /* ignore */
+        return;
+    }
 }
 
 static void cocoa_clipboard_request(QemuClipboardInfo *info,

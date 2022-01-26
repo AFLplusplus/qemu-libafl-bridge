@@ -225,8 +225,14 @@ for target in $target_list; do
   echo "TARGET_NAME=$arch" >> $config_target_mak
   echo "target=$target" >> $config_target_mak
   case $target in
-    *-linux-user | *-bsd-user)
+    *-linux-user)
       echo "CONFIG_USER_ONLY=y" >> $config_target_mak
+      echo "CONFIG_LINUX_USER=y" >> $config_target_mak
+      echo "QEMU=$PWD/qemu-$arch" >> $config_target_mak
+      ;;
+    *-bsd-user)
+      echo "CONFIG_USER_ONLY=y" >> $config_target_mak
+      echo "CONFIG_BSD_USER=y" >> $config_target_mak
       echo "QEMU=$PWD/qemu-$arch" >> $config_target_mak
       ;;
     *-softmmu)
@@ -326,7 +332,7 @@ for target in $target_list; do
   elif test $got_cross_cc = no && test "$container" != no && \
           test -n "$container_image"; then
       for host in $container_hosts; do
-          if test "$host" = "$ARCH"; then
+          if test "$host" = "$cpu"; then
               echo "DOCKER_IMAGE=$container_image" >> $config_target_mak
               echo "DOCKER_CROSS_CC_GUEST=$container_cross_cc" >> \
                    $config_target_mak

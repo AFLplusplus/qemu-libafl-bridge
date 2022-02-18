@@ -6565,6 +6565,13 @@ typedef struct {
     sigset_t sigmask;
 } new_thread_info;
 
+//// --- Begin LibAFL code ---
+
+extern __thread CPUArchState *libafl_qemu_env;
+void (*libafl_on_thread_hook)(int);
+
+//// --- End LibAFL code ---
+
 static void *clone_func(void *arg)
 {
     new_thread_info *info = arg;
@@ -6594,7 +6601,19 @@ static void *clone_func(void *arg)
     /* Wait until the parent has finished initializing the tls state.  */
     pthread_mutex_lock(&clone_lock);
     pthread_mutex_unlock(&clone_lock);
-    cpu_loop(env);
+
+    //// --- Begin LibAFL code ---
+
+    libafl_qemu_env = env;
+    if (libafl_on_thread_hook) {
+        libafl_on_thread_hook(info->tid);
+    } else {
+        cpu_loop(env);
+    }
+
+    //// --- End LibAFL code ---
+
+    // cpu_loop(env);
     /* never exits */
     return NULL;
 }

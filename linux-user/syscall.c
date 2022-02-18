@@ -6568,7 +6568,7 @@ typedef struct {
 //// --- Begin LibAFL code ---
 
 extern __thread CPUArchState *libafl_qemu_env;
-void (*libafl_on_thread_hook)(int);
+void (*libafl_on_thread_hook)(uint32_t);
 
 //// --- End LibAFL code ---
 

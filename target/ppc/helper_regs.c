@@ -59,15 +59,6 @@ static uint32_t hreg_compute_hflags_value(CPUPPCState *env)
     msr_mask = ((1 << MSR_LE) | (1 << MSR_PR) |
                 (1 << MSR_DR) | (1 << MSR_FP));
 
-    if (ppc_flags & POWERPC_FLAG_HID0_LE) {
-        /*
-         * Note that MSR_LE is not set in env->msr_mask for this cpu,
-         * and so will never be set in msr.
-         */
-        uint32_t le = extract32(env->spr[SPR_HID0], 3, 1);
-        hflags |= le << MSR_LE;
-    }
-
     if (ppc_flags & POWERPC_FLAG_DE) {
         target_ulong dbcr0 = env->spr[SPR_BOOKE_DBCR0];
         if (dbcr0 & DBCR0_ICMP) {
@@ -156,7 +147,8 @@ static uint32_t hreg_compute_hflags_value(CPUPPCState *env)
      */
     unsigned immu_idx, dmmu_idx;
     dmmu_idx = msr & (1 << MSR_PR) ? 0 : 1;
-    if (env->mmu_model & POWERPC_MMU_BOOKE) {
+    if (env->mmu_model == POWERPC_MMU_BOOKE ||
+        env->mmu_model == POWERPC_MMU_BOOKE206) {
         dmmu_idx |= msr & (1 << MSR_GS) ? 4 : 0;
         immu_idx = dmmu_idx;
         immu_idx |= msr & (1 << MSR_IS) ? 2 : 0;
@@ -201,7 +193,11 @@ void cpu_get_tb_cpu_state(CPUPPCState *env, target_ulong *pc,
 
 void cpu_interrupt_exittb(CPUState *cs)
 {
-    if (!kvm_enabled()) {
+    /*
+     * We don't need to worry about translation blocks
+     * when running with KVM.
+     */
+    if (kvm_enabled()) {
         return;
     }
 
@@ -233,7 +229,8 @@ int hreg_store_msr(CPUPPCState *env, target_ulong value, int alter_hv)
         ((value >> MSR_DR) & 1) != msr_dr) {
         cpu_interrupt_exittb(cs);
     }
-    if ((env->mmu_model & POWERPC_MMU_BOOKE) &&
+    if ((env->mmu_model == POWERPC_MMU_BOOKE ||
+         env->mmu_model == POWERPC_MMU_BOOKE206) &&
         ((value >> MSR_GS) & 1) != msr_gs) {
         cpu_interrupt_exittb(cs);
     }
@@ -243,7 +240,6 @@ int hreg_store_msr(CPUPPCState *env, target_ulong value, int alter_hv)
         hreg_swap_gpr_tgpr(env);
     }
     if (unlikely((value >> MSR_EP) & 1) != msr_ep) {
-        /* Change the exception prefix on PowerPC 601 */
         env->excp_prefix = ((value >> MSR_EP) & 1) * 0xFFF00000;
     }
     /*

@@ -279,88 +279,6 @@ void helper_store_dbatl(CPUPPCState *env, uint32_t nr, target_ulong value)
     env->DBAT[1][nr] = value;
 }
 
-void helper_store_601_batu(CPUPPCState *env, uint32_t nr, target_ulong value)
-{
-    target_ulong mask;
-#if defined(FLUSH_ALL_TLBS)
-    int do_inval;
-#endif
-
-    dump_store_bat(env, 'I', 0, nr, value);
-    if (env->IBAT[0][nr] != value) {
-#if defined(FLUSH_ALL_TLBS)
-        do_inval = 0;
-#endif
-        mask = (env->IBAT[1][nr] << 17) & 0x0FFE0000UL;
-        if (env->IBAT[1][nr] & 0x40) {
-            /* Invalidate BAT only if it is valid */
-#if !defined(FLUSH_ALL_TLBS)
-            do_invalidate_BAT(env, env->IBAT[0][nr], mask);
-#else
-            do_inval = 1;
-#endif
-        }
-        /*
-         * When storing valid upper BAT, mask BEPI and BRPN and
-         * invalidate all TLBs covered by this BAT
-         */
-        env->IBAT[0][nr] = (value & 0x00001FFFUL) |
-            (value & ~0x0001FFFFUL & ~mask);
-        env->DBAT[0][nr] = env->IBAT[0][nr];
-        if (env->IBAT[1][nr] & 0x40) {
-#if !defined(FLUSH_ALL_TLBS)
-            do_invalidate_BAT(env, env->IBAT[0][nr], mask);
-#else
-            do_inval = 1;
-#endif
-        }
-#if defined(FLUSH_ALL_TLBS)
-        if (do_inval) {
-            tlb_flush(env_cpu(env));
-        }
-#endif
-    }
-}
-
-void helper_store_601_batl(CPUPPCState *env, uint32_t nr, target_ulong value)
-{
-#if !defined(FLUSH_ALL_TLBS)
-    target_ulong mask;
-#else
-    int do_inval;
-#endif
-
-    dump_store_bat(env, 'I', 1, nr, value);
-    if (env->IBAT[1][nr] != value) {
-#if defined(FLUSH_ALL_TLBS)
-        do_inval = 0;
-#endif
-        if (env->IBAT[1][nr] & 0x40) {
-#if !defined(FLUSH_ALL_TLBS)
-            mask = (env->IBAT[1][nr] << 17) & 0x0FFE0000UL;
-            do_invalidate_BAT(env, env->IBAT[0][nr], mask);
-#else
-            do_inval = 1;
-#endif
-        }
-        if (value & 0x40) {
-#if !defined(FLUSH_ALL_TLBS)
-            mask = (value << 17) & 0x0FFE0000UL;
-            do_invalidate_BAT(env, env->IBAT[0][nr], mask);
-#else
-            do_inval = 1;
-#endif
-        }
-        env->IBAT[1][nr] = value;
-        env->DBAT[1][nr] = value;
-#if defined(FLUSH_ALL_TLBS)
-        if (do_inval) {
-            tlb_flush(env_cpu(env));
-        }
-#endif
-    }
-}
-
 /*****************************************************************************/
 /* TLB management */
 void ppc_tlb_invalidate_all(CPUPPCState *env)
@@ -392,7 +310,6 @@ void ppc_tlb_invalidate_all(CPUPPCState *env)
         booke206_flush_tlb(env, -1, 0);
         break;
     case POWERPC_MMU_32B:
-    case POWERPC_MMU_601:
         env->tlb_need_flush = 0;
         tlb_flush(env_cpu(env));
         break;
@@ -426,7 +343,6 @@ void ppc_tlb_invalidate_one(CPUPPCState *env, target_ulong addr)
         }
         break;
     case POWERPC_MMU_32B:
-    case POWERPC_MMU_601:
         /*
          * Actual CPUs invalidate entire congruence classes based on
          * the geometry of their TLBs and some OSes take that into
@@ -664,6 +580,14 @@ static inline int booke_page_size_to_tlb(target_ulong page_size)
 #define PPC4XX_TLBLO_ATTR_MASK      0x000000FF
 #define PPC4XX_TLBLO_RPN_MASK       0xFFFFFC00
 
+void helper_store_40x_pid(CPUPPCState *env, target_ulong val)
+{
+    if (env->spr[SPR_40x_PID] != val) {
+        env->spr[SPR_40x_PID] = val;
+        env->tlb_need_flush |= TLB_NEED_LOCAL_FLUSH;
+    }
+}
+
 target_ulong helper_4xx_tlbre_hi(CPUPPCState *env, target_ulong entry)
 {
     ppcemb_tlb_t *tlb;
@@ -681,7 +605,7 @@ target_ulong helper_4xx_tlbre_hi(CPUPPCState *env, target_ulong entry)
         size = PPC4XX_TLBHI_SIZE_DEFAULT;
     }
     ret |= size << PPC4XX_TLBHI_SIZE_SHIFT;
-    env->spr[SPR_40x_PID] = tlb->PID;
+    helper_store_40x_pid(env, tlb->PID);
     return ret;
 }
 
@@ -794,6 +718,8 @@ void helper_4xx_tlbwe_lo(CPUPPCState *env, target_ulong entry,
                   tlb->prot & PAGE_WRITE ? 'w' : '-',
                   tlb->prot & PAGE_EXEC ? 'x' : '-',
                   tlb->prot & PAGE_VALID ? 'v' : '-', (int)tlb->PID);
+
+    env->tlb_need_flush |= TLB_NEED_LOCAL_FLUSH;
 }
 
 target_ulong helper_4xx_tlbsx(CPUPPCState *env, target_ulong address)

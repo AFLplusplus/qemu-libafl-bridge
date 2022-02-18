@@ -110,6 +110,7 @@
 #define GICR_NSACR            (GICR_SGI_OFFSET + 0x0E00)
 
 #define GICR_CTLR_ENABLE_LPIS        (1U << 0)
+#define GICR_CTLR_CES                (1U << 1)
 #define GICR_CTLR_RWP                (1U << 3)
 #define GICR_CTLR_DPG0               (1U << 24)
 #define GICR_CTLR_DPG1NS             (1U << 25)
@@ -308,22 +309,24 @@ FIELD(GITS_TYPER, CIL, 36, 1)
 #define LPI_CTE_ENABLED          TABLE_ENTRY_VALID_MASK
 #define LPI_PRIORITY_MASK         0xfc
 
-#define GITS_CMDQ_ENTRY_SIZE               32
-#define NUM_BYTES_IN_DW                     8
+#define GITS_CMDQ_ENTRY_WORDS 4
+#define GITS_CMDQ_ENTRY_SIZE  (GITS_CMDQ_ENTRY_WORDS * sizeof(uint64_t))
 
 #define CMD_MASK                  0xff
 
 /* ITS Commands */
-#define GITS_CMD_CLEAR            0x04
-#define GITS_CMD_DISCARD          0x0F
+#define GITS_CMD_MOVI             0x01
 #define GITS_CMD_INT              0x03
-#define GITS_CMD_MAPC             0x09
+#define GITS_CMD_CLEAR            0x04
+#define GITS_CMD_SYNC             0x05
 #define GITS_CMD_MAPD             0x08
-#define GITS_CMD_MAPI             0x0B
+#define GITS_CMD_MAPC             0x09
 #define GITS_CMD_MAPTI            0x0A
+#define GITS_CMD_MAPI             0x0B
 #define GITS_CMD_INV              0x0C
 #define GITS_CMD_INVALL           0x0D
-#define GITS_CMD_SYNC             0x05
+#define GITS_CMD_MOVALL           0x0E
+#define GITS_CMD_DISCARD          0x0F
 
 /* MAPC command fields */
 #define ICID_LENGTH                  16
@@ -354,26 +357,36 @@ FIELD(MAPC, RDBASE, 16, 32)
 #define L2_TABLE_VALID_MASK       CMD_FIELD_VALID_MASK
 #define TABLE_ENTRY_VALID_MASK    (1ULL << 0)
 
+/* MOVALL command fields */
+FIELD(MOVALL_2, RDBASE1, 16, 36)
+FIELD(MOVALL_3, RDBASE2, 16, 36)
+
+/* MOVI command fields */
+FIELD(MOVI_0, DEVICEID, 32, 32)
+FIELD(MOVI_1, EVENTID, 0, 32)
+FIELD(MOVI_2, ICID, 0, 16)
+
 /*
  * 12 bytes Interrupt translation Table Entry size
  * as per Table 5.3 in GICv3 spec
  * ITE Lower 8 Bytes
- *   Bits:    | 49 ... 26 | 25 ... 2 |   1     |   0    |
- *   Values:  |  Doorbell |  IntNum  | IntType |  Valid |
+ *   Bits:    | 63 ... 48 | 47 ... 32 | 31 ... 26 | 25 ... 2 |   1     |  0    |
+ *   Values:  | vPEID     | ICID      | unused    |  IntNum  | IntType | Valid |
  * ITE Higher 4 Bytes
- *   Bits:    | 31 ... 16 | 15 ...0 |
- *   Values:  |  vPEID    |  ICID   |
- * (When Doorbell is unused, as it always is in GICv3, it is 1023)
+ *   Bits:    | 31 ... 25 | 24 ... 0 |
+ *   Values:  | unused    | Doorbell |
+ * (When Doorbell is unused, as it always is for INTYPE_PHYSICAL,
+ * the value of that field in memory cannot be relied upon -- older
+ * versions of QEMU did not correctly write to that memory.)
  */
 #define ITS_ITT_ENTRY_SIZE            0xC
 
 FIELD(ITE_L, VALID, 0, 1)
 FIELD(ITE_L, INTTYPE, 1, 1)
 FIELD(ITE_L, INTID, 2, 24)
-FIELD(ITE_L, DOORBELL, 26, 24)
-
-FIELD(ITE_H, ICID, 0, 16)
-FIELD(ITE_H, VPEID, 16, 16)
+FIELD(ITE_L, ICID, 32, 16)
+FIELD(ITE_L, VPEID, 48, 16)
+FIELD(ITE_H, DOORBELL, 0, 24)
 
 /* Possible values for ITE_L INTTYPE */
 #define ITE_INTTYPE_VIRTUAL 0
@@ -496,6 +509,27 @@ void gicv3_redist_update_lpi(GICv3CPUState *cs);
  * an incoming migration has loaded new state.
  */
 void gicv3_redist_update_lpi_only(GICv3CPUState *cs);
+/**
+ * gicv3_redist_mov_lpi:
+ * @src: source redistributor
+ * @dest: destination redistributor
+ * @irq: LPI to update
+ *
+ * Move the pending state of the specified LPI from @src to @dest,
+ * as required by the ITS MOVI command.
+ */
+void gicv3_redist_mov_lpi(GICv3CPUState *src, GICv3CPUState *dest, int irq);
+/**
+ * gicv3_redist_movall_lpis:
+ * @src: source redistributor
+ * @dest: destination redistributor
+ *
+ * Scan the LPI pending table for @src, and for each pending LPI there
+ * mark it as not-pending for @src and pending for @dest, as required
+ * by the ITS MOVALL command.
+ */
+void gicv3_redist_movall_lpis(GICv3CPUState *src, GICv3CPUState *dest);
+
 void gicv3_redist_send_sgi(GICv3CPUState *cs, int grp, int irq, bool ns);
 void gicv3_init_cpuif(GICv3State *s);
 

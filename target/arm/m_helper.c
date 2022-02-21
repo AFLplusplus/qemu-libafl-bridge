@@ -2256,6 +2256,12 @@ void arm_v7m_cpu_do_interrupt(CPUState *cs)
         armv7m_nvic_set_pending(env->nvic, ARMV7M_EXCP_USAGE, env->v7m.secure);
         env->v7m.cfsr[env->v7m.secure] |= R_V7M_CFSR_DIVBYZERO_MASK;
         break;
+    //// --- Begin LibAFL code ---
+#define EXCP_LIBAFL_BP 0xf4775747
+    case EXCP_LIBAFL_BP:
+        printf("libafl bp m_helper\n");
+        return;
+//// --- End LibAFL code ---
     case EXCP_SWI:
         /* The PC already points to the next instruction.  */
         armv7m_nvic_set_pending(env->nvic, ARMV7M_EXCP_SVC, env->v7m.secure);

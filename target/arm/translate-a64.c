@@ -2067,9 +2067,23 @@ static void disas_exc(DisasContext *s, uint32_t insn)
          */
         switch (op2_ll) {
         case 1:                                                     /* SVC */
-            gen_ss_advance(s);
-            gen_exception_insn(s, s->base.pc_next, EXCP_SWI,
-                               syn_aa64_svc(imm16), default_exception_el(s));
+//// --- Begin LibAFL code ---
+            // AFL hypercall
+            if (imm16 == 0xaf1) {
+                TCGv_i64 tmp = read_cpu_reg(s, 0, 1);
+                TCGv_i64 tmp1 = read_cpu_reg(s, 1, 1);
+                TCGv_i64 tmp2 = read_cpu_reg(s, 2, 1);
+                gen_helper_libafl_qemu_hypercall(tmp, cpu_env, tmp, tmp1, tmp2);
+                tcg_gen_mov_i64(cpu_reg(s, 0), tmp);
+                tcg_temp_free_i64(tmp2);
+                tcg_temp_free_i64(tmp1);
+                tcg_temp_free_i64(tmp);
+            } else {
+                gen_ss_advance(s);
+                gen_exception_insn(s, s->base.pc_next, EXCP_SWI,
+                                syn_aa64_svc(imm16), default_exception_el(s));
+            }                   
+//// --- End LibAFL code ---
             break;
         case 2:                                                     /* HVC */
             if (s->current_el == 0) {

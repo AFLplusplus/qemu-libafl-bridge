@@ -30,8 +30,21 @@
 #include "disas/disas.h"
 #include "exec/log.h"
 #include "tcg/tcg.h"
+#include "sysemu/cpus.h"
+#include "sysemu/runstate.h"
+#include "exec/cpu_ldst.h"
 
 //// --- Begin LibAFL code ---
+
+void libafl_init_fuzzer(void);
+void libafl_getwork(void *input_map_qemu, uint64_t input_map_qemu_sz);
+void libafl_finishwork(void);
+void libafl_crash(void);
+
+static uint64_t input_map_qemu_addr;
+static uint64_t input_map_qemu_size;
+
+//#define AFL_DEBUG 1
 
 #define EXCP_LIBAFL_BP 0xf4775747
 
@@ -40,6 +53,46 @@ void HELPER(libafl_qemu_handle_breakpoint)(CPUArchState *env)
     CPUState* cpu = env_cpu(env);
     cpu->exception_index = EXCP_LIBAFL_BP;
     cpu_loop_exit(cpu);
+}
+
+target_ulong HELPER(libafl_qemu_hypercall)(CPUArchState *env, target_ulong r0, target_ulong r1, target_ulong r2)
+{
+    CPUState* cpu = env_cpu(env);
+    #ifdef AFL_DEBUG
+    printf("got Hypercall!\n");
+    printf("pause cpus\n");
+    //vm_stop(RUN_STATE_PAUSED);
+    printf("r0: %ld\n", r0);
+    printf("r1: %ld\n", r1);
+    printf("r2: %ld\n", r2);
+    #endif
+    char buf[4096];
+    switch(r0) {
+        case 1:
+        // get work
+        libafl_getwork(&buf, input_map_qemu_size);
+        cpu_memory_rw_debug(cpu, input_map_qemu_addr, &buf, input_map_qemu_size, true);
+        break;
+        case 2:
+        // finish work
+        libafl_finishwork();
+        break;
+        case 3:
+        libafl_crash();
+        break;
+        case 0: // fallthrough
+        default:
+        input_map_qemu_addr = r1;
+        input_map_qemu_size = r2;
+        libafl_init_fuzzer();
+        break;    
+    }
+    //cpu_loop_exit_atomic(env_cpu(env), GETPC());
+    //cpu_loop_exit(cpu);
+#ifdef AFL_DEBUG
+    printf("return from hypercall\n");
+#endif
+    return 0;
 }
 
 //// --- End LibAFL code ---

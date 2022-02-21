@@ -44,6 +44,7 @@ TCGv_i64 gen_mte_check1(DisasContext *s, TCGv_i64 addr, bool is_write,
 TCGv_i64 gen_mte_checkN(DisasContext *s, TCGv_i64 addr, bool is_write,
                         bool tag_checked, int size);
 
+
 /* We should have at some point before trying to access an FP register
  * done the necessary access check, so assert that
  * (a) we did the check and

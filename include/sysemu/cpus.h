@@ -4,6 +4,8 @@
 #include "qemu/timer.h"
 #include "sysemu/accel-ops.h"
 
+void wait_pause_cpu(void);
+
 /* register accel-specific operations */
 void cpus_register_accel(const AccelOpsClass *i);
 

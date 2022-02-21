@@ -569,6 +569,11 @@ void pause_all_vcpus(void)
     qemu_mutex_lock_iothread();
 }
 
+void wait_pause_cpu(void)
+{
+    qemu_cond_wait(&qemu_pause_cond, &qemu_global_mutex);
+}
+
 void cpu_resume(CPUState *cpu)
 {
     cpu->stop = false;

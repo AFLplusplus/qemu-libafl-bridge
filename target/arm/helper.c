@@ -9823,6 +9823,12 @@ static void arm_cpu_do_interrupt_aarch32(CPUState *cs)
         /* The PC already points to the next instruction.  */
         offset = 0;
         break;
+    //// --- Begin LibAFL code ---
+#define EXCP_LIBAFL_BP 0xf4775747
+    case EXCP_LIBAFL_BP:
+    printf("libafl bp helper\n");
+        return;
+//// --- End LibAFL code ---
     case EXCP_BKPT:
         /* Fall through to prefetch abort.  */
     case EXCP_PREFETCH_ABORT:
@@ -10043,6 +10049,12 @@ static void arm_cpu_do_interrupt_aarch64(CPUState *cs)
     }
 
     switch (cs->exception_index) {
+//// --- Begin LibAFL code ---
+#define EXCP_LIBAFL_BP 0xf4775747
+    case EXCP_LIBAFL_BP:
+        printf("libafl bp helper\n");
+        return;
+//// --- End LibAFL code ---
     case EXCP_PREFETCH_ABORT:
     case EXCP_DATA_ABORT:
         env->cp15.far_el[new_el] = env->exception.vaddress;

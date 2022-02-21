@@ -47,11 +47,16 @@ void libafl_getwork(void *input_map_qemu, uint64_t input_map_qemu_sz);
 void libafl_finishwork(void);
 void libafl_crash(void);
 void libafl_restore(void);
+void libafl_clear_map(void);
+void libafl_user_crash(void);
+void libafl_enable_hooks(void);
+void libafl_disable_hooks(void);
 
 static uint64_t input_map_qemu_addr;
 static uint64_t input_map_qemu_size;
 
 static bool RESTORING_SNAPSHOT = false;
+static bool RESTORING_FROM_USERMODE_PANIC = false;
 
 //#define AFL_DEBUG 1
 
@@ -64,6 +69,7 @@ void HELPER(libafl_qemu_handle_breakpoint)(CPUArchState *env)
     cpu_loop_exit(cpu);
 }
 
+void libafl_load_snapshot_restart(void);
 void save_snapshot_bh(void *opaque);
 void load_snapshot_bh(void *opaque);
 
@@ -76,6 +82,12 @@ void save_snapshot_bh(void *opaque)
         error_report("Could not save snapshot");
     }
     printf("Saving finished\n");
+}
+
+void libafl_load_snapshot_restart(void)
+{
+    libafl_crash();
+    aio_bh_schedule_oneshot_full(qemu_get_aio_context(), load_snapshot_bh, NULL, "load_snapshot");
 }
 
 void load_snapshot_bh(void *opaque)
@@ -93,6 +105,7 @@ void load_snapshot_bh(void *opaque)
         error_report("Could not load snapshot");
     }
     RESTORING_SNAPSHOT = true;
+    RESTORING_FROM_USERMODE_PANIC = false;
     if (loaded && saved_vm_running) {
         vm_start();
     }
@@ -128,19 +141,33 @@ target_ulong HELPER(libafl_qemu_hypercall)(CPUArchState *env, target_ulong r0, t
 
         aio_bh_schedule_oneshot_full(qemu_get_aio_context(), load_snapshot_bh, NULL, "load_snapshot");
         break;
+        case 4:
+#ifdef AFL_DEBUG
+        printf("!!!! User crash !!!!!\n");
+#endif
+        libafl_user_crash();
+        break;
         case 0: // fallthrough
         default:
+        if(RESTORING_FROM_USERMODE_PANIC) {
+            //libafl_clear_map();
+            //libafl_crash();
+            break;
+        }
         if(RESTORING_SNAPSHOT) {
             // reset exit kind
             libafl_finishwork();
             // restarting after crash, no need to init again
+            //RESTORING_SNAPSHOT = false;
             break;
         }
         input_map_qemu_addr = r1;
         input_map_qemu_size = r2;
         libafl_init_fuzzer();
-        
+        vm_stop(RUN_STATE_SAVE_VM); // "sync barrier"
         aio_bh_schedule_oneshot_full(qemu_get_aio_context(), save_snapshot_bh, NULL, "save_snapshot");
+
+        RESTORING_FROM_USERMODE_PANIC = true; // we initialized once, ignore next initialize
         break;    
     }
 #ifdef AFL_DEBUG

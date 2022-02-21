@@ -246,7 +246,7 @@ void cpu_interrupt(CPUState *cpu, int mask)
     }
 }
 
-static int do_vm_stop(RunState state, bool send_stop)
+int do_vm_stop(RunState state, bool send_stop)
 {
     int ret = 0;
 

@@ -33,6 +33,12 @@
 #include "sysemu/cpus.h"
 #include "sysemu/runstate.h"
 #include "exec/cpu_ldst.h"
+#include "migration/snapshot.h"
+#include "block/aio.h"
+#include "block/block.h"
+#include "qemu/main-loop.h"
+#include "qapi/error.h"
+#include "qemu/error-report.h"
 
 //// --- Begin LibAFL code ---
 
@@ -40,9 +46,12 @@ void libafl_init_fuzzer(void);
 void libafl_getwork(void *input_map_qemu, uint64_t input_map_qemu_sz);
 void libafl_finishwork(void);
 void libafl_crash(void);
+void libafl_restore(void);
 
 static uint64_t input_map_qemu_addr;
 static uint64_t input_map_qemu_size;
+
+static bool RESTORING_SNAPSHOT = false;
 
 //#define AFL_DEBUG 1
 
@@ -53,6 +62,41 @@ void HELPER(libafl_qemu_handle_breakpoint)(CPUArchState *env)
     CPUState* cpu = env_cpu(env);
     cpu->exception_index = EXCP_LIBAFL_BP;
     cpu_loop_exit(cpu);
+}
+
+void save_snapshot_bh(void *opaque);
+void load_snapshot_bh(void *opaque);
+
+void save_snapshot_bh(void *opaque)
+{
+    Error *err = NULL;
+    printf("Saving snapshot\n");
+    if(!save_snapshot("afl_fuzz_start", true, NULL, false, NULL, &err)) {
+        error_report_err(err);
+        error_report("Could not save snapshot");
+    }
+    printf("Saving finished\n");
+}
+
+void load_snapshot_bh(void *opaque)
+{
+    Error *err = NULL;
+    printf("Loading snapshot\n");
+        
+    int saved_vm_running = runstate_is_running();
+    vm_stop(RUN_STATE_RESTORE_VM);
+        
+    bool loaded = load_snapshot("afl_fuzz_start", NULL, false, NULL, &err);
+        
+    if(!loaded) {
+        error_report_err(err);
+        error_report("Could not load snapshot");
+    }
+    RESTORING_SNAPSHOT = true;
+    if (loaded && saved_vm_running) {
+        vm_start();
+    }
+    printf("Loading finished\n");
 }
 
 target_ulong HELPER(libafl_qemu_hypercall)(CPUArchState *env, target_ulong r0, target_ulong r1, target_ulong r2)
@@ -66,10 +110,12 @@ target_ulong HELPER(libafl_qemu_hypercall)(CPUArchState *env, target_ulong r0, t
     printf("r1: %ld\n", r1);
     printf("r2: %ld\n", r2);
     #endif
-    char buf[4096];
+    char buf[input_map_qemu_size];
+    
     switch(r0) {
         case 1:
         // get work
+        memset(buf, 0, input_map_qemu_size);
         libafl_getwork(&buf, input_map_qemu_size);
         cpu_memory_rw_debug(cpu, input_map_qemu_addr, &buf, input_map_qemu_size, true);
         break;
@@ -79,16 +125,24 @@ target_ulong HELPER(libafl_qemu_hypercall)(CPUArchState *env, target_ulong r0, t
         break;
         case 3:
         libafl_crash();
+
+        aio_bh_schedule_oneshot_full(qemu_get_aio_context(), load_snapshot_bh, NULL, "load_snapshot");
         break;
         case 0: // fallthrough
         default:
+        if(RESTORING_SNAPSHOT) {
+            // reset exit kind
+            libafl_finishwork();
+            // restarting after crash, no need to init again
+            break;
+        }
         input_map_qemu_addr = r1;
         input_map_qemu_size = r2;
         libafl_init_fuzzer();
+        
+        aio_bh_schedule_oneshot_full(qemu_get_aio_context(), save_snapshot_bh, NULL, "save_snapshot");
         break;    
     }
-    //cpu_loop_exit_atomic(env_cpu(env), GETPC());
-    //cpu_loop_exit(cpu);
 #ifdef AFL_DEBUG
     printf("return from hypercall\n");
 #endif

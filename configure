@@ -375,6 +375,8 @@ cfi="false"
 # 4. Detection partly done in configure
 xen=${default_feature:+disabled}
 
+libafl_bridge=""
+
 # parse CC options second
 for opt do
   optarg=$(expr "x$opt" : 'x[^=]*=\(.*\)')
@@ -1180,6 +1182,13 @@ for opt do
   ;;
   # everything else has the same name in configure and meson
   --enable-* | --disable-*) meson_option_parse "$opt" "$optarg"
+  ;;
+  --with-libafl-bridge=*)
+      libafl_bridge="$optarg"
+      if ! (file "$libafl_bridge" | grep "ar archive" > /dev/null); then
+         error_exit "$libafl_bridge is not an ar archive"
+      fi
+      QEMU_LDFLAGS="$QEMU_LDFLAGS -Wl,--whole-archive $libafl_bridge -Wl,-no-whole-archive -lm -ldl -pthread"
   ;;
   --as-shared-lib)
       as_shared_lib="yes"

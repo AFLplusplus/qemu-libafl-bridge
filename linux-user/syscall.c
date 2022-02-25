@@ -13337,6 +13337,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
 
     //// --- Begin LibAFL code ---
 
+after_syscall:
     if (libafl_post_syscall_hook) {
         ret = (abi_ulong)libafl_post_syscall_hook((uint64_t)ret, num,
                                                   (uint64_t)arg1,
@@ -13349,7 +13350,6 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
                                                   (uint64_t)arg8);
     }
 
-after_syscall:
     //// --- End LibAFL code ---
 
     if (unlikely(qemu_loglevel_mask(LOG_STRACE))) {

@@ -1810,11 +1810,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     phys_pc = get_page_addr_code(env, src_block);
     phys_pc ^= reverse_bits((tb_page_addr_t)exit_n);
 
-    //if (phys_pc == -1) {
-        /* Generate a one-shot TB with 1 insn in it */
-        //cflags = (cflags & ~CF_COUNT_MASK) | CF_LAST_IO | 1;
-    //}
-    /* Generate a one-shot TB with 8 insn in it */
+    /* Generate a one-shot TB with max 8 insn in it */
     cflags = (cflags & ~CF_COUNT_MASK) | CF_LAST_IO | 8;
 
     max_insns = cflags & CF_COUNT_MASK;
@@ -1848,11 +1844,6 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     qatomic_set(&prof->tb_count1, prof->tb_count1 + 1);
     ti = profile_getclock();
 #endif
-
-    /*gen_code_size = sigsetjmp(tcg_ctx->jmp_trans, 0);
-    if (unlikely(gen_code_size != 0)) {
-        goto error_return;
-    }*/
 
     tcg_func_start(tcg_ctx);
 
@@ -1929,46 +1920,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
         tb_reset_jump(tb, 1);
     }
 
-    /*
-     * If the TB is not associated with a physical RAM page then
-     * it must be a temporary one-insn TB, and we have nothing to do
-     * except fill in the page_addr[] fields. Return early before
-     * attempting to link to other TBs or add to the lookup table.
-     */
-    /*if (phys_pc == -1) {
-        tb->page_addr[0] = tb->page_addr[1] = -1;
-        return tb;
-    }*/
-
-    /*
-     * Insert TB into the corresponding region tree before publishing it
-     * through QHT. Otherwise rewinding happened in the TB might fail to
-     * lookup itself using host PC.
-     */
-    //tcg_tb_insert(tb);
-
-    /* check next page if needed */
-    /*virt_page2 = (pc + tb->size - 1) & TARGET_PAGE_MASK;
-    phys_page2 = -1;
-    if ((pc & TARGET_PAGE_MASK) != virt_page2) {
-        phys_page2 = get_page_addr_code(env, virt_page2);
-    }*/
-    /*
-     * No explicit memory barrier is required -- tb_link_page() makes the
-     * TB visible in a consistent state.
-     */
-    
-    //existing_tb = tb_link_page(tb, phys_pc, phys_page2);
-    //existing_tb = tb_link_page(tb, phys_pc, -1);
-    /* if the TB already exists, discard what we just translated */
-    /*if (unlikely(existing_tb != tb)) {
-        uintptr_t orig_aligned = (uintptr_t)gen_code_buf;
-
-        orig_aligned -= ROUND_UP(sizeof(*tb), qemu_icache_linesize);
-        qatomic_set(&tcg_ctx->code_gen_ptr, (void *)orig_aligned);
-        tcg_tb_remove(tb);
-        return existing_tb;
-    }*/
+    tb->page_addr[0] = tb->page_addr[1] = -1;
     return tb;
 }
 

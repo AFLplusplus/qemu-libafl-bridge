@@ -1863,6 +1863,8 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     TCGTemp *tmp1[1] = { tcgv_i64_temp(tmp0) };
     tcg_gen_callN(libafl_exec_edge_hook, NULL, 1, tmp1);
     tcg_temp_free_i64(tmp0);
+    tb->size = 1;
+    tb->icount = 1;
 
     assert(tb->size != 0);
     tcg_ctx->cpu = NULL;

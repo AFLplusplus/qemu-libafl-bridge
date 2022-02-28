@@ -1755,9 +1755,20 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
                                   uint32_t flags, int cflags)
 {
     CPUArchState *env = cpu->env_ptr;
-    TranslationBlock *tb;
+    TranslationBlock *tb, *existing_tb;
+    tb_page_addr_t phys_pc, phys_page2;
+    target_ulong virt_page2;
     tcg_insn_unit *gen_code_buf;
-    int gen_code_size, search_size;
+    int gen_code_size, search_size, max_insns;
+#ifdef CONFIG_PROFILER
+    TCGProfile *prof = &tcg_ctx->prof;
+    int64_t ti;
+#endif
+
+    (void)virt_page2;
+    (void)phys_page2;
+    (void)phys_pc;
+    (void)existing_tb;
 
     assert_memory_lock();
 
@@ -1773,7 +1784,24 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
         libafl_helper_table_add(&libafl_exec_edge_hook_info);
     }
 
- buffer_overflow1:
+    qemu_thread_jit_write();
+
+    //phys_pc = get_page_addr_code(env, pc);
+
+    //if (phys_pc == -1) {
+        /* Generate a one-shot TB with 1 insn in it */
+        //cflags = (cflags & ~CF_COUNT_MASK) | CF_LAST_IO | 1;
+    //}
+    /* Generate a one-shot TB with 8 insn in it */
+    cflags = (cflags & ~CF_COUNT_MASK) | CF_LAST_IO | 8;
+
+    max_insns = cflags & CF_COUNT_MASK;
+    if (max_insns == 0) {
+        max_insns = TCG_MAX_INSNS;
+    }
+    QEMU_BUILD_BUG_ON(CF_COUNT_MASK + 1 != TCG_MAX_INSNS);
+
+ buffer_overflow:
     tb = tcg_tb_alloc(tcg_ctx);
     if (unlikely(!tb)) {
         /* flush must be done */
@@ -1784,32 +1812,41 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
         cpu_loop_exit(cpu);
     }
 
-    libafl_exec_edge_hook(libafl_id);
-
     gen_code_buf = tcg_ctx->code_gen_ptr;
-    tb->tc.ptr = gen_code_buf;
+    tb->tc.ptr = tcg_splitwx_to_rx(gen_code_buf);
     tb->pc = 0;
     tb->cs_base = cs_base;
     tb->flags = flags;
     tb->cflags = cflags;
     tb->trace_vcpu_dstate = *cpu->trace_dstate;
-    tcg_ctx->tb_cflags = 0;
+    tcg_ctx->tb_cflags = cflags;
+ tb_overflow:
+
+#ifdef CONFIG_PROFILER
+    /* includes aborted translations because of exceptions */
+    qatomic_set(&prof->tb_count1, prof->tb_count1 + 1);
+    ti = profile_getclock();
+#endif
+
+    gen_code_size = sigsetjmp(tcg_ctx->jmp_trans, 0);
+    if (unlikely(gen_code_size != 0)) {
+        goto error_return;
+    }
 
     tcg_func_start(tcg_ctx);
 
     tcg_ctx->cpu = env_cpu(env);
-    
+
     TCGv_i64 tmp0 = tcg_const_i64(libafl_id);
     TCGTemp *tmp1[1] = { tcgv_i64_temp(tmp0) };
     tcg_gen_callN(libafl_exec_edge_hook, NULL, 1, tmp1);
     tcg_temp_free_i64(tmp0);
 
-    tcg_gen_goto_tb(0);
-    tcg_gen_exit_tb(tb, 0);
-
+    assert(tb->size != 0);
     tcg_ctx->cpu = NULL;
+    max_insns = tb->icount;
 
-    trace_translate_block(tb, tb->pc, tb->tc.ptr);
+    // trace_translate_block(tb, tb->pc, tb->tc.ptr);
 
     /* generate machine code */
     tb->jmp_reset_offset[0] = TB_JMP_RESET_OFFSET_INVALID;
@@ -1823,20 +1860,66 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
         tcg_ctx->tb_jmp_target_addr = tb->jmp_target_arg;
     }
 
-    /* ??? Overflow could be handled better here.  In particular, we
-       don't need to re-do gen_intermediate_code, nor should we re-do
-       the tcg optimization currently hidden inside tcg_gen_code.  All
-       that should be required is to flush the TBs, allocate a new TB,
-       re-initialize it per above, and re-do the actual code generation.  */
+#ifdef CONFIG_PROFILER
+    qatomic_set(&prof->tb_count, prof->tb_count + 1);
+    qatomic_set(&prof->interm_time,
+                prof->interm_time + profile_getclock() - ti);
+    ti = profile_getclock();
+#endif
+
     gen_code_size = tcg_gen_code(tcg_ctx, tb);
     if (unlikely(gen_code_size < 0)) {
-        goto buffer_overflow1;
+ error_return:
+        switch (gen_code_size) {
+        case -1:
+            /*
+             * Overflow of code_gen_buffer, or the current slice of it.
+             *
+             * TODO: We don't need to re-do gen_intermediate_code, nor
+             * should we re-do the tcg optimization currently hidden
+             * inside tcg_gen_code.  All that should be required is to
+             * flush the TBs, allocate a new TB, re-initialize it per
+             * above, and re-do the actual code generation.
+             */
+            qemu_log_mask(CPU_LOG_TB_OP | CPU_LOG_TB_OP_OPT,
+                          "Restarting code generation for "
+                          "code_gen_buffer overflow\n");
+            goto buffer_overflow;
+
+        case -2:
+            /*
+             * The code generated for the TranslationBlock is too large.
+             * The maximum size allowed by the unwind info is 64k.
+             * There may be stricter constraints from relocations
+             * in the tcg backend.
+             *
+             * Try again with half as many insns as we attempted this time.
+             * If a single insn overflows, there's a bug somewhere...
+             */
+            assert(max_insns > 1);
+            max_insns /= 2;
+            qemu_log_mask(CPU_LOG_TB_OP | CPU_LOG_TB_OP_OPT,
+                          "Restarting code generation with "
+                          "smaller translation block (max %d insns)\n",
+                          max_insns);
+            goto tb_overflow;
+
+        default:
+            g_assert_not_reached();
+        }
     }
     search_size = encode_search(tb, (void *)gen_code_buf + gen_code_size);
     if (unlikely(search_size < 0)) {
-        goto buffer_overflow1;
+        goto buffer_overflow;
     }
     tb->tc.size = gen_code_size;
+
+#ifdef CONFIG_PROFILER
+    qatomic_set(&prof->code_time, prof->code_time + profile_getclock() - ti);
+    qatomic_set(&prof->code_in_len, prof->code_in_len + tb->size);
+    qatomic_set(&prof->code_out_len, prof->code_out_len + gen_code_size);
+    qatomic_set(&prof->search_out_len, prof->search_out_len + search_size);
+#endif
 
     qatomic_set(&tcg_ctx->code_gen_ptr, (void *)
         ROUND_UP((uintptr_t)gen_code_buf + gen_code_size + search_size,
@@ -1858,6 +1941,44 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
         tb_reset_jump(tb, 1);
     }
 
+    /*
+     * If the TB is not associated with a physical RAM page then
+     * it must be a temporary one-insn TB, and we have nothing to do
+     * except fill in the page_addr[] fields. Return early before
+     * attempting to link to other TBs or add to the lookup table.
+     */
+    /*if (phys_pc == -1) {
+        tb->page_addr[0] = tb->page_addr[1] = -1;
+        return tb;
+    }*/
+
+    /*
+     * Insert TB into the corresponding region tree before publishing it
+     * through QHT. Otherwise rewinding happened in the TB might fail to
+     * lookup itself using host PC.
+     */
+    // tcg_tb_insert(tb);
+
+    /* check next page if needed */
+    /*virt_page2 = (pc + tb->size - 1) & TARGET_PAGE_MASK;
+    phys_page2 = -1;
+    if ((pc & TARGET_PAGE_MASK) != virt_page2) {
+        phys_page2 = get_page_addr_code(env, virt_page2);
+    }*/
+    /*
+     * No explicit memory barrier is required -- tb_link_page() makes the
+     * TB visible in a consistent state.
+     */
+    //existing_tb = tb_link_page(tb, phys_pc, phys_page2);
+    /* if the TB already exists, discard what we just translated */
+    /*if (unlikely(existing_tb != tb)) {
+        uintptr_t orig_aligned = (uintptr_t)gen_code_buf;
+
+        orig_aligned -= ROUND_UP(sizeof(*tb), qemu_icache_linesize);
+        qatomic_set(&tcg_ctx->code_gen_ptr, (void *)orig_aligned);
+        tcg_tb_remove(tb);
+        return existing_tb;
+    }*/
     return tb;
 }
 

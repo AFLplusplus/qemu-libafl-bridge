@@ -70,8 +70,9 @@
 
 void libafl_helper_table_add(TCGHelperInfo* info);
 TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
-                                  target_ulong dst_block, target_ulong cs_base,
-                                  uint32_t flags, int cflags);
+                                  target_ulong dst_block, int exit_n,
+                                  target_ulong cs_base, uint32_t flags,
+                                  int cflags);
 void libafl_gen_read(TCGv addr, MemOp ot);
 void libafl_gen_read_N(TCGv addr, uint32_t size);
 void libafl_gen_write(TCGv addr, MemOp ot);
@@ -1749,10 +1750,28 @@ tb_link_page(TranslationBlock *tb, tb_page_addr_t phys_pc,
 
 //// --- Begin LibAFL code ---
 
+static target_ulong reverse_bits(target_ulong num)
+{
+    unsigned int count = sizeof(num) * 8 - 1;
+    target_ulong reverse_num = num;
+      
+    num >>= 1; 
+    while(num)
+    {
+       reverse_num <<= 1;       
+       reverse_num |= num & 1;
+       num >>= 1;
+       count--;
+    }
+    reverse_num <<= count;
+    return reverse_num;
+}
+
 /* Called with mmap_lock held for user mode emulation.  */
 TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
-                                  target_ulong dst_block, target_ulong cs_base,
-                                  uint32_t flags, int cflags)
+                                  target_ulong dst_block, int exit_n,
+                                  target_ulong cs_base, uint32_t flags,
+                                  int cflags)
 {
     CPUArchState *env = cpu->env_ptr;
     TranslationBlock *tb, *existing_tb;
@@ -1764,6 +1783,8 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     TCGProfile *prof = &tcg_ctx->prof;
     int64_t ti;
 #endif
+
+    target_ulong pc = src_block ^ reverse_bits((target_ulong)exit_n);
 
     (void)virt_page2;
     (void)phys_page2;
@@ -1786,7 +1807,8 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
 
     qemu_thread_jit_write();
 
-    //phys_pc = get_page_addr_code(env, pc);
+    phys_pc = get_page_addr_code(env, src_block);
+    phys_pc ^= reverse_bits((tb_page_addr_t)exit_n);
 
     //if (phys_pc == -1) {
         /* Generate a one-shot TB with 1 insn in it */
@@ -1814,7 +1836,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
 
     gen_code_buf = tcg_ctx->code_gen_ptr;
     tb->tc.ptr = tcg_splitwx_to_rx(gen_code_buf);
-    tb->pc = 0;
+    tb->pc = pc;
     tb->cs_base = cs_base;
     tb->flags = flags;
     tb->cflags = cflags;
@@ -1969,16 +1991,18 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
      * No explicit memory barrier is required -- tb_link_page() makes the
      * TB visible in a consistent state.
      */
+    
     //existing_tb = tb_link_page(tb, phys_pc, phys_page2);
+    existing_tb = tb_link_page(tb, phys_pc, -1);
     /* if the TB already exists, discard what we just translated */
-    /*if (unlikely(existing_tb != tb)) {
+    if (unlikely(existing_tb != tb)) {
         uintptr_t orig_aligned = (uintptr_t)gen_code_buf;
 
         orig_aligned -= ROUND_UP(sizeof(*tb), qemu_icache_linesize);
         qatomic_set(&tcg_ctx->code_gen_ptr, (void *)orig_aligned);
         tcg_tb_remove(tb);
         return existing_tb;
-    }*/
+    }
     return tb;
 }
 

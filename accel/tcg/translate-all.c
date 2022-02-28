@@ -1957,7 +1957,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
      * through QHT. Otherwise rewinding happened in the TB might fail to
      * lookup itself using host PC.
      */
-    // tcg_tb_insert(tb);
+    tcg_tb_insert(tb);
 
     /* check next page if needed */
     /*virt_page2 = (pc + tb->size - 1) & TARGET_PAGE_MASK;

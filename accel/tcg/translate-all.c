@@ -1823,7 +1823,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     }
     QEMU_BUILD_BUG_ON(CF_COUNT_MASK + 1 != TCG_MAX_INSNS);
 
- buffer_overflow:
+ buffer_overflow1:
     tb = tcg_tb_alloc(tcg_ctx);
     if (unlikely(!tb)) {
         /* flush must be done */
@@ -1842,7 +1842,6 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     tb->cflags = cflags;
     tb->trace_vcpu_dstate = *cpu->trace_dstate;
     tcg_ctx->tb_cflags = cflags;
- tb_overflow:
 
 #ifdef CONFIG_PROFILER
     /* includes aborted translations because of exceptions */
@@ -1850,10 +1849,10 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     ti = profile_getclock();
 #endif
 
-    gen_code_size = sigsetjmp(tcg_ctx->jmp_trans, 0);
+    /*gen_code_size = sigsetjmp(tcg_ctx->jmp_trans, 0);
     if (unlikely(gen_code_size != 0)) {
         goto error_return;
-    }
+    }*/
 
     tcg_func_start(tcg_ctx);
 
@@ -1863,6 +1862,8 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     TCGTemp *tmp1[1] = { tcgv_i64_temp(tmp0) };
     tcg_gen_callN(libafl_exec_edge_hook, NULL, 1, tmp1);
     tcg_temp_free_i64(tmp0);
+    tcg_gen_goto_tb(0);
+    tcg_gen_exit_tb(tb, 0);
     tb->size = 1;
     tb->icount = 1;
 
@@ -1870,7 +1871,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     tcg_ctx->cpu = NULL;
     max_insns = tb->icount;
 
-    // trace_translate_block(tb, tb->pc, tb->tc.ptr);
+    trace_translate_block(tb, tb->pc, tb->tc.ptr);
 
     /* generate machine code */
     tb->jmp_reset_offset[0] = TB_JMP_RESET_OFFSET_INVALID;
@@ -1893,48 +1894,11 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
 
     gen_code_size = tcg_gen_code(tcg_ctx, tb);
     if (unlikely(gen_code_size < 0)) {
- error_return:
-        switch (gen_code_size) {
-        case -1:
-            /*
-             * Overflow of code_gen_buffer, or the current slice of it.
-             *
-             * TODO: We don't need to re-do gen_intermediate_code, nor
-             * should we re-do the tcg optimization currently hidden
-             * inside tcg_gen_code.  All that should be required is to
-             * flush the TBs, allocate a new TB, re-initialize it per
-             * above, and re-do the actual code generation.
-             */
-            qemu_log_mask(CPU_LOG_TB_OP | CPU_LOG_TB_OP_OPT,
-                          "Restarting code generation for "
-                          "code_gen_buffer overflow\n");
-            goto buffer_overflow;
-
-        case -2:
-            /*
-             * The code generated for the TranslationBlock is too large.
-             * The maximum size allowed by the unwind info is 64k.
-             * There may be stricter constraints from relocations
-             * in the tcg backend.
-             *
-             * Try again with half as many insns as we attempted this time.
-             * If a single insn overflows, there's a bug somewhere...
-             */
-            assert(max_insns > 1);
-            max_insns /= 2;
-            qemu_log_mask(CPU_LOG_TB_OP | CPU_LOG_TB_OP_OPT,
-                          "Restarting code generation with "
-                          "smaller translation block (max %d insns)\n",
-                          max_insns);
-            goto tb_overflow;
-
-        default:
-            g_assert_not_reached();
-        }
+        goto buffer_overflow1;
     }
     search_size = encode_search(tb, (void *)gen_code_buf + gen_code_size);
     if (unlikely(search_size < 0)) {
-        goto buffer_overflow;
+        goto buffer_overflow1;
     }
     tb->tc.size = gen_code_size;
 
@@ -1981,7 +1945,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
      * through QHT. Otherwise rewinding happened in the TB might fail to
      * lookup itself using host PC.
      */
-    tcg_tb_insert(tb);
+    //tcg_tb_insert(tb);
 
     /* check next page if needed */
     /*virt_page2 = (pc + tb->size - 1) & TARGET_PAGE_MASK;
@@ -1995,16 +1959,16 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
      */
     
     //existing_tb = tb_link_page(tb, phys_pc, phys_page2);
-    existing_tb = tb_link_page(tb, phys_pc, -1);
+    //existing_tb = tb_link_page(tb, phys_pc, -1);
     /* if the TB already exists, discard what we just translated */
-    if (unlikely(existing_tb != tb)) {
+    /*if (unlikely(existing_tb != tb)) {
         uintptr_t orig_aligned = (uintptr_t)gen_code_buf;
 
         orig_aligned -= ROUND_UP(sizeof(*tb), qemu_icache_linesize);
         qatomic_set(&tcg_ctx->code_gen_ptr, (void *)orig_aligned);
         tcg_tb_remove(tb);
         return existing_tb;
-    }
+    }*/
     return tb;
 }
 

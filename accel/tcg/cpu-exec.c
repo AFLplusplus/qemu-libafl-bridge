@@ -897,7 +897,7 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
 //// --- Begin LibAFL code ---
 
 TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
-                                  target_ulong dst_block, target_ulong cs_base,
+                                  target_ulong dst_block, int exit_n, target_ulong cs_base,
                                   uint32_t flags, int cflags);
 
 //// --- End LibAFL code ---
@@ -1023,7 +1023,7 @@ int cpu_exec(CPUState *cpu)
                 if (last_tb->jmp_reset_offset[1] != TB_JMP_RESET_OFFSET_INVALID) {
                     mmap_lock();
                     TranslationBlock *edge = libafl_gen_edge(cpu, last_tb->pc, tb->pc,
-                                                             cs_base, flags, cflags);
+                                                             tb_exit, cs_base, flags, cflags);
                     mmap_unlock();
 
                     if (edge) {

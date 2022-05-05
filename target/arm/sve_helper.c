@@ -2802,7 +2802,7 @@ static void swap_memmove(void *vd, void *vs, size_t n)
     uintptr_t o = (d | s | n) & 7;
     size_t i;
 
-#ifndef HOST_WORDS_BIGENDIAN
+#if !HOST_BIG_ENDIAN
     o = 0;
 #endif
     switch (o) {
@@ -2864,7 +2864,7 @@ static void swap_memzero(void *vd, size_t n)
         return;
     }
 
-#ifndef HOST_WORDS_BIGENDIAN
+#if !HOST_BIG_ENDIAN
     o = 0;
 #endif
     switch (o) {
@@ -6734,7 +6734,11 @@ void sve_ld1_z(CPUARMState *env, void *vd, uint64_t *vg, void *vm,
                     if (mtedesc && arm_tlb_mte_tagged(&info.attrs)) {
                         mte_check(env, mtedesc, addr, retaddr);
                     }
-                    host_fn(&scratch, reg_off, info.host);
+                    if (unlikely(info.flags & TLB_MMIO)) {
+                        tlb_fn(env, &scratch, reg_off, addr, retaddr);
+                    } else {
+                        host_fn(&scratch, reg_off, info.host);
+                    }
                 } else {
                     /* Element crosses the page boundary. */
                     sve_probe_page(&info2, false, env, addr + in_page, 0,
@@ -7112,7 +7116,9 @@ void sve_st1_z(CPUARMState *env, void *vd, uint64_t *vg, void *vm,
                 if (likely(in_page >= msize)) {
                     sve_probe_page(&info, false, env, addr, 0, MMU_DATA_STORE,
                                    mmu_idx, retaddr);
-                    host[i] = info.host;
+                    if (!(info.flags & TLB_MMIO)) {
+                        host[i] = info.host;
+                    }
                 } else {
                     /*
                      * Element crosses the page boundary.

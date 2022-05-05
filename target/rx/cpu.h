@@ -24,6 +24,7 @@
 #include "cpu-qom.h"
 
 #include "exec/cpu-defs.h"
+#include "qemu/cpu-float.h"
 
 /* PSW define */
 REG32(PSW, 0)
@@ -65,7 +66,7 @@ enum {
     NUM_REGS = 16,
 };
 
-typedef struct CPURXState {
+typedef struct CPUArchState {
     /* CPU registers */
     uint32_t regs[NUM_REGS];    /* general registers */
     uint32_t psw_o;             /* O bit of status register */
@@ -105,7 +106,7 @@ typedef struct CPURXState {
  *
  * A RX CPU
  */
-struct RXCPU {
+struct ArchCPU {
     /*< private >*/
     CPUState parent_obj;
     /*< public >*/
@@ -113,8 +114,6 @@ struct RXCPU {
     CPUNegativeOffsetState neg;
     CPURXState env;
 };
-
-typedef RXCPU ArchCPU;
 
 #define RX_CPU_TYPE_SUFFIX "-" TYPE_RX_CPU
 #define RX_CPU_TYPE_NAME(model) model RX_CPU_TYPE_SUFFIX
@@ -150,6 +149,7 @@ static inline void cpu_get_tb_cpu_state(CPURXState *env, target_ulong *pc,
     *pc = env->pc;
     *cs_base = 0;
     *flags = FIELD_DP32(0, PSW, PM, env->psw_pm);
+    *flags = FIELD_DP32(*flags, PSW, U, env->psw_u);
 }
 
 static inline int cpu_mmu_index(CPURXState *env, bool ifetch)

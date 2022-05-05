@@ -20,7 +20,6 @@
 #include "qemu/cutils.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
-#include "qemu-common.h"
 #include "hw/loader.h"
 #include "hw/rx/rx62n.h"
 #include "sysemu/qtest.h"
@@ -142,7 +141,7 @@ static void rx_gdbsim_init(MachineState *machine)
                 exit(1);
             }
             /* DTB is located at the end of SDRAM space. */
-            dtb_offset = machine->ram_size - dtb_size;
+            dtb_offset = ROUND_DOWN(machine->ram_size - dtb_size, 16);
             rom_add_blob_fixed("dtb", dtb, dtb_size,
                                SDRAM_BASE + dtb_offset);
             /* Set dtb address to R1 */

@@ -282,23 +282,28 @@ struct DisplayChangeListener {
 };
 
 typedef struct DisplayGLCtxOps {
-    /*
-     * We only check if the GLCtx is compatible with a DCL via ops. A natural
-     * evolution of this would be a callback to check some runtime requirements
-     * and allow various DCL kinds.
-     */
-    const DisplayChangeListenerOps *compatible_dcl;
-
+    bool (*dpy_gl_ctx_is_compatible_dcl)(DisplayGLCtx *dgc,
+                                         DisplayChangeListener *dcl);
     QEMUGLContext (*dpy_gl_ctx_create)(DisplayGLCtx *dgc,
                                        QEMUGLParams *params);
     void (*dpy_gl_ctx_destroy)(DisplayGLCtx *dgc,
                                QEMUGLContext ctx);
     int (*dpy_gl_ctx_make_current)(DisplayGLCtx *dgc,
                                    QEMUGLContext ctx);
+    void (*dpy_gl_ctx_create_texture)(DisplayGLCtx *dgc,
+                                      DisplaySurface *surface);
+    void (*dpy_gl_ctx_destroy_texture)(DisplayGLCtx *dgc,
+                                      DisplaySurface *surface);
+    void (*dpy_gl_ctx_update_texture)(DisplayGLCtx *dgc,
+                                      DisplaySurface *surface,
+                                      int x, int y, int w, int h);
 } DisplayGLCtxOps;
 
 struct DisplayGLCtx {
     const DisplayGLCtxOps *ops;
+#ifdef CONFIG_OPENGL
+    QemuGLShader *gls; /* optional shared shader */
+#endif
 };
 
 DisplayState *init_displaystate(void);
@@ -513,6 +518,7 @@ int vnc_display_pw_expire(const char *id, time_t expires);
 void vnc_parse(const char *str);
 int vnc_init_func(void *opaque, QemuOpts *opts, Error **errp);
 bool vnc_display_reload_certs(const char *id,  Error **errp);
+bool vnc_display_update(DisplayUpdateOptionsVNC *arg, Error **errp);
 
 /* input.c */
 int index_from_key(const char *key, size_t key_length);

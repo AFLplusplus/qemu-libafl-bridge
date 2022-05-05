@@ -41,6 +41,7 @@
 #include "qapi/qapi-visit-block-core.h"
 #include "qemu/bswap.h"
 #include "qemu/bitmap.h"
+#include "qemu/memalign.h"
 #include "migration/blocker.h"
 #include "parallels.h"
 
@@ -869,11 +870,11 @@ static int parallels_open(BlockDriverState *bs, QDict *options, int flags,
         }
     }
 
-    s->bat_dirty_block = 4 * qemu_real_host_page_size;
+    s->bat_dirty_block = 4 * qemu_real_host_page_size();
     s->bat_dirty_bmap =
         bitmap_new(DIV_ROUND_UP(s->header_size, s->bat_dirty_block));
 
-    /* Disable migration until bdrv_invalidate_cache method is added */
+    /* Disable migration until bdrv_activate method is added */
     error_setg(&s->migration_blocker, "The Parallels format used by node '%s' "
                "does not support live migration",
                bdrv_get_device_or_node_name(bs));

@@ -17,6 +17,7 @@
 #include "sysemu/memory_mapping.h"
 #include "exec/memory.h"
 #include "exec/address-spaces.h"
+#include "hw/core/cpu.h"
 
 //#define DEBUG_GUEST_PHYS_REGION_ADD
 
@@ -41,7 +42,7 @@ static void create_new_memory_mapping(MemoryMappingList *list,
 {
     MemoryMapping *memory_mapping;
 
-    memory_mapping = g_malloc(sizeof(MemoryMapping));
+    memory_mapping = g_new(MemoryMapping, 1);
     memory_mapping->phys_addr = phys_addr;
     memory_mapping->virt_addr = virt_addr;
     memory_mapping->length = length;

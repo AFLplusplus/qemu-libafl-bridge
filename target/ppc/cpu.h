@@ -21,6 +21,7 @@
 #define PPC_CPU_H
 
 #include "qemu/int128.h"
+#include "qemu/cpu-float.h"
 #include "exec/cpu-defs.h"
 #include "cpu-qom.h"
 #include "qom/object.h"
@@ -127,8 +128,10 @@ enum {
     /* ISA 3.00 additions */
     POWERPC_EXCP_HVIRT    = 101,
     POWERPC_EXCP_SYSCALL_VECTORED = 102, /* scv exception                     */
+    POWERPC_EXCP_PERFM_EBB = 103,    /* Performance Monitor EBB Exception    */
+    POWERPC_EXCP_EXTERNAL_EBB = 104, /* External EBB Exception               */
     /* EOL                                                                   */
-    POWERPC_EXCP_NB       = 103,
+    POWERPC_EXCP_NB       = 105,
     /* QEMU exceptions: special cases we want to stop translation            */
     POWERPC_EXCP_SYSCALL_USER = 0x203, /* System call in user mode only      */
 };
@@ -1075,7 +1078,7 @@ struct ppc_radix_page_info {
 #define PPC_CPU_OPCODES_LEN          0x40
 #define PPC_CPU_INDIRECT_OPCODES_LEN 0x20
 
-struct CPUPPCState {
+struct CPUArchState {
     /* Most commonly used resources during translated code execution first */
     target_ulong gpr[32];  /* general purpose registers */
     target_ulong gprh[32]; /* storage for GPR MSB, used by the SPE extension */
@@ -1273,7 +1276,7 @@ typedef struct PPCVirtualHypervisorClass PPCVirtualHypervisorClass;
  *
  * A PowerPC CPU.
  */
-struct PowerPCCPU {
+struct ArchCPU {
     /*< private >*/
     CPUState parent_obj;
     /*< public >*/
@@ -1474,9 +1477,6 @@ int ppc_compat_max_vthreads(PowerPCCPU *cpu);
 void ppc_compat_add_property(Object *obj, const char *name,
                              uint32_t *compat_pvr, const char *basedesc);
 #endif /* defined(TARGET_PPC64) */
-
-typedef CPUPPCState CPUArchState;
-typedef PowerPCCPU ArchCPU;
 
 #include "exec/cpu-all.h"
 
@@ -2434,6 +2434,7 @@ enum {
     PPC_INTERRUPT_HMI,            /* Hypervisor Maintenance interrupt    */
     PPC_INTERRUPT_HDOORBELL,      /* Hypervisor Doorbell interrupt        */
     PPC_INTERRUPT_HVIRT,          /* Hypervisor virtualization interrupt  */
+    PPC_INTERRUPT_EBB,            /* Event-based Branch exception         */
 };
 
 /* Processor Compatibility mask (PCR) */
@@ -2491,13 +2492,18 @@ static inline void cpu_get_tb_cpu_state(CPUPPCState *env, target_ulong *pc,
 }
 #endif
 
-void QEMU_NORETURN raise_exception(CPUPPCState *env, uint32_t exception);
-void QEMU_NORETURN raise_exception_ra(CPUPPCState *env, uint32_t exception,
-                                      uintptr_t raddr);
-void QEMU_NORETURN raise_exception_err(CPUPPCState *env, uint32_t exception,
-                                       uint32_t error_code);
-void QEMU_NORETURN raise_exception_err_ra(CPUPPCState *env, uint32_t exception,
-                                          uint32_t error_code, uintptr_t raddr);
+G_NORETURN void raise_exception(CPUPPCState *env, uint32_t exception);
+G_NORETURN void raise_exception_ra(CPUPPCState *env, uint32_t exception,
+                                   uintptr_t raddr);
+G_NORETURN void raise_exception_err(CPUPPCState *env, uint32_t exception,
+                                    uint32_t error_code);
+G_NORETURN void raise_exception_err_ra(CPUPPCState *env, uint32_t exception,
+                                       uint32_t error_code, uintptr_t raddr);
+
+/* PERFM EBB helper*/
+#if defined(TARGET_PPC64) && !defined(CONFIG_USER_ONLY)
+void raise_ebb_perfm_exception(CPUPPCState *env);
+#endif
 
 #if !defined(CONFIG_USER_ONLY)
 static inline int booke206_tlbm_id(CPUPPCState *env, ppcmas_tlb_t *tlbm)
@@ -2637,7 +2643,7 @@ static inline bool lsw_reg_in_range(int start, int nregs, int rx)
 }
 
 /* Accessors for FP, VMX and VSX registers */
-#if defined(HOST_WORDS_BIGENDIAN)
+#if HOST_BIG_ENDIAN
 #define VsrB(i) u8[i]
 #define VsrSB(i) s8[i]
 #define VsrH(i) u16[i]

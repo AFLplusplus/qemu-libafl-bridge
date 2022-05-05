@@ -6,7 +6,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "libqos/libqtest.h"
+#include "libqtest.h"
 
 /*
  * This used to trigger the assert in lsi_do_dma()
@@ -39,14 +39,10 @@ static void test_lsi_do_dma_empty_queue(void)
 
 int main(int argc, char **argv)
 {
-    const char *arch = qtest_get_arch();
-
     g_test_init(&argc, &argv, NULL);
 
-    if (strcmp(arch, "i386") == 0 || strcmp(arch, "x86_64") == 0) {
-        qtest_add_func("fuzz/lsi53c895a/lsi_do_dma_empty_queue",
-                       test_lsi_do_dma_empty_queue);
-    }
+    qtest_add_func("fuzz/lsi53c895a/lsi_do_dma_empty_queue",
+                   test_lsi_do_dma_empty_queue);
 
     return g_test_run();
 }

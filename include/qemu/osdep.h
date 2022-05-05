@@ -34,6 +34,18 @@
 #include "exec/poison.h"
 #endif
 
+/*
+ * HOST_WORDS_BIGENDIAN was replaced with HOST_BIG_ENDIAN. Prevent it from
+ * creeping back in.
+ */
+#pragma GCC poison HOST_WORDS_BIGENDIAN
+
+/*
+ * TARGET_WORDS_BIGENDIAN was replaced with TARGET_BIG_ENDIAN. Prevent it from
+ * creeping back in.
+ */
+#pragma GCC poison TARGET_WORDS_BIGENDIAN
+
 #include "qemu/compiler.h"
 
 /* Older versions of C++ don't get definitions of various macros from
@@ -157,6 +169,23 @@ extern "C" {
 #define assert(x)  g_assert(x)
 #endif
 
+/**
+ * qemu_build_not_reached()
+ *
+ * The compiler, during optimization, is expected to prove that a call
+ * to this function cannot be reached and remove it.  If the compiler
+ * supports QEMU_ERROR, this will be reported at compile time; otherwise
+ * this will be reported at link time due to the missing symbol.
+ */
+extern G_NORETURN
+void QEMU_ERROR("code path is reachable")
+    qemu_build_not_reached_always(void);
+#if defined(__OPTIMIZE__) && !defined(__NO_INLINE__)
+#define qemu_build_not_reached()  qemu_build_not_reached_always()
+#else
+#define qemu_build_not_reached()  g_assert_not_reached()
+#endif
+
 /*
  * According to waitpid man page:
  * WCOREDUMP
@@ -214,6 +243,8 @@ extern "C" {
 #define ESHUTDOWN 4099
 #endif
 
+#define TFR(expr) do { if ((expr) != -1) break; } while (errno == EINTR)
+
 /* time_t may be either 32 or 64 bits depending on the host OS, and
  * can be either signed or unsigned, so we can't just hardcode a
  * specific maximum value. This is not a C preprocessor constant,
@@ -242,15 +273,6 @@ extern "C" {
 
 #ifndef TIME_MAX
 #define TIME_MAX TYPE_MAXIMUM(time_t)
-#endif
-
-/* HOST_LONG_BITS is the size of a native pointer in bits. */
-#if UINTPTR_MAX == UINT32_MAX
-# define HOST_LONG_BITS 32
-#elif UINTPTR_MAX == UINT64_MAX
-# define HOST_LONG_BITS 64
-#else
-# error Unknown pointer size
 #endif
 
 /* Mac OSX has a <stdint.h> bug that incorrectly defines SIZE_MAX with
@@ -379,27 +401,9 @@ extern "C" {
 #endif
 
 int qemu_daemon(int nochdir, int noclose);
-void *qemu_try_memalign(size_t alignment, size_t size);
-void *qemu_memalign(size_t alignment, size_t size);
 void *qemu_anon_ram_alloc(size_t size, uint64_t *align, bool shared,
                           bool noreserve);
-void qemu_vfree(void *ptr);
 void qemu_anon_ram_free(void *ptr, size_t size);
-
-/*
- * It's an analog of GLIB's g_autoptr_cleanup_generic_gfree(), used to define
- * g_autofree macro.
- */
-static inline void qemu_cleanup_generic_vfree(void *p)
-{
-  void **pp = (void **)p;
-  qemu_vfree(*pp);
-}
-
-/*
- * Analog of g_autofree, but qemu_vfree is called on cleanup instead of g_free.
- */
-#define QEMU_AUTO_VFREE __attribute__((cleanup(qemu_cleanup_generic_vfree)))
 
 #ifdef _WIN32
 #define HAVE_CHARDEV_SERIAL 1
@@ -416,6 +420,14 @@ static inline void qemu_cleanup_generic_vfree(void *p)
 
 #if defined(__HAIKU__)
 #define SIGIO SIGPOLL
+#endif
+
+#ifdef HAVE_MADVISE_WITHOUT_PROTOTYPE
+/*
+ * See MySQL bug #7156 (http://bugs.mysql.com/bug.php?id=7156) for discussion
+ * about Solaris missing the madvise() prototype.
+ */
+extern int madvise(char *, size_t, int);
 #endif
 
 #if defined(CONFIG_LINUX)
@@ -438,9 +450,9 @@ static inline void qemu_cleanup_generic_vfree(void *p)
    /* Use 1 MiB (segment size) alignment so gmap can be used by KVM. */
 #  define QEMU_VMALLOC_ALIGN (256 * 4096)
 #elif defined(__linux__) && defined(__sparc__)
-#  define QEMU_VMALLOC_ALIGN MAX(qemu_real_host_page_size, SHMLBA)
+#  define QEMU_VMALLOC_ALIGN MAX(qemu_real_host_page_size(), SHMLBA)
 #else
-#  define QEMU_VMALLOC_ALIGN qemu_real_host_page_size
+#  define QEMU_VMALLOC_ALIGN qemu_real_host_page_size()
 #endif
 
 #ifdef CONFIG_POSIX
@@ -532,21 +544,18 @@ static inline void qemu_timersub(const struct timeval *val1,
 #define qemu_timersub timersub
 #endif
 
+ssize_t qemu_write_full(int fd, const void *buf, size_t count)
+    G_GNUC_WARN_UNUSED_RESULT;
+
 void qemu_set_cloexec(int fd);
 
-void fips_set_state(bool requested);
-bool fips_get_state(void);
-
-/* Return a dynamically allocated pathname denoting a file or directory that is
- * appropriate for storing local state.
- *
- * @relative_pathname need not start with a directory separator; one will be
- * added automatically.
+/* Return a dynamically allocated directory path that is appropriate for storing
+ * local state.
  *
  * The caller is responsible for releasing the value returned with g_free()
  * after use.
  */
-char *qemu_get_local_state_pathname(const char *relative_pathname);
+char *qemu_get_local_state_dir(void);
 
 /* Find program directory, and save it for later usage with
  * qemu_get_exec_dir().
@@ -597,8 +606,15 @@ pid_t qemu_fork(Error **errp);
 /* Using intptr_t ensures that qemu_*_page_mask is sign-extended even
  * when intptr_t is 32-bit and we are aligning a long long.
  */
-extern uintptr_t qemu_real_host_page_size;
-extern intptr_t qemu_real_host_page_mask;
+static inline uintptr_t qemu_real_host_page_size(void)
+{
+    return getpagesize();
+}
+
+static inline intptr_t qemu_real_host_page_mask(void)
+{
+    return -(intptr_t)qemu_real_host_page_size();
+}
 
 /*
  * After using getopt or getopt_long, if you need to parse another set
@@ -615,15 +631,20 @@ static inline void qemu_reset_optind(void)
 #endif
 }
 
+int qemu_fdatasync(int fd);
+
 /**
- * qemu_get_host_name:
- * @errp: Error object
+ * Sync changes made to the memory mapped file back to the backing
+ * storage. For POSIX compliant systems this will fallback
+ * to regular msync call. Otherwise it will trigger whole file sync
+ * (including the metadata case there is no support to skip that otherwise)
  *
- * Operating system agnostic way of querying host name.
- *
- * Returns allocated hostname (caller should free), NULL on failure.
+ * @addr   - start of the memory area to be synced
+ * @length - length of the are to be synced
+ * @fd     - file descriptor for the file to be synced
+ *           (mandatory only for POSIX non-compliant systems)
  */
-char *qemu_get_host_name(Error **errp);
+int qemu_msync(void *addr, size_t length, int fd);
 
 /**
  * qemu_get_host_physmem:
@@ -642,19 +663,15 @@ size_t qemu_get_host_physmem(void);
  * for the current thread.
  */
 #if defined(MAC_OS_VERSION_11_0) && \
-    MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_11_0
+    MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_VERSION_11_0
 static inline void qemu_thread_jit_execute(void)
 {
-    if (__builtin_available(macOS 11.0, *)) {
-        pthread_jit_write_protect_np(true);
-    }
+    pthread_jit_write_protect_np(true);
 }
 
 static inline void qemu_thread_jit_write(void)
 {
-    if (__builtin_available(macOS 11.0, *)) {
-        pthread_jit_write_protect_np(false);
-    }
+    pthread_jit_write_protect_np(false);
 }
 #else
 static inline void qemu_thread_jit_write(void) {}
@@ -672,19 +689,6 @@ static inline int platform_does_not_support_system(const char *command)
     return -1;
 }
 #endif /* !HAVE_SYSTEM_FUNCTION */
-
-/**
- * Duplicate directory entry @dent.
- *
- * It is highly recommended to use this function instead of open coding
- * duplication of @c dirent objects, because the actual @c struct @c dirent
- * size may be bigger or shorter than @c sizeof(struct dirent) and correct
- * handling is platform specific (see gitlab issue #841).
- *
- * @dent - original directory entry to be duplicated
- * @returns duplicated directory entry which should be freed with g_free()
- */
-struct dirent *qemu_dirent_dup(struct dirent *dent);
 
 #ifdef __cplusplus
 }

@@ -22,6 +22,7 @@
 
 #include "cpu-qom.h"
 #include "exec/cpu-defs.h"
+#include "qemu/cpu-float.h"
 
 /* CPU Subtypes */
 #define SH_CPU_SH7750  (1 << 0)
@@ -130,7 +131,7 @@ typedef struct memory_content {
     struct memory_content *next;
 } memory_content;
 
-typedef struct CPUSH4State {
+typedef struct CPUArchState {
     uint32_t flags;		/* general execution flags */
     uint32_t gregs[24];		/* general registers */
     float32 fregs[32];		/* floating point registers */
@@ -195,7 +196,7 @@ typedef struct CPUSH4State {
  *
  * A SuperH CPU.
  */
-struct SuperHCPU {
+struct ArchCPU {
     /*< private >*/
     CPUState parent_obj;
     /*< public >*/
@@ -209,9 +210,9 @@ void superh_cpu_dump_state(CPUState *cpu, FILE *f, int flags);
 hwaddr superh_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
 int superh_cpu_gdb_read_register(CPUState *cpu, GByteArray *buf, int reg);
 int superh_cpu_gdb_write_register(CPUState *cpu, uint8_t *buf, int reg);
-void superh_cpu_do_unaligned_access(CPUState *cpu, vaddr addr,
-                                    MMUAccessType access_type, int mmu_idx,
-                                    uintptr_t retaddr) QEMU_NORETURN;
+G_NORETURN void superh_cpu_do_unaligned_access(CPUState *cpu, vaddr addr,
+                                               MMUAccessType access_type, int mmu_idx,
+                                               uintptr_t retaddr);
 
 void sh4_translate_init(void);
 void sh4_cpu_list(void);
@@ -263,9 +264,6 @@ static inline int cpu_mmu_index (CPUSH4State *env, bool ifetch)
         return (env->sr & (1u << SR_MD)) == 0 ? 1 : 0;
     }
 }
-
-typedef CPUSH4State CPUArchState;
-typedef SuperHCPU ArchCPU;
 
 #include "exec/cpu-all.h"
 

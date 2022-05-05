@@ -202,9 +202,9 @@ ERST
 
     {
         .name       = "change",
-        .args_type  = "device:B,target:F,arg:s?,read-only-mode:s?",
-        .params     = "device filename [format [read-only-mode]]",
-        .help       = "change a removable medium, optional format",
+        .args_type  = "device:B,force:-f,target:F,arg:s?,read-only-mode:s?",
+        .params     = "device [-f] filename [format [read-only-mode]]",
+        .help       = "change a removable medium, optional format, use -f to force the operation",
         .cmd        = hmp_change,
     },
 
@@ -212,10 +212,13 @@ SRST
 ``change`` *device* *setting*
   Change the configuration of a device.
 
-  ``change`` *diskdevice* *filename* [*format* [*read-only-mode*]]
+  ``change`` *diskdevice* [-f] *filename* [*format* [*read-only-mode*]]
     Change the medium for a removable disk device to point to *filename*. eg::
 
       (qemu) change ide1-cd0 /path/to/some.iso
+
+    ``-f``
+      forces the operation even if the guest has locked the tray.
 
     *format* is optional.
 
@@ -244,11 +247,12 @@ ERST
 
     {
         .name       = "screendump",
-        .args_type  = "filename:F,device:s?,head:i?",
-        .params     = "filename [device [head]]",
-        .help       = "save screen from head 'head' of display device 'device' "
-                      "into PPM image 'filename'",
-        .cmd        = hmp_screendump,
+        .args_type  = "filename:F,format:-fs,device:s?,head:i?",
+        .params     = "filename [-f format] [device [head]]",
+        .help       = "save screen from head 'head' of display device 'device'"
+                      "in specified format 'format' as image 'filename'."
+                      "Currently only 'png' and 'ppm' formats are supported.",
+         .cmd        = hmp_screendump,
         .coroutine  = true,
     },
 
@@ -1064,7 +1068,7 @@ ERST
                       "-l: dump in kdump-compressed format, with lzo compression.\n\t\t\t"
                       "-s: dump in kdump-compressed format, with snappy compression.\n\t\t\t"
                       "-w: dump in Windows crashdump format (can be used instead of ELF-dump converting),\n\t\t\t"
-                      "    for Windows x64 guests with vmcoreinfo driver only.\n\t\t\t"
+                      "    for Windows x86 and x64 guests with vmcoreinfo driver only.\n\t\t\t"
                       "begin: the starting physical address.\n\t\t\t"
                       "length: the memory size, in bytes.",
         .cmd        = hmp_dump_guest_memory,
@@ -1514,33 +1518,35 @@ ERST
 
     {
         .name       = "set_password",
-        .args_type  = "protocol:s,password:s,connected:s?",
-        .params     = "protocol password action-if-connected",
+        .args_type  = "protocol:s,password:s,display:-ds,connected:s?",
+        .params     = "protocol password [-d display] [action-if-connected]",
         .help       = "set spice/vnc password",
         .cmd        = hmp_set_password,
     },
 
 SRST
-``set_password [ vnc | spice ] password [ action-if-connected ]``
-  Change spice/vnc password.  *action-if-connected* specifies what
-  should happen in case a connection is established: *fail* makes the
-  password change fail.  *disconnect* changes the password and
+``set_password [ vnc | spice ] password [ -d display ] [ action-if-connected ]``
+  Change spice/vnc password.  *display* can be used with 'vnc' to specify
+  which display to set the password on.  *action-if-connected* specifies
+  what should happen in case a connection is established: *fail* makes
+  the password change fail.  *disconnect* changes the password and
   disconnects the client.  *keep* changes the password and keeps the
   connection up.  *keep* is the default.
 ERST
 
     {
         .name       = "expire_password",
-        .args_type  = "protocol:s,time:s",
-        .params     = "protocol time",
+        .args_type  = "protocol:s,time:s,display:-ds",
+        .params     = "protocol time [-d display]",
         .help       = "set spice/vnc password expire-time",
         .cmd        = hmp_expire_password,
     },
 
 SRST
-``expire_password [ vnc | spice ]`` *expire-time*
-  Specify when a password for spice/vnc becomes
-  invalid. *expire-time* accepts:
+``expire_password [ vnc | spice ] expire-time [ -d display ]``
+  Specify when a password for spice/vnc becomes invalid.
+  *display* behaves the same as in ``set_password``.
+  *expire-time* accepts:
 
   ``now``
     Invalidate password instantly.

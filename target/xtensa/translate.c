@@ -1296,10 +1296,11 @@ static void xtensa_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
     }
 }
 
-static void xtensa_tr_disas_log(const DisasContextBase *dcbase, CPUState *cpu)
+static void xtensa_tr_disas_log(const DisasContextBase *dcbase,
+                                CPUState *cpu, FILE *logfile)
 {
-    qemu_log("IN: %s\n", lookup_symbol(dcbase->pc_first));
-    log_target_disas(cpu, dcbase->pc_first, dcbase->tb->size);
+    fprintf(logfile, "IN: %s\n", lookup_symbol(dcbase->pc_first));
+    target_disas(logfile, cpu, dcbase->pc_first, dcbase->tb->size);
 }
 
 static const TranslatorOps xtensa_translator_ops = {
@@ -1471,14 +1472,14 @@ static void translate_b(DisasContext *dc, const OpcodeArg arg[],
 static void translate_bb(DisasContext *dc, const OpcodeArg arg[],
                          const uint32_t par[])
 {
-#ifdef TARGET_WORDS_BIGENDIAN
+#if TARGET_BIG_ENDIAN
     TCGv_i32 bit = tcg_const_i32(0x80000000u);
 #else
     TCGv_i32 bit = tcg_const_i32(0x00000001u);
 #endif
     TCGv_i32 tmp = tcg_temp_new_i32();
     tcg_gen_andi_i32(tmp, arg[1].in, 0x1f);
-#ifdef TARGET_WORDS_BIGENDIAN
+#if TARGET_BIG_ENDIAN
     tcg_gen_shr_i32(bit, bit, tmp);
 #else
     tcg_gen_shl_i32(bit, bit, tmp);
@@ -1493,7 +1494,7 @@ static void translate_bbi(DisasContext *dc, const OpcodeArg arg[],
                           const uint32_t par[])
 {
     TCGv_i32 tmp = tcg_temp_new_i32();
-#ifdef TARGET_WORDS_BIGENDIAN
+#if TARGET_BIG_ENDIAN
     tcg_gen_andi_i32(tmp, arg[0].in, 0x80000000u >> arg[1].imm);
 #else
     tcg_gen_andi_i32(tmp, arg[0].in, 0x00000001u << arg[1].imm);

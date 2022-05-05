@@ -126,7 +126,7 @@ static void initialize_debug_target(CPUDebug *s, CPUState *cpu)
     s->cpu = cpu;
     s->info.read_memory_func = target_read_memory;
     s->info.print_address_func = print_address;
-#ifdef TARGET_WORDS_BIGENDIAN
+#if TARGET_BIG_ENDIAN
     s->info.endian = BFD_ENDIAN_BIG;
 #else
     s->info.endian = BFD_ENDIAN_LITTLE;
@@ -144,7 +144,7 @@ static void initialize_debug_host(CPUDebug *s)
 
     s->info.read_memory_func = host_read_memory;
     s->info.print_address_func = host_print_address;
-#ifdef HOST_WORDS_BIGENDIAN
+#if HOST_BIG_ENDIAN
     s->info.endian = BFD_ENDIAN_BIG;
 #else
     s->info.endian = BFD_ENDIAN_LITTLE;
@@ -201,7 +201,6 @@ static void initialize_debug_host(CPUDebug *s)
 #elif defined(__m68k__)
     s->info.print_insn = print_insn_m68k;
 #elif defined(__s390__)
-    s->info.print_insn = print_insn_s390;
     s->info.cap_arch = CS_ARCH_SYSZ;
     s->info.cap_insn_unit = 2;
     s->info.cap_insn_split = 6;

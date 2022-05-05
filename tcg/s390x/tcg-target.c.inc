@@ -290,7 +290,9 @@ typedef enum S390Opcode {
     VRRc_VMXL   = 0xe7fd,
     VRRc_VN     = 0xe768,
     VRRc_VNC    = 0xe769,
+    VRRc_VNN    = 0xe76e,
     VRRc_VNO    = 0xe76b,
+    VRRc_VNX    = 0xe76c,
     VRRc_VO     = 0xe76a,
     VRRc_VOC    = 0xe76f,
     VRRc_VPKS   = 0xe797,   /* we leave the m5 cs field 0 */
@@ -2673,6 +2675,7 @@ static bool tcg_out_dup_vec(TCGContext *s, TCGType type, unsigned vece,
         if (vece == MO_64) {
             return true;
         }
+        src = dst;
     }
 
     /*
@@ -2713,7 +2716,7 @@ static void tcg_out_dupi_vec(TCGContext *s, TCGType type, unsigned vece,
                 msb = clz32(val);
                 lsb = 31 - ctz32(val);
             }
-            tcg_out_insn(s, VRIb, VGM, dst, lsb, msb, MO_32);
+            tcg_out_insn(s, VRIb, VGM, dst, msb, lsb, MO_32);
             return;
         }
     } else {
@@ -2727,7 +2730,7 @@ static void tcg_out_dupi_vec(TCGContext *s, TCGType type, unsigned vece,
                 msb = clz64(val);
                 lsb = 63 - ctz64(val);
             }
-            tcg_out_insn(s, VRIb, VGM, dst, lsb, msb, MO_64);
+            tcg_out_insn(s, VRIb, VGM, dst, msb, lsb, MO_64);
             return;
         }
     }
@@ -2805,6 +2808,15 @@ static void tcg_out_vec_op(TCGContext *s, TCGOpcode opc,
     case INDEX_op_xor_vec:
         tcg_out_insn(s, VRRc, VX, a0, a1, a2, 0);
         break;
+    case INDEX_op_nand_vec:
+        tcg_out_insn(s, VRRc, VNN, a0, a1, a2, 0);
+        break;
+    case INDEX_op_nor_vec:
+        tcg_out_insn(s, VRRc, VNO, a0, a1, a2, 0);
+        break;
+    case INDEX_op_eqv_vec:
+        tcg_out_insn(s, VRRc, VNX, a0, a1, a2, 0);
+        break;
 
     case INDEX_op_shli_vec:
         tcg_out_insn(s, VRSa, VESL, a0, a2, TCG_REG_NONE, a1, vece);
@@ -2857,7 +2869,7 @@ static void tcg_out_vec_op(TCGContext *s, TCGOpcode opc,
         break;
 
     case INDEX_op_bitsel_vec:
-        tcg_out_insn(s, VRRe, VSEL, a0, a1, a2, args[3]);
+        tcg_out_insn(s, VRRe, VSEL, a0, a2, args[3], a1);
         break;
 
     case INDEX_op_cmp_vec:
@@ -2901,7 +2913,10 @@ int tcg_can_emit_vec_op(TCGOpcode opc, TCGType type, unsigned vece)
     case INDEX_op_and_vec:
     case INDEX_op_andc_vec:
     case INDEX_op_bitsel_vec:
+    case INDEX_op_eqv_vec:
+    case INDEX_op_nand_vec:
     case INDEX_op_neg_vec:
+    case INDEX_op_nor_vec:
     case INDEX_op_not_vec:
     case INDEX_op_or_vec:
     case INDEX_op_orc_vec:
@@ -3246,6 +3261,9 @@ static TCGConstraintSetIndex tcg_target_op_def(TCGOpcode op)
     case INDEX_op_or_vec:
     case INDEX_op_orc_vec:
     case INDEX_op_xor_vec:
+    case INDEX_op_nand_vec:
+    case INDEX_op_nor_vec:
+    case INDEX_op_eqv_vec:
     case INDEX_op_cmp_vec:
     case INDEX_op_mul_vec:
     case INDEX_op_rotlv_vec:

@@ -305,7 +305,6 @@ S: Maintained
 F: target/s390x/
 F: target/s390x/tcg
 F: hw/s390x/
-F: disas/s390.c
 F: tests/tcg/s390x/
 L: qemu-s390x@nongnu.org
 
@@ -548,6 +547,12 @@ F: include/*/*win32*
 X: qga/*win32*
 F: qemu.nsi
 
+Darwin (macOS, iOS)
+M: Philippe Mathieu-Daudé <f4bug@amsat.org>
+S: Odd Fixes
+F: .gitlab-ci.d/cirrus/macos-*
+F: */*.m
+
 Alpha Machines
 --------------
 M: Richard Henderson <richard.henderson@linaro.org>
@@ -642,7 +647,7 @@ M: Peter Maydell <peter.maydell@linaro.org>
 L: qemu-arm@nongnu.org
 S: Odd Fixes
 F: hw/*/exynos*
-F: include/hw/arm/exynos4210.h
+F: include/hw/*/exynos*
 
 Calxeda Highbank
 M: Rob Herring <robh@kernel.org>
@@ -936,6 +941,7 @@ S: Maintained
 F: hw/arm/virt*
 F: include/hw/arm/virt.h
 F: docs/system/arm/virt.rst
+F: tests/avocado/machine_aarch64_virt.py
 
 Xilinx Zynq
 M: Edgar E. Iglesias <edgar.iglesias@gmail.com>
@@ -1527,7 +1533,7 @@ F: include/hw/rtc/sun4v-rtc.h
 
 Leon3
 M: Fabien Chouteau <chouteau@adacore.com>
-M: KONRAD Frederic <frederic.konrad@adacore.com>
+M: Frederic Konrad <konrad.frederic@yahoo.fr>
 S: Maintained
 F: hw/sparc/leon3.c
 F: hw/*/grlib*
@@ -1819,7 +1825,6 @@ F: docs/specs/acpi_hw_reduced_hotplug.rst
 
 ACPI/VIOT
 M: Jean-Philippe Brucker <jean-philippe@linaro.org>
-R: Ani Sinha <ani@anisinha.ca>
 S: Supported
 F: hw/acpi/viot.c
 F: hw/acpi/viot.h
@@ -2415,6 +2420,7 @@ F: audio/alsaaudio.c
 
 Core Audio framework backend
 M: Gerd Hoffmann <kraxel@redhat.com>
+M: Philippe Mathieu-Daudé <f4bug@amsat.org>
 R: Christian Schoenebeck <qemu_oss@crudebyte.com>
 R: Akihiko Odaki <akihiko.odaki@gmail.com>
 S: Odd Fixes
@@ -2501,7 +2507,7 @@ F: scsi/*
 
 Block Jobs
 M: John Snow <jsnow@redhat.com>
-M: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+M: Vladimir Sementsov-Ogievskiy <v.sementsov-og@mail.ru>
 L: qemu-block@nongnu.org
 S: Supported
 F: blockjob.c
@@ -2515,9 +2521,12 @@ F: block/stream.c
 F: block/mirror.c
 F: qapi/job.json
 F: block/block-copy.c
-F: include/block/block-copy.c
+F: include/block/block-copy.h
+F: block/reqlist.c
+F: include/block/reqlist.h
 F: block/copy-before-write.h
 F: block/copy-before-write.c
+F: block/snapshot-access.c
 F: include/block/aio_task.h
 F: block/aio_task.c
 F: util/qemu-co-shared-resource.c
@@ -2537,7 +2546,7 @@ T: git https://repo.or.cz/qemu/armbru.git block-next
 
 Dirty Bitmaps
 M: Eric Blake <eblake@redhat.com>
-M: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+M: Vladimir Sementsov-Ogievskiy <v.sementsov-og@mail.ru>
 R: John Snow <jsnow@redhat.com>
 L: qemu-block@nongnu.org
 S: Supported
@@ -2669,6 +2678,7 @@ F: util/drm.c
 
 Cocoa graphics
 M: Peter Maydell <peter.maydell@linaro.org>
+M: Philippe Mathieu-Daudé <f4bug@amsat.org>
 R: Akihiko Odaki <akihiko.odaki@gmail.com>
 S: Odd Fixes
 F: ui/cocoa.m
@@ -2747,26 +2757,26 @@ F: backends/cryptodev*.c
 Python library
 M: John Snow <jsnow@redhat.com>
 M: Cleber Rosa <crosa@redhat.com>
-R: Eduardo Habkost <eduardo@habkost.net>
+R: Beraldo Leal <bleal@redhat.com>
 S: Maintained
 F: python/
 T: git https://gitlab.com/jsnow/qemu.git python
 
 Python scripts
-M: Eduardo Habkost <eduardo@habkost.net>
+M: John Snow <jsnow@redhat.com>
 M: Cleber Rosa <crosa@redhat.com>
 S: Odd Fixes
 F: scripts/*.py
 F: tests/*.py
 
 Benchmark util
-M: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+M: Vladimir Sementsov-Ogievskiy <v.sementsov-og@mail.ru>
 S: Maintained
 F: scripts/simplebench/
 T: git https://src.openvz.org/scm/~vsementsov/qemu.git simplebench
 
 Transactions helper
-M: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+M: Vladimir Sementsov-Ogievskiy <v.sementsov-og@mail.ru>
 S: Maintained
 F: include/qemu/transactions.h
 F: util/transactions.c
@@ -3135,6 +3145,19 @@ F: include/hw/i2c/smbus_master.h
 F: include/hw/i2c/smbus_slave.h
 F: include/hw/i2c/smbus_eeprom.h
 
+PMBus
+M: Titus Rwantare <titusr@google.com>
+S: Maintained
+F: hw/i2c/pmbus_device.c
+F: hw/sensor/adm1272.c
+F: hw/sensor/isl_pmbus_vr.c
+F: hw/sensor/max34451.c
+F: include/hw/i2c/pmbus_device.h
+F: include/hw/sensor/isl_pmbus_vr.h
+F: tests/qtest/adm1272-test.c
+F: tests/qtest/max34451-test.c
+F: tests/qtest/isl_pmbus_vr-test.c
+
 Firmware schema specifications
 M: Philippe Mathieu-Daudé <f4bug@amsat.org>
 R: Daniel P. Berrange <berrange@redhat.com>
@@ -3144,7 +3167,7 @@ F: docs/interop/firmware.json
 
 EDK2 Firmware
 M: Philippe Mathieu-Daudé <f4bug@amsat.org>
-R: Gerd Hoffmann <kraxel@redhat.com>
+M: Gerd Hoffmann <kraxel@redhat.com>
 S: Supported
 F: hw/i386/*ovmf*
 F: pc-bios/descriptors/??-edk2-*.json
@@ -3284,7 +3307,6 @@ S390 TCG target
 M: Richard Henderson <richard.henderson@linaro.org>
 S: Maintained
 F: tcg/s390/
-F: disas/s390.c
 L: qemu-s390x@nongnu.org
 
 SPARC TCG target
@@ -3337,7 +3359,7 @@ F: block/iscsi-opts.c
 
 Network Block Device (NBD)
 M: Eric Blake <eblake@redhat.com>
-M: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+M: Vladimir Sementsov-Ogievskiy <v.sementsov-og@mail.ru>
 L: qemu-block@nongnu.org
 S: Maintained
 F: block/nbd*
@@ -3433,7 +3455,7 @@ F: block/dmg.c
 parallels
 M: Stefan Hajnoczi <stefanha@redhat.com>
 M: Denis V. Lunev <den@openvz.org>
-M: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+M: Vladimir Sementsov-Ogievskiy <v.sementsov-og@mail.ru>
 L: qemu-block@nongnu.org
 S: Supported
 F: block/parallels.c
@@ -3549,6 +3571,7 @@ S: Maintained
 F: semihosting/
 F: include/semihosting/
 F: tests/tcg/multiarch/arm-compat-semi/
+F: tests/tcg/aarch64/system/semiheap.c
 
 Multi-process QEMU
 M: Elena Ufimtseva <elena.ufimtseva@oracle.com>
@@ -3591,7 +3614,7 @@ M: Thomas Huth <thuth@redhat.com>
 R: Wainer dos Santos Moschetta <wainersm@redhat.com>
 R: Beraldo Leal <bleal@redhat.com>
 S: Maintained
-F: .github/lockdown.yml
+F: .github/workflows/lockdown.yml
 F: .gitlab-ci.yml
 F: .gitlab-ci.d/
 F: .travis.yml
@@ -3607,7 +3630,8 @@ FreeBSD Hosted Continuous Integration
 M: Ed Maste <emaste@freebsd.org>
 M: Li-Wen Hsu <lwhsu@freebsd.org>
 S: Maintained
-F: .cirrus.yml
+F: .gitlab-ci.d/cirrus/freebsd*
+F: tests/vm/freebsd
 W: https://cirrus-ci.com/github/qemu/qemu
 
 Windows Hosted Continuous Integration

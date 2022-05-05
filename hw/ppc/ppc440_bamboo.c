@@ -3,9 +3,9 @@
  *
  * Copyright 2007 IBM Corporation.
  * Authors:
- *	Jerone Young <jyoung5@us.ibm.com>
- *	Christian Ehrhardt <ehrhardt@linux.vnet.ibm.com>
- *	Hollis Blanchard <hollisb@us.ibm.com>
+ *  Jerone Young <jyoung5@us.ibm.com>
+ *  Christian Ehrhardt <ehrhardt@linux.vnet.ibm.com>
+ *  Hollis Blanchard <hollisb@us.ibm.com>
  *
  * This work is licensed under the GNU GPL license version 2 or later.
  *
@@ -14,7 +14,6 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "qemu/error-report.h"
-#include "qemu-common.h"
 #include "qemu/datadir.h"
 #include "qemu/error-report.h"
 #include "net/net.h"

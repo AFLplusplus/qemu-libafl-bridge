@@ -25,7 +25,7 @@ config APIC
     select MSI_NONBROKEN
     select I8259
 
-config ARM_GIC_TCG
+config ARM_GICV3_TCG
     bool
     default y
     depends on ARM_GIC && TCG
@@ -73,6 +73,9 @@ config RISCV_ACLINT
 config RISCV_APLIC
     bool
 
+config RISCV_IMSIC
+    bool
+
 config SIFIVE_PLIC
     bool
 
@@ -80,4 +83,7 @@ config GOLDFISH_PIC
     bool
 
 config M68K_IRQC
+    bool
+
+config NIOS2_VIC
     bool

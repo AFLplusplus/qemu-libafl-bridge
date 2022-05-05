@@ -22,6 +22,7 @@
 
 #include "hw/qdev-core.h"
 #include "disas/dis-asm.h"
+#include "exec/cpu-common.h"
 #include "exec/hwaddr.h"
 #include "exec/memattrs.h"
 #include "qapi/qapi-types-run-state.h"
@@ -34,18 +35,6 @@
 
 typedef int (*WriteCoreDumpFunction)(const void *buf, size_t size,
                                      void *opaque);
-
-/**
- * vaddr:
- * Type wide enough to contain any #target_ulong virtual address.
- */
-typedef uint64_t vaddr;
-#define VADDR_PRId PRId64
-#define VADDR_PRIu PRIu64
-#define VADDR_PRIo PRIo64
-#define VADDR_PRIx PRIx64
-#define VADDR_PRIX PRIX64
-#define VADDR_MAX UINT64_MAX
 
 /**
  * SECTION:cpu
@@ -65,6 +54,24 @@ typedef uint64_t vaddr;
 typedef struct CPUClass CPUClass;
 DECLARE_CLASS_CHECKERS(CPUClass, CPU,
                        TYPE_CPU)
+
+/**
+ * OBJECT_DECLARE_CPU_TYPE:
+ * @CpuInstanceType: instance struct name
+ * @CpuClassType: class struct name
+ * @CPU_MODULE_OBJ_NAME: the CPU name in uppercase with underscore separators
+ *
+ * This macro is typically used in "cpu-qom.h" header file, and will:
+ *
+ *   - create the typedefs for the CPU object and class structs
+ *   - register the type for use with g_autoptr
+ *   - provide three standard type cast functions
+ *
+ * The object struct and class struct need to be declared manually.
+ */
+#define OBJECT_DECLARE_CPU_TYPE(CpuInstanceType, CpuClassType, CPU_MODULE_OBJ_NAME) \
+    typedef struct ArchCPU CpuInstanceType; \
+    OBJECT_DECLARE_TYPE(ArchCPU, CpuClassType, CPU_MODULE_OBJ_NAME);
 
 typedef enum MMUAccessType {
     MMU_DATA_LOAD  = 0,
@@ -180,7 +187,7 @@ struct CPUClass {
 typedef union IcountDecr {
     uint32_t u32;
     struct {
-#ifdef HOST_WORDS_BIGENDIAN
+#if HOST_BIG_ENDIAN
         uint16_t high;
         uint16_t low;
 #else
@@ -351,7 +358,7 @@ struct CPUState {
     AddressSpace *as;
     MemoryRegion *memory;
 
-    void *env_ptr; /* CPUArchState */
+    CPUArchState *env_ptr;
     IcountDecr *icount_decr_ptr;
 
     /* Accessed in parallel; all accesses must be atomic */
@@ -1008,8 +1015,8 @@ int cpu_watchpoint_address_matches(CPUState *cpu, vaddr addr, vaddr len);
  */
 AddressSpace *cpu_get_address_space(CPUState *cpu, int asidx);
 
-void QEMU_NORETURN cpu_abort(CPUState *cpu, const char *fmt, ...)
-    GCC_FMT_ATTR(2, 3);
+G_NORETURN void cpu_abort(CPUState *cpu, const char *fmt, ...)
+    G_GNUC_PRINTF(2, 3);
 
 /* $(top_srcdir)/cpu.c */
 void cpu_class_init_props(DeviceClass *dc);
@@ -1021,12 +1028,14 @@ void cpu_exec_unrealizefn(CPUState *cpu);
  * target_words_bigendian:
  * Returns true if the (default) endianness of the target is big endian,
  * false otherwise. Note that in target-specific code, you can use
- * TARGET_WORDS_BIGENDIAN directly instead. On the other hand, common
+ * TARGET_BIG_ENDIAN directly instead. On the other hand, common
  * code should normally never need to know about the endianness of the
  * target, so please do *not* use this function unless you know very well
  * what you are doing!
  */
 bool target_words_bigendian(void);
+
+void page_size_init(void);
 
 #ifdef NEED_CPU_H
 

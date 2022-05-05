@@ -83,6 +83,11 @@ static inline Int128 int128_rshift(Int128 a, int n)
     return a >> n;
 }
 
+static inline Int128 int128_urshift(Int128 a, int n)
+{
+    return (__uint128_t)a >> n;
+}
+
 static inline Int128 int128_lshift(Int128 a, int n)
 {
     return a << n;
@@ -205,7 +210,7 @@ typedef struct Int128 Int128;
  * a union with other integer types).
  */
 struct Int128 {
-#ifdef HOST_WORDS_BIGENDIAN
+#if HOST_BIG_ENDIAN
     int64_t hi;
     uint64_t lo;
 #else
@@ -294,6 +299,20 @@ static inline Int128 int128_rshift(Int128 a, int n)
     h = a.hi >> (n & 63);
     if (n >= 64) {
         return int128_make128(h, h >> 63);
+    } else {
+        return int128_make128((a.lo >> n) | ((uint64_t)a.hi << (64 - n)), h);
+    }
+}
+
+static inline Int128 int128_urshift(Int128 a, int n)
+{
+    uint64_t h = a.hi;
+    if (!n) {
+        return a;
+    }
+    h = h >> (n & 63);
+    if (n >= 64) {
+        return int128_make64(h);
     } else {
         return int128_make128((a.lo >> n) | ((uint64_t)a.hi << (64 - n)), h);
     }
@@ -412,5 +431,7 @@ static inline void bswap128s(Int128 *s)
 }
 
 #define UINT128_MAX int128_make128(~0LL, ~0LL)
+#define INT128_MAX int128_make128(UINT64_MAX, INT64_MAX)
+#define INT128_MIN int128_make128(0, INT64_MIN)
 
 #endif /* INT128_H */

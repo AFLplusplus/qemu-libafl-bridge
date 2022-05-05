@@ -97,9 +97,9 @@ static void qjack_buffer_create(QJackBuffer *buffer, int channels, int frames)
     buffer->used     = 0;
     buffer->rptr     = 0;
     buffer->wptr     = 0;
-    buffer->data     = g_malloc(channels * sizeof(float *));
+    buffer->data     = g_new(float *, channels);
     for (int i = 0; i < channels; ++i) {
-        buffer->data[i] = g_malloc(frames * sizeof(float));
+        buffer->data[i] = g_new(float, frames);
     }
 }
 
@@ -453,7 +453,7 @@ static int qjack_client_init(QJackClient *c)
     jack_on_shutdown(c->client, qjack_shutdown, c);
 
     /* allocate and register the ports */
-    c->port = g_malloc(sizeof(jack_port_t *) * c->nchannels);
+    c->port = g_new(jack_port_t *, c->nchannels);
     for (int i = 0; i < c->nchannels; ++i) {
 
         char port_name[16];
@@ -483,8 +483,8 @@ static int qjack_client_init(QJackClient *c)
         c->buffersize = 512;
     }
 
-    /* create a 2 period buffer */
-    qjack_buffer_create(&c->fifo, c->nchannels, c->buffersize * 2);
+    /* create a 3 period buffer */
+    qjack_buffer_create(&c->fifo, c->nchannels, c->buffersize * 3);
 
     qjack_client_connect_ports(c);
     c->state = QJACK_STATE_RUNNING;
@@ -652,6 +652,7 @@ static struct audio_pcm_ops jack_pcm_ops = {
     .init_out       = qjack_init_out,
     .fini_out       = qjack_fini_out,
     .write          = qjack_write,
+    .buffer_get_free = audio_generic_buffer_get_free,
     .run_buffer_out = audio_generic_run_buffer_out,
     .enable_out     = qjack_enable_out,
 

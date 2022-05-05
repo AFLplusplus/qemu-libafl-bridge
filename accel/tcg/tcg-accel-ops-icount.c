@@ -24,9 +24,8 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
-#include "sysemu/tcg.h"
 #include "sysemu/replay.h"
+#include "sysemu/cpu-timers.h"
 #include "qemu/main-loop.h"
 #include "qemu/guest-random.h"
 #include "exec/exec-all.h"

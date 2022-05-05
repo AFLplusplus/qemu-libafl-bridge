@@ -8,7 +8,6 @@
  */
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "qemu-common.h"
 #include "qemu/log.h"
 #include "target/ppc/cpu.h"
 #include "hw/ppc/fdt.h"
@@ -116,9 +115,11 @@ static void pnv_pec_default_phb_realize(PnvPhb4PecState *pec,
                                         int stack_no,
                                         Error **errp)
 {
-    PnvPHB4 *phb = PNV_PHB4(qdev_new(TYPE_PNV_PHB4));
+    PnvPhb4PecClass *pecc = PNV_PHB4_PEC_GET_CLASS(pec);
+    PnvPHB4 *phb = PNV_PHB4(qdev_new(pecc->phb_type));
     int phb_id = pnv_phb4_pec_get_phb_id(pec, stack_no);
 
+    object_property_add_child(OBJECT(pec), "phb[*]", OBJECT(phb));
     object_property_set_link(OBJECT(phb), "pec", OBJECT(pec),
                              &error_abort);
     object_property_set_int(OBJECT(phb), "chip-id", pec->chip_id,
@@ -131,9 +132,7 @@ static void pnv_pec_default_phb_realize(PnvPhb4PecState *pec,
     }
 
     /* Add a single Root port if running with defaults */
-    pnv_phb_attach_root_port(PCI_HOST_BRIDGE(phb),
-                             PNV_PHB4_PEC_GET_CLASS(pec)->rp_model);
-
+    pnv_phb_attach_root_port(PCI_HOST_BRIDGE(phb), pecc->rp_model);
 }
 
 static void pnv_pec_realize(DeviceState *dev, Error **errp)
@@ -151,10 +150,8 @@ static void pnv_pec_realize(DeviceState *dev, Error **errp)
     pec->num_phbs = pecc->num_phbs[pec->index];
 
     /* Create PHBs if running with defaults */
-    if (defaults_enabled()) {
-        for (i = 0; i < pec->num_phbs; i++) {
-            pnv_pec_default_phb_realize(pec, i, errp);
-        }
+    for (i = 0; i < pec->num_phbs; i++) {
+        pnv_pec_default_phb_realize(pec, i, errp);
     }
 
     /* Initialize the XSCOM regions for the PEC registers */
@@ -265,6 +262,7 @@ static void pnv_pec_class_init(ObjectClass *klass, void *data)
     pecc->stk_compat = stk_compat;
     pecc->stk_compat_size = sizeof(stk_compat);
     pecc->version = PNV_PHB4_VERSION;
+    pecc->phb_type = TYPE_PNV_PHB4;
     pecc->num_phbs = pnv_pec_num_phbs;
     pecc->rp_model = TYPE_PNV_PHB4_ROOT_PORT;
 }
@@ -281,9 +279,63 @@ static const TypeInfo pnv_pec_type_info = {
     }
 };
 
+/*
+ * POWER10 definitions
+ */
+
+static uint32_t pnv_phb5_pec_xscom_pci_base(PnvPhb4PecState *pec)
+{
+    return PNV10_XSCOM_PEC_PCI_BASE + 0x1000000 * pec->index;
+}
+
+static uint32_t pnv_phb5_pec_xscom_nest_base(PnvPhb4PecState *pec)
+{
+    /* index goes down ... */
+    return PNV10_XSCOM_PEC_NEST_BASE - 0x1000000 * pec->index;
+}
+
+/*
+ * PEC0 -> 3 stacks
+ * PEC1 -> 3 stacks
+ */
+static const uint32_t pnv_phb5_pec_num_stacks[] = { 3, 3 };
+
+static void pnv_phb5_pec_class_init(ObjectClass *klass, void *data)
+{
+    PnvPhb4PecClass *pecc = PNV_PHB4_PEC_CLASS(klass);
+    static const char compat[] = "ibm,power10-pbcq";
+    static const char stk_compat[] = "ibm,power10-phb-stack";
+
+    pecc->xscom_nest_base = pnv_phb5_pec_xscom_nest_base;
+    pecc->xscom_pci_base  = pnv_phb5_pec_xscom_pci_base;
+    pecc->xscom_nest_size = PNV10_XSCOM_PEC_NEST_SIZE;
+    pecc->xscom_pci_size  = PNV10_XSCOM_PEC_PCI_SIZE;
+    pecc->compat = compat;
+    pecc->compat_size = sizeof(compat);
+    pecc->stk_compat = stk_compat;
+    pecc->stk_compat_size = sizeof(stk_compat);
+    pecc->version = PNV_PHB5_VERSION;
+    pecc->phb_type = TYPE_PNV_PHB5;
+    pecc->num_phbs = pnv_phb5_pec_num_stacks;
+    pecc->rp_model = TYPE_PNV_PHB5_ROOT_PORT;
+}
+
+static const TypeInfo pnv_phb5_pec_type_info = {
+    .name          = TYPE_PNV_PHB5_PEC,
+    .parent        = TYPE_PNV_PHB4_PEC,
+    .instance_size = sizeof(PnvPhb4PecState),
+    .class_init    = pnv_phb5_pec_class_init,
+    .class_size    = sizeof(PnvPhb4PecClass),
+    .interfaces    = (InterfaceInfo[]) {
+        { TYPE_PNV_XSCOM_INTERFACE },
+        { }
+    }
+};
+
 static void pnv_pec_register_types(void)
 {
     type_register_static(&pnv_pec_type_info);
+    type_register_static(&pnv_phb5_pec_type_info);
 }
 
 type_init(pnv_pec_register_types);

@@ -48,6 +48,7 @@ typedef struct PCMachineState {
     bool sata_enabled;
     bool pit_enabled;
     bool hpet_enabled;
+    bool i8042_enabled;
     bool default_bus_bypass_iommu;
     uint64_t max_fw_size;
 
@@ -64,6 +65,7 @@ typedef struct PCMachineState {
 #define PC_MACHINE_SMBUS            "smbus"
 #define PC_MACHINE_SATA             "sata"
 #define PC_MACHINE_PIT              "pit"
+#define PC_MACHINE_I8042            "i8042"
 #define PC_MACHINE_MAX_FW_SIZE      "max-fw-size"
 #define PC_MACHINE_SMBIOS_EP        "smbios-entry-point-type"
 
@@ -199,6 +201,9 @@ void pc_madt_cpu_entry(AcpiDeviceIf *adev, int uid,
 
 /* sgx.c */
 void pc_machine_init_sgx_epc(PCMachineState *pcms);
+
+extern GlobalProperty pc_compat_7_0[];
+extern const size_t pc_compat_7_0_len;
 
 extern GlobalProperty pc_compat_6_2[];
 extern const size_t pc_compat_6_2_len;

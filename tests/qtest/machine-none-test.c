@@ -12,9 +12,8 @@
 
 #include "qemu/osdep.h"
 
-#include "qemu-common.h"
 #include "qemu/cutils.h"
-#include "libqos/libqtest.h"
+#include "libqtest.h"
 #include "qapi/qmp/qdict.h"
 
 

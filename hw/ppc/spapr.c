@@ -25,8 +25,8 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "qemu/datadir.h"
+#include "qemu/memalign.h"
 #include "qapi/error.h"
 #include "qapi/qapi-events-machine.h"
 #include "qapi/qapi-events-qdev.h"
@@ -1018,9 +1018,9 @@ static void spapr_dt_chosen(SpaprMachineState *spapr, void *fdt, bool reset)
 
     if (reset) {
         const char *boot_device = spapr->boot_device;
-        char *stdout_path = spapr_vio_stdout_path(spapr->vio_bus);
+        g_autofree char *stdout_path = spapr_vio_stdout_path(spapr->vio_bus);
         size_t cb = 0;
-        char *bootlist = get_boot_devices_list(&cb);
+        g_autofree char *bootlist = get_boot_devices_list(&cb);
 
         if (machine->kernel_cmdline && machine->kernel_cmdline[0]) {
             _FDT(fdt_setprop_string(fdt, chosen, "bootargs",
@@ -1087,9 +1087,6 @@ static void spapr_dt_chosen(SpaprMachineState *spapr, void *fdt, bool reset)
         }
 
         spapr_dt_ov5_platform_support(spapr, fdt, chosen);
-
-        g_free(stdout_path);
-        g_free(bootlist);
     }
 
     _FDT(spapr_dt_ovec(fdt, chosen, spapr->ov5_cas, "ibm,architecture-vec-5"));
@@ -2710,14 +2707,24 @@ static void spapr_machine_init(MachineState *machine)
     MachineClass *mc = MACHINE_GET_CLASS(machine);
     const char *bios_default = spapr->vof ? FW_FILE_NAME_VOF : FW_FILE_NAME;
     const char *bios_name = machine->firmware ?: bios_default;
+    g_autofree char *filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, bios_name);
     const char *kernel_filename = machine->kernel_filename;
     const char *initrd_filename = machine->initrd_filename;
     PCIHostState *phb;
     int i;
     MemoryRegion *sysmem = get_system_memory();
     long load_limit, fw_size;
-    char *filename;
     Error *resize_hpt_err = NULL;
+
+    if (!filename) {
+        error_report("Could not find LPAR firmware '%s'", bios_name);
+        exit(1);
+    }
+    fw_size = load_image_targphys(filename, 0, FW_MAX_SIZE);
+    if (fw_size <= 0) {
+        error_report("Could not load LPAR firmware '%s'", filename);
+        exit(1);
+    }
 
     /*
      * if Secure VM (PEF) support is configured, then initialize it
@@ -2998,18 +3005,6 @@ static void spapr_machine_init(MachineState *machine)
             }
         }
     }
-
-    filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, bios_name);
-    if (!filename) {
-        error_report("Could not find LPAR firmware '%s'", bios_name);
-        exit(1);
-    }
-    fw_size = load_image_targphys(filename, 0, FW_MAX_SIZE);
-    if (fw_size <= 0) {
-        error_report("Could not load LPAR firmware '%s'", filename);
-        exit(1);
-    }
-    g_free(filename);
 
     /* FIXME: Should register things through the MachineState's qdev
      * interface, this is a legacy from the sPAPREnvironment structure
@@ -3605,7 +3600,7 @@ static SpaprDimmState *spapr_pending_dimm_unplugs_add(SpaprMachineState *spapr,
      */
     ds = spapr_pending_dimm_unplugs_find(spapr, dimm);
     if (!ds) {
-        ds = g_malloc0(sizeof(SpaprDimmState));
+        ds = g_new0(SpaprDimmState, 1);
         ds->nr_lmbs = nr_lmbs;
         ds->dimm = dimm;
         QTAILQ_INSERT_HEAD(&spapr->pending_dimm_unplugs, ds, next);
@@ -4708,14 +4703,25 @@ static void spapr_machine_latest_class_options(MachineClass *mc)
     type_init(spapr_machine_register_##suffix)
 
 /*
- * pseries-7.0
+ * pseries-7.1
  */
-static void spapr_machine_7_0_class_options(MachineClass *mc)
+static void spapr_machine_7_1_class_options(MachineClass *mc)
 {
     /* Defaults for the latest behaviour inherited from the base class */
 }
 
-DEFINE_SPAPR_MACHINE(7_0, "7.0", true);
+DEFINE_SPAPR_MACHINE(7_1, "7.1", true);
+
+/*
+ * pseries-7.0
+ */
+static void spapr_machine_7_0_class_options(MachineClass *mc)
+{
+    spapr_machine_7_1_class_options(mc);
+    compat_props_add(mc->compat_props, hw_compat_7_0, hw_compat_7_0_len);
+}
+
+DEFINE_SPAPR_MACHINE(7_0, "7.0", false);
 
 /*
  * pseries-6.2

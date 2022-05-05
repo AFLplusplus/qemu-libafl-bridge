@@ -4,7 +4,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-#include "../qtest/libqos/libqtest.h"
+#include "../qtest/libqtest.h"
 #include "qapi/qmp/qdict.h"
 #include "qapi/qmp/qlist.h"
 
@@ -968,6 +968,13 @@ int main(int argc, char **argv)
 {
     TestFixture fix;
     int ret;
+
+#ifdef QEMU_SANITIZE_THREAD
+    {
+        g_test_skip("tsan enabled, https://github.com/google/sanitizers/issues/1116");
+        return 0;
+    }
+#endif
 
     setlocale (LC_ALL, "");
     g_test_init(&argc, &argv, NULL);

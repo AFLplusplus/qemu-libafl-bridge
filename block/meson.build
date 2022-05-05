@@ -32,7 +32,9 @@ block_ss.add(files(
   'qcow2.c',
   'quorum.c',
   'raw-format.c',
+  'reqlist.c',
   'snapshot.c',
+  'snapshot-access.c',
   'throttle-groups.c',
   'throttle.c',
   'vhdx-endian.c',
@@ -131,8 +133,11 @@ block_ss.add(module_block_h)
 wrapper_py = find_program('../scripts/block-coroutine-wrapper.py')
 block_gen_c = custom_target('block-gen.c',
                             output: 'block-gen.c',
-                            input: files('../include/block/block.h',
-                                         'coroutines.h'),
+                            input: files(
+                                      '../include/block/block-io.h',
+                                      '../include/block/block-global-state.h',
+                                      'coroutines.h'
+                                      ),
                             command: [wrapper_py, '@OUTPUT@', '@INPUT@'])
 block_ss.add(block_gen_c)
 

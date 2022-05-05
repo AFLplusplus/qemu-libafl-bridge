@@ -1864,7 +1864,7 @@ void tb_target_set_jmp_target(uintptr_t tc_ptr, uintptr_t jmp_rx,
             i1 = ADDIS | TAI(TCG_REG_TB, TCG_REG_TB, hi >> 16);
             i2 = ADDI | TAI(TCG_REG_TB, TCG_REG_TB, lo);
         }
-#ifdef HOST_WORDS_BIGENDIAN
+#if HOST_BIG_ENDIAN
         pair = (uint64_t)i1 << 32 | i2;
 #else
         pair = (uint64_t)i2 << 32 | i1;
@@ -3122,6 +3122,9 @@ int tcg_can_emit_vec_op(TCGOpcode opc, TCGType type, unsigned vece)
     case INDEX_op_xor_vec:
     case INDEX_op_andc_vec:
     case INDEX_op_not_vec:
+    case INDEX_op_nor_vec:
+    case INDEX_op_eqv_vec:
+    case INDEX_op_nand_vec:
         return 1;
     case INDEX_op_orc_vec:
         return have_isa_2_07;
@@ -3232,7 +3235,7 @@ static bool tcg_out_dupm_vec(TCGContext *s, TCGType type, unsigned vece,
             tcg_out_mem_long(s, 0, LVEBX, out, base, offset);
         }
         elt = extract32(offset, 0, 4);
-#ifndef HOST_WORDS_BIGENDIAN
+#if !HOST_BIG_ENDIAN
         elt ^= 15;
 #endif
         tcg_out32(s, VSPLTB | VRT(out) | VRB(out) | (elt << 16));
@@ -3245,7 +3248,7 @@ static bool tcg_out_dupm_vec(TCGContext *s, TCGType type, unsigned vece,
             tcg_out_mem_long(s, 0, LVEHX, out, base, offset);
         }
         elt = extract32(offset, 1, 3);
-#ifndef HOST_WORDS_BIGENDIAN
+#if !HOST_BIG_ENDIAN
         elt ^= 7;
 #endif
         tcg_out32(s, VSPLTH | VRT(out) | VRB(out) | (elt << 16));
@@ -3258,7 +3261,7 @@ static bool tcg_out_dupm_vec(TCGContext *s, TCGType type, unsigned vece,
         tcg_debug_assert((offset & 3) == 0);
         tcg_out_mem_long(s, 0, LVEWX, out, base, offset);
         elt = extract32(offset, 2, 2);
-#ifndef HOST_WORDS_BIGENDIAN
+#if !HOST_BIG_ENDIAN
         elt ^= 3;
 #endif
         tcg_out32(s, VSPLTW | VRT(out) | VRB(out) | (elt << 16));
@@ -3272,7 +3275,7 @@ static bool tcg_out_dupm_vec(TCGContext *s, TCGType type, unsigned vece,
         tcg_out_mem_long(s, 0, LVX, out, base, offset & -16);
         tcg_out_vsldoi(s, TCG_VEC_TMP1, out, out, 8);
         elt = extract32(offset, 3, 1);
-#ifndef HOST_WORDS_BIGENDIAN
+#if !HOST_BIG_ENDIAN
         elt = !elt;
 #endif
         if (elt) {
@@ -3399,6 +3402,15 @@ static void tcg_out_vec_op(TCGContext *s, TCGOpcode opc,
         break;
     case INDEX_op_orc_vec:
         insn = VORC;
+        break;
+    case INDEX_op_nand_vec:
+        insn = VNAND;
+        break;
+    case INDEX_op_nor_vec:
+        insn = VNOR;
+        break;
+    case INDEX_op_eqv_vec:
+        insn = VEQV;
         break;
 
     case INDEX_op_cmp_vec:
@@ -3787,6 +3799,9 @@ static TCGConstraintSetIndex tcg_target_op_def(TCGOpcode op)
     case INDEX_op_xor_vec:
     case INDEX_op_andc_vec:
     case INDEX_op_orc_vec:
+    case INDEX_op_nor_vec:
+    case INDEX_op_eqv_vec:
+    case INDEX_op_nand_vec:
     case INDEX_op_cmp_vec:
     case INDEX_op_ssadd_vec:
     case INDEX_op_sssub_vec:
@@ -3987,3 +4002,9 @@ void tcg_register_jit(const void *buf, size_t buf_size)
     tcg_register_jit_int(buf, buf_size, &debug_frame, sizeof(debug_frame));
 }
 #endif /* __ELF__ */
+#undef VMULEUB
+#undef VMULEUH
+#undef VMULEUW
+#undef VMULOUB
+#undef VMULOUH
+#undef VMULOUW

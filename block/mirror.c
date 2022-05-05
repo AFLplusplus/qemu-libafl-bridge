@@ -23,6 +23,7 @@
 #include "qapi/qmp/qerror.h"
 #include "qemu/ratelimit.h"
 #include "qemu/bitmap.h"
+#include "qemu/memalign.h"
 
 #define MAX_IN_FLIGHT 16
 #define MAX_IO_BYTES (1 << 20) /* 1 Mb */
@@ -1864,6 +1865,8 @@ void mirror_start(const char *job_id, BlockDriverState *bs,
     bool is_none_mode;
     BlockDriverState *base;
 
+    GLOBAL_STATE_CODE();
+
     if ((mode == MIRROR_SYNC_MODE_INCREMENTAL) ||
         (mode == MIRROR_SYNC_MODE_BITMAP)) {
         error_setg(errp, "Sync mode '%s' not supported",
@@ -1888,6 +1891,8 @@ BlockJob *commit_active_start(const char *job_id, BlockDriverState *bs,
 {
     bool base_read_only;
     BlockJob *job;
+
+    GLOBAL_STATE_CODE();
 
     base_read_only = bdrv_is_read_only(base);
 

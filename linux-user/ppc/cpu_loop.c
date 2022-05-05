@@ -18,7 +18,6 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "qemu.h"
 #include "qemu/timer.h"
 #include "user-internals.h"
@@ -181,7 +180,8 @@ void cpu_loop(CPUPPCState *env)
                 }
                 break;
             case POWERPC_EXCP_TRAP:
-                cpu_abort(cs, "Tried to call a TRAP\n");
+                si_signo = TARGET_SIGTRAP;
+                si_code = TARGET_TRAP_BRKPT;
                 break;
             default:
                 /* Should not happen ! */

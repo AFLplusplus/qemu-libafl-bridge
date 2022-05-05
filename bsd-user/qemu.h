@@ -29,19 +29,13 @@
 
 extern char **environ;
 
-enum BSDType {
-    target_freebsd,
-    target_netbsd,
-    target_openbsd,
-};
-extern enum BSDType bsd_type;
-
 #include "exec/user/thunk.h"
 #include "target_arch.h"
 #include "syscall_defs.h"
 #include "target_syscall.h"
 #include "target_os_vmparam.h"
 #include "target_os_signal.h"
+#include "target.h"
 #include "exec/gdbstub.h"
 
 /*
@@ -181,7 +175,7 @@ abi_long do_netbsd_syscall(void *cpu_env, int num, abi_long arg1,
 abi_long do_openbsd_syscall(void *cpu_env, int num, abi_long arg1,
                             abi_long arg2, abi_long arg3, abi_long arg4,
                             abi_long arg5, abi_long arg6);
-void gemu_log(const char *fmt, ...) GCC_FMT_ATTR(1, 2);
+void gemu_log(const char *fmt, ...) G_GNUC_PRINTF(1, 2);
 extern __thread CPUState *thread_cpu;
 void cpu_loop(CPUArchState *env);
 char *target_strerror(int err);
@@ -253,9 +247,10 @@ extern unsigned long target_dflssiz;
 extern unsigned long target_maxssiz;
 extern unsigned long target_sgrowsiz;
 
-/* syscall.c */
+/* os-syscall.c */
 abi_long get_errno(abi_long ret);
 bool is_error(abi_long ret);
+int host_to_target_errno(int err);
 
 /* os-sys.c */
 abi_long do_freebsd_sysarch(void *cpu_env, abi_long arg1, abi_long arg2);
@@ -466,6 +461,19 @@ static inline void *lock_user_string(abi_ulong guest_addr)
     (host_ptr = lock_user(type, guest_addr, sizeof(*host_ptr), copy))
 #define unlock_user_struct(host_ptr, guest_addr, copy)          \
     unlock_user(host_ptr, guest_addr, (copy) ? sizeof(*host_ptr) : 0)
+
+static inline uint64_t target_arg64(uint32_t word0, uint32_t word1)
+{
+#if TARGET_ABI_BITS == 32
+#if TARGET_BIG_ENDIAN
+    return ((uint64_t)word0 << 32) | word1;
+#else
+    return ((uint64_t)word1 << 32) | word0;
+#endif
+#else /* TARGET_ABI_BITS != 32 */
+    return word0;
+#endif /* TARGET_ABI_BITS != 32 */
+}
 
 #include <pthread.h>
 

@@ -24,7 +24,6 @@
 #ifdef CONFIG_TCG
 #include "exec/cpu_ldst.h"
 #endif
-#include "sysemu/cpu-timers.h"
 
 /* allow to see translation results - the slowdown should be negligible, so we leave it */
 #define DEBUG_DISAS
@@ -59,10 +58,10 @@ void restore_state_to_opc(CPUArchState *env, TranslationBlock *tb,
  */
 bool cpu_restore_state(CPUState *cpu, uintptr_t searched_pc, bool will_exit);
 
-void QEMU_NORETURN cpu_loop_exit_noexc(CPUState *cpu);
-void QEMU_NORETURN cpu_loop_exit(CPUState *cpu);
-void QEMU_NORETURN cpu_loop_exit_restore(CPUState *cpu, uintptr_t pc);
-void QEMU_NORETURN cpu_loop_exit_atomic(CPUState *cpu, uintptr_t pc);
+G_NORETURN void cpu_loop_exit_noexc(CPUState *cpu);
+G_NORETURN void cpu_loop_exit(CPUState *cpu);
+G_NORETURN void cpu_loop_exit_restore(CPUState *cpu, uintptr_t pc);
+G_NORETURN void cpu_loop_exit_atomic(CPUState *cpu, uintptr_t pc);
 
 /**
  * cpu_loop_exit_requested:
@@ -80,31 +79,6 @@ static inline bool cpu_loop_exit_requested(CPUState *cpu)
 {
     return (int32_t)qatomic_read(&cpu_neg(cpu)->icount_decr.u32) < 0;
 }
-
-#if !defined(CONFIG_USER_ONLY)
-void cpu_reloading_memory_map(void);
-/**
- * cpu_address_space_init:
- * @cpu: CPU to add this address space to
- * @asidx: integer index of this address space
- * @prefix: prefix to be used as name of address space
- * @mr: the root memory region of address space
- *
- * Add the specified address space to the CPU's cpu_ases list.
- * The address space added with @asidx 0 is the one used for the
- * convenience pointer cpu->as.
- * The target-specific code which registers ASes is responsible
- * for defining what semantics address space 0, 1, 2, etc have.
- *
- * Before the first call to this function, the caller must set
- * cpu->num_ases to the total number of address spaces it needs
- * to support.
- *
- * Note that with KVM only one address space is supported.
- */
-void cpu_address_space_init(CPUState *cpu, int asidx,
-                            const char *prefix, MemoryRegion *mr);
-#endif
 
 #if !defined(CONFIG_USER_ONLY) && defined(CONFIG_TCG)
 /* cputlb.c */
@@ -695,9 +669,9 @@ bool handle_sigsegv_accerr_write(CPUState *cpu, sigset_t *old_set,
  * Use the TCGCPUOps hook to record cpu state, do guest operating system
  * specific things to raise SIGSEGV, and jump to the main cpu loop.
  */
-void QEMU_NORETURN cpu_loop_exit_sigsegv(CPUState *cpu, target_ulong addr,
-                                         MMUAccessType access_type,
-                                         bool maperr, uintptr_t ra);
+G_NORETURN void cpu_loop_exit_sigsegv(CPUState *cpu, target_ulong addr,
+                                      MMUAccessType access_type,
+                                      bool maperr, uintptr_t ra);
 
 /**
  * cpu_loop_exit_sigbus:
@@ -709,9 +683,9 @@ void QEMU_NORETURN cpu_loop_exit_sigsegv(CPUState *cpu, target_ulong addr,
  * Use the TCGCPUOps hook to record cpu state, do guest operating system
  * specific things to raise SIGBUS, and jump to the main cpu loop.
  */
-void QEMU_NORETURN cpu_loop_exit_sigbus(CPUState *cpu, target_ulong addr,
-                                        MMUAccessType access_type,
-                                        uintptr_t ra);
+G_NORETURN void cpu_loop_exit_sigbus(CPUState *cpu, target_ulong addr,
+                                     MMUAccessType access_type,
+                                     uintptr_t ra);
 
 #else
 static inline void mmap_lock(void) {}

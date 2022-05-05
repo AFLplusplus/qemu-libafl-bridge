@@ -10,7 +10,6 @@
 #include "qemu/log.h"
 #include "qapi/visitor.h"
 #include "qapi/error.h"
-#include "qemu-common.h"
 #include "monitor/monitor.h"
 #include "target/ppc/cpu.h"
 #include "hw/pci-host/pnv_phb4_regs.h"
@@ -483,6 +482,15 @@ static void pnv_phb4_update_xsrc(PnvPHB4 *phb)
         flags = XIVE_SRC_STORE_EOI;
     } else {
         flags = 0;
+    }
+
+    /*
+     * When the PQ disable configuration bit is set, the check on the
+     * PQ state bits is disabled on the PHB side (for MSI only) and it
+     * is performed on the IC side instead.
+     */
+    if (phb->regs[PHB_CTRLR >> 3] & PHB_CTRLR_IRQ_PQ_DISABLE) {
+        flags |= XIVE_SRC_PQ_DISABLE;
     }
 
     phb->xsrc.esb_shift = shift;
@@ -1457,7 +1465,7 @@ static AddressSpace *pnv_phb4_dma_iommu(PCIBus *bus, void *opaque, int devfn)
     ds = pnv_phb4_dma_find(phb, bus, devfn);
 
     if (ds == NULL) {
-        ds = g_malloc0(sizeof(PnvPhb4DMASpace));
+        ds = g_new0(PnvPhb4DMASpace, 1);
         ds->bus = bus;
         ds->devfn = devfn;
         ds->pe_num = PHB_INVALID_PE;
@@ -1536,73 +1544,13 @@ static void pnv_phb4_instance_init(Object *obj)
     object_initialize_child(obj, "source", &phb->xsrc, TYPE_XIVE_SOURCE);
 }
 
-static PnvPhb4PecState *pnv_phb4_get_pec(PnvChip *chip, PnvPHB4 *phb,
-                                         Error **errp)
-{
-    Pnv9Chip *chip9 = PNV9_CHIP(chip);
-    int chip_id = phb->chip_id;
-    int index = phb->phb_id;
-    int i, j;
-
-    for (i = 0; i < chip->num_pecs; i++) {
-        /*
-         * For each PEC, check the amount of phbs it supports
-         * and see if the given phb4 index matches an index.
-         */
-        PnvPhb4PecState *pec = &chip9->pecs[i];
-
-        for (j = 0; j < pec->num_phbs; j++) {
-            if (index == pnv_phb4_pec_get_phb_id(pec, j)) {
-                return pec;
-            }
-        }
-    }
-
-    error_setg(errp,
-               "pnv-phb4 chip-id %d index %d didn't match any existing PEC",
-               chip_id, index);
-
-    return NULL;
-}
-
 static void pnv_phb4_realize(DeviceState *dev, Error **errp)
 {
     PnvPHB4 *phb = PNV_PHB4(dev);
     PCIHostState *pci = PCI_HOST_BRIDGE(dev);
     XiveSource *xsrc = &phb->xsrc;
-    Error *local_err = NULL;
     int nr_irqs;
     char name[32];
-
-    /* User created PHB */
-    if (!phb->pec) {
-        PnvMachineState *pnv = PNV_MACHINE(qdev_get_machine());
-        PnvChip *chip = pnv_get_chip(pnv, phb->chip_id);
-        BusState *s;
-
-        if (!chip) {
-            error_setg(errp, "invalid chip id: %d", phb->chip_id);
-            return;
-        }
-
-        phb->pec = pnv_phb4_get_pec(chip, phb, &local_err);
-        if (local_err) {
-            error_propagate(errp, local_err);
-            return;
-        }
-
-        /*
-         * Reparent user created devices to the chip to build
-         * correctly the device tree.
-         */
-        pnv_chip_parent_fixup(chip, OBJECT(phb), phb->phb_id);
-
-        s = qdev_get_parent_bus(DEVICE(chip));
-        if (!qdev_set_parent_bus(DEVICE(phb), s, &local_err)) {
-            error_propagate(errp, local_err);
-            return;
-        }
-    }
 
     /* Set the "big_phb" flag */
     phb->big_phb = phb->phb_id == 0 || phb->phb_id == 3;
@@ -1664,21 +1612,82 @@ static const char *pnv_phb4_root_bus_path(PCIHostState *host_bridge,
     return phb->bus_path;
 }
 
-static void pnv_phb4_xive_notify(XiveNotifier *xf, uint32_t srcno)
+/*
+ * Address base trigger mode (POWER10)
+ *
+ * Trigger directly the IC ESB page
+ */
+static void pnv_phb4_xive_notify_abt(PnvPHB4 *phb, uint32_t srcno,
+                                     bool pq_checked)
 {
-    PnvPHB4 *phb = PNV_PHB4(xf);
+    uint64_t notif_port = phb->regs[PHB_INT_NOTIFY_ADDR >> 3];
+    uint64_t data = 0; /* trigger data : don't care */
+    hwaddr addr;
+    MemTxResult result;
+    int esb_shift;
+
+    if (notif_port & PHB_INT_NOTIFY_ADDR_64K) {
+        esb_shift = 16;
+    } else {
+        esb_shift = 12;
+    }
+
+    /* Compute the address of the IC ESB management page */
+    addr = (notif_port & ~PHB_INT_NOTIFY_ADDR_64K);
+    addr |= (1ull << (esb_shift + 1)) * srcno;
+    addr |= (1ull << esb_shift);
+
+    /*
+     * When the PQ state bits are checked on the PHB, the associated
+     * PQ state bits on the IC should be ignored. Use the unconditional
+     * trigger offset to inject a trigger on the IC. This is always
+     * the case for LSIs
+     */
+    if (pq_checked) {
+        addr |= XIVE_ESB_INJECT;
+    }
+
+    trace_pnv_phb4_xive_notify_ic(addr, data);
+
+    address_space_stq_be(&address_space_memory, addr, data,
+                         MEMTXATTRS_UNSPECIFIED, &result);
+    if (result != MEMTX_OK) {
+        phb_error(phb, "trigger failed @%"HWADDR_PRIx "\n", addr);
+        return;
+    }
+}
+
+static void pnv_phb4_xive_notify_ic(PnvPHB4 *phb, uint32_t srcno,
+                                    bool pq_checked)
+{
     uint64_t notif_port = phb->regs[PHB_INT_NOTIFY_ADDR >> 3];
     uint32_t offset = phb->regs[PHB_INT_NOTIFY_INDEX >> 3];
-    uint64_t data = XIVE_TRIGGER_PQ | offset | srcno;
+    uint64_t data = offset | srcno;
     MemTxResult result;
 
-    trace_pnv_phb4_xive_notify(notif_port, data);
+    if (pq_checked) {
+        data |= XIVE_TRIGGER_PQ;
+    }
+
+    trace_pnv_phb4_xive_notify_ic(notif_port, data);
 
     address_space_stq_be(&address_space_memory, notif_port, data,
                          MEMTXATTRS_UNSPECIFIED, &result);
     if (result != MEMTX_OK) {
         phb_error(phb, "trigger failed @%"HWADDR_PRIx "\n", notif_port);
         return;
+    }
+}
+
+static void pnv_phb4_xive_notify(XiveNotifier *xf, uint32_t srcno,
+                                 bool pq_checked)
+{
+    PnvPHB4 *phb = PNV_PHB4(xf);
+
+    if (phb->regs[PHB_CTRLR >> 3] & PHB_CTRLR_IRQ_ABT_MODE) {
+        pnv_phb4_xive_notify_abt(phb, srcno, pq_checked);
+    } else {
+        pnv_phb4_xive_notify_ic(phb, srcno, pq_checked);
     }
 }
 
@@ -1700,7 +1709,7 @@ static void pnv_phb4_class_init(ObjectClass *klass, void *data)
     dc->realize         = pnv_phb4_realize;
     device_class_set_props(dc, pnv_phb4_properties);
     set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
-    dc->user_creatable  = true;
+    dc->user_creatable  = false;
 
     xfc->notify         = pnv_phb4_xive_notify;
 }
@@ -1715,6 +1724,12 @@ static const TypeInfo pnv_phb4_type_info = {
             { TYPE_XIVE_NOTIFIER },
             { },
     }
+};
+
+static const TypeInfo pnv_phb5_type_info = {
+    .name          = TYPE_PNV_PHB5,
+    .parent        = TYPE_PNV_PHB4,
+    .instance_size = sizeof(PnvPHB4),
 };
 
 static void pnv_phb4_root_bus_class_init(ObjectClass *klass, void *data)
@@ -1756,6 +1771,7 @@ static void pnv_phb4_root_port_reset(DeviceState *dev)
     pci_set_word(conf + PCI_PREF_MEMORY_LIMIT, 0xfff1);
     pci_set_long(conf + PCI_PREF_BASE_UPPER32, 0x1); /* Hack */
     pci_set_long(conf + PCI_PREF_LIMIT_UPPER32, 0xffffffff);
+    pci_config_set_interrupt_pin(conf, 0);
 }
 
 static void pnv_phb4_root_port_realize(DeviceState *dev, Error **errp)
@@ -1792,7 +1808,7 @@ static void pnv_phb4_root_port_class_init(ObjectClass *klass, void *data)
     PCIERootPortClass *rpc = PCIE_ROOT_PORT_CLASS(klass);
 
     dc->desc     = "IBM PHB4 PCIE Root Port";
-    dc->user_creatable = true;
+    dc->user_creatable = false;
 
     device_class_set_parent_realize(dc, pnv_phb4_root_port_realize,
                                     &rpc->parent_realize);
@@ -1816,11 +1832,32 @@ static const TypeInfo pnv_phb4_root_port_info = {
     .class_init    = pnv_phb4_root_port_class_init,
 };
 
+static void pnv_phb5_root_port_class_init(ObjectClass *klass, void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
+
+    dc->desc     = "IBM PHB5 PCIE Root Port";
+    dc->user_creatable = false;
+
+    k->vendor_id = PCI_VENDOR_ID_IBM;
+    k->device_id = PNV_PHB5_DEVICE_ID;
+}
+
+static const TypeInfo pnv_phb5_root_port_info = {
+    .name          = TYPE_PNV_PHB5_ROOT_PORT,
+    .parent        = TYPE_PNV_PHB4_ROOT_PORT,
+    .instance_size = sizeof(PnvPHB4RootPort),
+    .class_init    = pnv_phb5_root_port_class_init,
+};
+
 static void pnv_phb4_register_types(void)
 {
     type_register_static(&pnv_phb4_root_bus_info);
+    type_register_static(&pnv_phb5_root_port_info);
     type_register_static(&pnv_phb4_root_port_info);
     type_register_static(&pnv_phb4_type_info);
+    type_register_static(&pnv_phb5_type_info);
     type_register_static(&pnv_phb4_iommu_memory_region_info);
 }
 
@@ -1828,10 +1865,15 @@ type_init(pnv_phb4_register_types);
 
 void pnv_phb4_pic_print_info(PnvPHB4 *phb, Monitor *mon)
 {
+    uint64_t notif_port =
+        phb->regs[PHB_INT_NOTIFY_ADDR >> 3] & ~PHB_INT_NOTIFY_ADDR_64K;
     uint32_t offset = phb->regs[PHB_INT_NOTIFY_INDEX >> 3];
+    bool abt = !!(phb->regs[PHB_CTRLR >> 3] & PHB_CTRLR_IRQ_ABT_MODE);
 
-    monitor_printf(mon, "PHB4[%x:%x] Source %08x .. %08x\n",
+    monitor_printf(mon, "PHB4[%x:%x] Source %08x .. %08x %s @%"HWADDR_PRIx"\n",
                    phb->chip_id, phb->phb_id,
-                   offset, offset + phb->xsrc.nr_irqs - 1);
+                   offset, offset + phb->xsrc.nr_irqs - 1,
+                   abt ? "ABT" : "",
+                   notif_port);
     xive_source_pic_print_info(&phb->xsrc, 0, mon);
 }

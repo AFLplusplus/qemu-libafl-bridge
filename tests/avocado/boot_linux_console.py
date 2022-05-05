@@ -325,31 +325,6 @@ class BootLinuxConsole(LinuxKernelTest):
         kernel_hash = '18d1c68f2e23429e266ca39ba5349ccd0aeb7180'
         self.do_test_mips_malta32el_nanomips(kernel_url, kernel_hash)
 
-    def test_aarch64_virt(self):
-        """
-        :avocado: tags=arch:aarch64
-        :avocado: tags=machine:virt
-        :avocado: tags=accel:tcg
-        :avocado: tags=cpu:cortex-a53
-        """
-        kernel_url = ('https://archives.fedoraproject.org/pub/archive/fedora'
-                      '/linux/releases/29/Everything/aarch64/os/images/pxeboot'
-                      '/vmlinuz')
-        kernel_hash = '8c73e469fc6ea06a58dc83a628fc695b693b8493'
-        kernel_path = self.fetch_asset(kernel_url, asset_hash=kernel_hash)
-
-        self.vm.set_console()
-        kernel_command_line = (self.KERNEL_COMMON_COMMAND_LINE +
-                               'console=ttyAMA0')
-        self.require_accelerator("tcg")
-        self.vm.add_args('-cpu', 'cortex-a53',
-                         '-accel', 'tcg',
-                         '-kernel', kernel_path,
-                         '-append', kernel_command_line)
-        self.vm.launch()
-        console_pattern = 'Kernel command line: %s' % kernel_command_line
-        self.wait_for_console_pattern(console_pattern)
-
     def test_aarch64_xlnx_versal_virt(self):
         """
         :avocado: tags=arch:aarch64
@@ -1165,11 +1140,14 @@ class BootLinuxConsole(LinuxKernelTest):
         :avocado: tags=arch:ppc64
         :avocado: tags=machine:ppce500
         :avocado: tags=cpu:e5500
+        :avocado: tags=accel:tcg
         """
+        self.require_accelerator("tcg")
         tar_hash = '6951d86d644b302898da2fd701739c9406527fe1'
         self.do_test_advcal_2018('19', tar_hash, 'uImage')
 
     def do_test_ppc64_powernv(self, proc):
+        self.require_accelerator("tcg")
         images_url = ('https://github.com/open-power/op-build/releases/download/v2.7/')
 
         kernel_url = images_url + 'zImage.epapr'
@@ -1194,6 +1172,7 @@ class BootLinuxConsole(LinuxKernelTest):
         """
         :avocado: tags=arch:ppc64
         :avocado: tags=machine:powernv8
+        :avocado: tags=accel:tcg
         """
         self.do_test_ppc64_powernv('P8')
 
@@ -1201,6 +1180,7 @@ class BootLinuxConsole(LinuxKernelTest):
         """
         :avocado: tags=arch:ppc64
         :avocado: tags=machine:powernv9
+        :avocado: tags=accel:tcg
         """
         self.do_test_ppc64_powernv('P9')
 
@@ -1208,7 +1188,13 @@ class BootLinuxConsole(LinuxKernelTest):
         """
         :avocado: tags=arch:ppc
         :avocado: tags=machine:g3beige
+        :avocado: tags=accel:tcg
         """
+        # TODO: g3beige works with kvm_pr but we don't have a
+        # reliable way ATM (e.g. looking at /proc/modules) to detect
+        # whether we're running kvm_hv or kvm_pr. For now let's
+        # disable this test if we don't have TCG support.
+        self.require_accelerator("tcg")
         tar_hash = 'e0b872a5eb8fdc5bed19bd43ffe863900ebcedfc'
         self.vm.add_args('-M', 'graphics=off')
         self.do_test_advcal_2018('15', tar_hash, 'invaders.elf')
@@ -1217,7 +1203,13 @@ class BootLinuxConsole(LinuxKernelTest):
         """
         :avocado: tags=arch:ppc
         :avocado: tags=machine:mac99
+        :avocado: tags=accel:tcg
         """
+        # TODO: mac99 works with kvm_pr but we don't have a
+        # reliable way ATM (e.g. looking at /proc/modules) to detect
+        # whether we're running kvm_hv or kvm_pr. For now let's
+        # disable this test if we don't have TCG support.
+        self.require_accelerator("tcg")
         tar_hash = 'e0b872a5eb8fdc5bed19bd43ffe863900ebcedfc'
         self.vm.add_args('-M', 'graphics=off')
         self.do_test_advcal_2018('15', tar_hash, 'invaders.elf')

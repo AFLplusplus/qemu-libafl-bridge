@@ -25,6 +25,7 @@ import subprocess
 import contextlib
 import json
 import termios
+import shutil
 import sys
 from multiprocessing import Pool
 from contextlib import contextmanager
@@ -259,9 +260,6 @@ class TestRunner(ContextManager['TestRunner']):
         """
 
         f_test = Path(test)
-        f_bad = Path(f_test.name + '.out.bad')
-        f_notrun = Path(f_test.name + '.notrun')
-        f_casenotrun = Path(f_test.name + '.casenotrun')
         f_reference = Path(self.find_reference(test))
 
         if not f_test.exists():
@@ -276,9 +274,6 @@ class TestRunner(ContextManager['TestRunner']):
                               description='No qualified output '
                                           f'(expected {f_reference})')
 
-        for p in (f_bad, f_notrun, f_casenotrun):
-            silent_unlink(p)
-
         args = [str(f_test.resolve())]
         env = self.env.prepare_subprocess(args)
         if mp:
@@ -287,6 +282,14 @@ class TestRunner(ContextManager['TestRunner']):
             for d in ['TEST_DIR', 'SOCK_DIR']:
                 env[d] = os.path.join(env[d], f_test.name)
                 Path(env[d]).mkdir(parents=True, exist_ok=True)
+
+        test_dir = env['TEST_DIR']
+        f_bad = Path(test_dir, f_test.name + '.out.bad')
+        f_notrun = Path(test_dir, f_test.name + '.notrun')
+        f_casenotrun = Path(test_dir, f_test.name + '.casenotrun')
+
+        for p in (f_notrun, f_casenotrun):
+            silent_unlink(p)
 
         t0 = time.time()
         with f_bad.open('w', encoding="utf-8") as f:
@@ -320,6 +323,11 @@ class TestRunner(ContextManager['TestRunner']):
 
         diff = file_diff(str(f_reference), str(f_bad))
         if diff:
+            if os.environ.get("QEMU_IOTESTS_REGEN", None) is not None:
+                shutil.copyfile(str(f_bad), str(f_reference))
+                print("########################################")
+                print("#####    REFERENCE FILE UPDATED    #####")
+                print("########################################")
             return TestResult(status='fail', elapsed=elapsed,
                               description=f'output mismatch (see {f_bad})',
                               diff=diff, casenotrun=casenotrun)
@@ -365,7 +373,10 @@ class TestRunner(ContextManager['TestRunner']):
                                  description=res.description)
 
         if res.casenotrun:
-            print(res.casenotrun)
+            if self.tap:
+                print('#' + res.casenotrun.replace('\n', '\n#'))
+            else:
+                print(res.casenotrun)
 
         return res
 
@@ -377,6 +388,7 @@ class TestRunner(ContextManager['TestRunner']):
 
         if self.tap:
             self.env.print_env('# ')
+            print('1..%d' % len(tests))
         else:
             self.env.print_env()
 

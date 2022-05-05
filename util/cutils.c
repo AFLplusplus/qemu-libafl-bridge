@@ -26,10 +26,6 @@
 #include "qemu/host-utils.h"
 #include <math.h>
 
-#include "qemu-common.h"
-#include "qemu/sockets.h"
-#include "qemu/iov.h"
-#include "net/net.h"
 #include "qemu/ctype.h"
 #include "qemu/cutils.h"
 #include "qemu/error-report.h"
@@ -147,77 +143,6 @@ time_t mktimegm(struct tm *tm)
     t += 3600 * tm->tm_hour + 60 * tm->tm_min + tm->tm_sec;
     return t;
 }
-
-/*
- * Make sure data goes on disk, but if possible do not bother to
- * write out the inode just for timestamp updates.
- *
- * Unfortunately even in 2009 many operating systems do not support
- * fdatasync and have to fall back to fsync.
- */
-int qemu_fdatasync(int fd)
-{
-#ifdef CONFIG_FDATASYNC
-    return fdatasync(fd);
-#else
-    return fsync(fd);
-#endif
-}
-
-/**
- * Sync changes made to the memory mapped file back to the backing
- * storage. For POSIX compliant systems this will fallback
- * to regular msync call. Otherwise it will trigger whole file sync
- * (including the metadata case there is no support to skip that otherwise)
- *
- * @addr   - start of the memory area to be synced
- * @length - length of the are to be synced
- * @fd     - file descriptor for the file to be synced
- *           (mandatory only for POSIX non-compliant systems)
- */
-int qemu_msync(void *addr, size_t length, int fd)
-{
-#ifdef CONFIG_POSIX
-    size_t align_mask = ~(qemu_real_host_page_size - 1);
-
-    /**
-     * There are no strict reqs as per the length of mapping
-     * to be synced. Still the length needs to follow the address
-     * alignment changes. Additionally - round the size to the multiple
-     * of PAGE_SIZE
-     */
-    length += ((uintptr_t)addr & (qemu_real_host_page_size - 1));
-    length = (length + ~align_mask) & align_mask;
-
-    addr = (void *)((uintptr_t)addr & align_mask);
-
-    return msync(addr, length, MS_SYNC);
-#else /* CONFIG_POSIX */
-    /**
-     * Perform the sync based on the file descriptor
-     * The sync range will most probably be wider than the one
-     * requested - but it will still get the job done
-     */
-    return qemu_fdatasync(fd);
-#endif /* CONFIG_POSIX */
-}
-
-#ifndef _WIN32
-/* Sets a specific flag */
-int fcntl_setfl(int fd, int flag)
-{
-    int flags;
-
-    flags = fcntl(fd, F_GETFL);
-    if (flags == -1)
-        return -errno;
-
-    if (fcntl(fd, F_SETFL, flags | flag) == -1)
-        return -errno;
-
-    return 0;
-}
-#endif
 
 static int64_t suffix_mul(char suffix, int64_t unit)
 {
@@ -936,19 +861,6 @@ int parse_debug_env(const char *name, int max, int initial)
         return initial;
     }
     return debug;
-}
-
-/*
- * Helper to print ethernet mac address
- */
-const char *qemu_ether_ntoa(const MACAddr *mac)
-{
-    static char ret[18];
-
-    snprintf(ret, sizeof(ret), "%02x:%02x:%02x:%02x:%02x:%02x",
-             mac->a[0], mac->a[1], mac->a[2], mac->a[3], mac->a[4], mac->a[5]);
-
-    return ret;
 }
 
 /*

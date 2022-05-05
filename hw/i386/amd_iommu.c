@@ -913,7 +913,7 @@ static void amdvi_page_walk(AMDVIAddressSpace *as, uint64_t *dte,
         }
 
         /* we are at the leaf page table or page table encodes a huge page */
-        while (level > 0) {
+        do {
             pte_perms = amdvi_get_perms(pte);
             present = pte & 1;
             if (!present || perms != (perms & pte_perms)) {
@@ -932,10 +932,7 @@ static void amdvi_page_walk(AMDVIAddressSpace *as, uint64_t *dte,
             }
             oldlevel = level;
             level = get_pte_translation_mode(pte);
-            if (level == 0x7) {
-                break;
-            }
-        }
+        } while (level > 0 && level < 7);
 
         if (level == 0x7) {
             page_mask = pte_override_page_mask(pte);
@@ -1405,7 +1402,7 @@ static AddressSpace *amdvi_host_dma_iommu(PCIBus *bus, void *opaque, int devfn)
 
     /* allocate memory during the first run */
     if (!iommu_as) {
-        iommu_as = g_malloc0(sizeof(AMDVIAddressSpace *) * PCI_DEVFN_MAX);
+        iommu_as = g_new0(AMDVIAddressSpace *, PCI_DEVFN_MAX);
         s->address_spaces[bus_num] = iommu_as;
     }
 
@@ -1413,7 +1410,7 @@ static AddressSpace *amdvi_host_dma_iommu(PCIBus *bus, void *opaque, int devfn)
     if (!iommu_as[devfn]) {
         snprintf(name, sizeof(name), "amd_iommu_devfn_%d", devfn);
 
-        iommu_as[devfn] = g_malloc0(sizeof(AMDVIAddressSpace));
+        iommu_as[devfn] = g_new0(AMDVIAddressSpace, 1);
         iommu_as[devfn]->bus_num = (uint8_t)bus_num;
         iommu_as[devfn]->devfn = (uint8_t)devfn;
         iommu_as[devfn]->iommu_state = s;

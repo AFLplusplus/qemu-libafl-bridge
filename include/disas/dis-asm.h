@@ -269,7 +269,7 @@ typedef struct symbol_cache_entry
 } asymbol;
 
 typedef int (*fprintf_function)(FILE *f, const char *fmt, ...)
-    GCC_FMT_ATTR(2, 3);
+    G_GNUC_PRINTF(2, 3);
 
 enum dis_insn_type {
   dis_noninsn,			/* Not a valid instruction */
@@ -450,7 +450,6 @@ int print_insn_d10v             (bfd_vma, disassemble_info*);
 int print_insn_v850             (bfd_vma, disassemble_info*);
 int print_insn_tic30            (bfd_vma, disassemble_info*);
 int print_insn_ppc              (bfd_vma, disassemble_info*);
-int print_insn_s390             (bfd_vma, disassemble_info*);
 int print_insn_crisv32          (bfd_vma, disassemble_info*);
 int print_insn_crisv10          (bfd_vma, disassemble_info*);
 int print_insn_microblaze       (bfd_vma, disassemble_info*);

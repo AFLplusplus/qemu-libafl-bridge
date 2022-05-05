@@ -38,7 +38,7 @@
 #include "qemu/osdep.h"
 #include "qemu/timer.h"
 #include "qemu-version.h"
-#include "qemu-common.h"
+#include "qemu/help-texts.h"
 #include "fuse_virtio.h"
 #include "fuse_log.h"
 #include "fuse_lowlevel.h"
@@ -1039,7 +1039,7 @@ static int do_statx(struct lo_data *lo, int dirfd, const char *pathname,
 {
     int res;
 
-#if defined(CONFIG_STATX) && defined(STATX_MNT_ID)
+#if defined(CONFIG_STATX) && defined(CONFIG_STATX_MNT_ID)
     if (lo->use_statx) {
         struct statx statxbuf;
 

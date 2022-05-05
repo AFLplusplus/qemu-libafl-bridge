@@ -4,6 +4,7 @@
 #include "qemu/bswap.h"
 #include "cpu-qom.h"
 #include "exec/cpu-defs.h"
+#include "qemu/cpu-float.h"
 
 #if !defined(TARGET_SPARC64)
 #define TARGET_DPREGS 16
@@ -420,7 +421,7 @@ struct CPUTimer
 
 typedef struct CPUTimer CPUTimer;
 
-typedef struct CPUSPARCState CPUSPARCState;
+typedef struct CPUArchState CPUSPARCState;
 #if defined(TARGET_SPARC64)
 typedef union {
    uint64_t mmuregs[16];
@@ -439,7 +440,7 @@ typedef union {
    };
 } SparcV9MMU;
 #endif
-struct CPUSPARCState {
+struct CPUArchState {
     target_ulong gregs[8]; /* general registers */
     target_ulong *regwptr; /* pointer to current register window */
     target_ulong pc;       /* program counter */
@@ -556,7 +557,7 @@ struct CPUSPARCState {
  *
  * A SPARC CPU.
  */
-struct SPARCCPU {
+struct ArchCPU {
     /*< private >*/
     CPUState parent_obj;
     /*< public >*/
@@ -574,11 +575,11 @@ void sparc_cpu_do_interrupt(CPUState *cpu);
 hwaddr sparc_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
 int sparc_cpu_gdb_read_register(CPUState *cpu, GByteArray *buf, int reg);
 int sparc_cpu_gdb_write_register(CPUState *cpu, uint8_t *buf, int reg);
-void QEMU_NORETURN sparc_cpu_do_unaligned_access(CPUState *cpu, vaddr addr,
-                                                 MMUAccessType access_type,
-                                                 int mmu_idx,
-                                                 uintptr_t retaddr);
-void cpu_raise_exception_ra(CPUSPARCState *, int, uintptr_t) QEMU_NORETURN;
+G_NORETURN void sparc_cpu_do_unaligned_access(CPUState *cpu, vaddr addr,
+                                              MMUAccessType access_type,
+                                              int mmu_idx,
+                                              uintptr_t retaddr);
+G_NORETURN void cpu_raise_exception_ra(CPUSPARCState *, int, uintptr_t);
 
 #ifndef NO_CPU_IO_DEFS
 /* cpu_init.c */
@@ -742,9 +743,6 @@ static inline int cpu_pil_allowed(CPUSPARCState *env1, int pil)
     return pil > env1->psrpil;
 #endif
 }
-
-typedef CPUSPARCState CPUArchState;
-typedef SPARCCPU ArchCPU;
 
 #include "exec/cpu-all.h"
 

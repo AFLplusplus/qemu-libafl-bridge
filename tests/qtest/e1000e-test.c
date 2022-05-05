@@ -25,9 +25,7 @@
 
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "libqtest-single.h"
-#include "qemu-common.h"
 #include "libqos/pci-pc.h"
 #include "qemu/sockets.h"
 #include "qemu/iov.h"
@@ -91,9 +89,9 @@ static void e1000e_send_verify(QE1000E *d, int *test_sockets, QGuestAllocator *a
     g_assert_cmphex(le32_to_cpu(descr.upper.data) & dsta_dd, ==, dsta_dd);
 
     /* Check data sent to the backend */
-    ret = qemu_recv(test_sockets[0], &recv_len, sizeof(recv_len), 0);
+    ret = recv(test_sockets[0], &recv_len, sizeof(recv_len), 0);
     g_assert_cmpint(ret, == , sizeof(recv_len));
-    ret = qemu_recv(test_sockets[0], buffer, 64, 0);
+    ret = recv(test_sockets[0], buffer, 64, 0);
     g_assert_cmpint(ret, >=, 5);
     g_assert_cmpstr(buffer, == , "TEST");
 

@@ -15,7 +15,7 @@
 #include <wordexp.h>
 
 #include "hw/core/cpu.h"
-#include "tests/qtest/libqos/libqtest.h"
+#include "tests/qtest/libqtest.h"
 #include "tests/qtest/libqos/pci-pc.h"
 #include "fuzz.h"
 #include "fork_fuzz.h"
@@ -743,14 +743,12 @@ static void usage(void)
 
 static int locate_fuzz_memory_regions(Object *child, void *opaque)
 {
-    const char *name;
     MemoryRegion *mr;
     if (object_dynamic_cast(child, TYPE_MEMORY_REGION)) {
         mr = MEMORY_REGION(child);
         if ((memory_region_is_ram(mr) ||
             memory_region_is_ram_device(mr) ||
             memory_region_is_rom(mr)) == false) {
-            name = object_get_canonical_path_component(child);
             /*
              * We don't want duplicate pointers to the same MemoryRegion, so
              * try to remove copies of the pointer, before adding it.

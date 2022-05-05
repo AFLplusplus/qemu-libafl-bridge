@@ -312,7 +312,7 @@ static void aspeed_gpio_set_pin_level(AspeedGPIOState *s, uint32_t set_idx,
     if (level) {
         value |= pin_mask;
     } else {
-        value &= !pin_mask;
+        value &= ~pin_mask;
     }
 
     aspeed_gpio_update(s, &s->sets[set_idx], value);
@@ -571,7 +571,7 @@ static uint64_t aspeed_gpio_read(void *opaque, hwaddr offset, uint32_t size)
         qemu_log_mask(LOG_GUEST_ERROR, "%s: no getter for offset 0x%"
                       HWADDR_PRIx"\n", __func__, offset);
         return 0;
-    };
+    }
 }
 
 static void aspeed_gpio_write(void *opaque, hwaddr offset, uint64_t data,

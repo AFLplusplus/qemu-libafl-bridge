@@ -49,6 +49,7 @@ typedef struct PnvPhb4DMASpace {
  */
 #define TYPE_PNV_PHB4_ROOT_BUS "pnv-phb4-root"
 #define TYPE_PNV_PHB4_ROOT_PORT "pnv-phb4-root-port"
+#define TYPE_PNV_PHB5_ROOT_PORT "pnv-phb5-root-port"
 
 typedef struct PnvPHB4RootPort {
     PCIESlot parent_obj;
@@ -179,7 +180,7 @@ struct PnvPhb4PecState {
     MemoryRegion nest_regs_mr;
 
     /* PCI registers, excluding per-stack */
-#define PHB4_PEC_PCI_REGS_COUNT     0x2
+#define PHB4_PEC_PCI_REGS_COUNT     0x3
     uint64_t pci_regs[PHB4_PEC_PCI_REGS_COUNT];
     MemoryRegion pci_regs_mr;
 
@@ -202,8 +203,24 @@ struct PnvPhb4PecClass {
     const char *stk_compat;
     int stk_compat_size;
     uint64_t version;
+    const char *phb_type;
     const uint32_t *num_phbs;
     const char *rp_model;
 };
+
+/*
+ * POWER10 definitions
+ */
+
+#define TYPE_PNV_PHB5 "pnv-phb5"
+#define PNV_PHB5(obj) \
+    OBJECT_CHECK(PnvPhb4, (obj), TYPE_PNV_PHB5)
+
+#define PNV_PHB5_VERSION           0x000000a500000001ull
+#define PNV_PHB5_DEVICE_ID         0x0652
+
+#define TYPE_PNV_PHB5_PEC "pnv-phb5-pec"
+#define PNV_PHB5_PEC(obj) \
+    OBJECT_CHECK(PnvPhb4PecState, (obj), TYPE_PNV_PHB5_PEC)
 
 #endif /* PCI_HOST_PNV_PHB4_H */

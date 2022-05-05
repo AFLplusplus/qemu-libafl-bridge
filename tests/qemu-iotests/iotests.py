@@ -38,7 +38,8 @@ import unittest
 from contextlib import contextmanager
 
 from qemu.machine import qtest
-from qemu.qmp import QMPMessage
+from qemu.qmp.legacy import QMPMessage, QEMUMonitorProtocol
+from qemu.utils import VerboseProcessError
 
 # Use this logger for logging messages directly from the iotests module
 logger = logging.getLogger('qemu.iotests')
@@ -84,7 +85,6 @@ qemu_print = os.environ.get('PRINT_QEMU', False)
 
 imgfmt = os.environ.get('IMGFMT', 'raw')
 imgproto = os.environ.get('IMGPROTO', 'file')
-output_dir = os.environ.get('OUTPUT_DIR', '.')
 
 try:
     test_dir = os.environ['TEST_DIR']
@@ -206,18 +206,60 @@ def qemu_img_create_prepare_args(args: List[str]) -> List[str]:
 
     return result
 
-def qemu_img_pipe_and_status(*args: str) -> Tuple[str, int]:
-    """
-    Run qemu-img and return both its output and its exit code
-    """
-    is_create = bool(args and args[0] == 'create')
-    full_args = qemu_img_args + qemu_img_create_prepare_args(list(args))
-    return qemu_tool_pipe_and_status('qemu-img', full_args,
-                                     drop_successful_output=is_create)
 
-def qemu_img(*args: str) -> int:
-    '''Run qemu-img and return the exit code'''
-    return qemu_img_pipe_and_status(*args)[1]
+def qemu_tool(*args: str, check: bool = True, combine_stdio: bool = True
+              ) -> 'subprocess.CompletedProcess[str]':
+    """
+    Run a qemu tool and return its status code and console output.
+
+    :param args: full command line to run.
+    :param check: Enforce a return code of zero.
+    :param combine_stdio: set to False to keep stdout/stderr separated.
+
+    :raise VerboseProcessError:
+        When the return code is negative, or on any non-zero exit code
+        when 'check=True' was provided (the default). This exception has
+        'stdout', 'stderr', and 'returncode' properties that may be
+        inspected to show greater detail. If this exception is not
+        handled, the command-line, return code, and all console output
+        will be included at the bottom of the stack trace.
+
+    :return:
+        a CompletedProcess. This object has args, returncode, and stdout
+        properties. If streams are not combined, it will also have a
+        stderr property.
+    """
+    subp = subprocess.run(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT if combine_stdio else subprocess.PIPE,
+        universal_newlines=True,
+        check=False
+    )
+
+    if check and subp.returncode or (subp.returncode < 0):
+        raise VerboseProcessError(
+            subp.returncode, args,
+            output=subp.stdout,
+            stderr=subp.stderr,
+        )
+
+    return subp
+
+
+def qemu_img(*args: str, check: bool = True, combine_stdio: bool = True
+             ) -> 'subprocess.CompletedProcess[str]':
+    """
+    Run QEMU_IMG_PROG and return its status code and console output.
+
+    This function always prepends QEMU_IMG_OPTIONS and may further alter
+    the args for 'create' commands.
+
+    See `qemu_tool()` for greater detail.
+    """
+    full_args = qemu_img_args + qemu_img_create_prepare_args(list(args))
+    return qemu_tool(*full_args, check=check, combine_stdio=combine_stdio)
+
 
 def ordered_qmp(qmsg, conv_keys=True):
     # Dictionaries are not ordered prior to 3.6, therefore:
@@ -232,26 +274,63 @@ def ordered_qmp(qmsg, conv_keys=True):
         return od
     return qmsg
 
-def qemu_img_create(*args):
+def qemu_img_create(*args: str) -> 'subprocess.CompletedProcess[str]':
     return qemu_img('create', *args)
 
-def qemu_img_measure(*args):
-    return json.loads(qemu_img_pipe("measure", "--output", "json", *args))
+def qemu_img_json(*args: str) -> Any:
+    """
+    Run qemu-img and return its output as deserialized JSON.
 
-def qemu_img_check(*args):
-    return json.loads(qemu_img_pipe("check", "--output", "json", *args))
+    :raise CalledProcessError:
+        When qemu-img crashes, or returns a non-zero exit code without
+        producing a valid JSON document to stdout.
+    :raise JSONDecoderError:
+        When qemu-img returns 0, but failed to produce a valid JSON document.
 
-def qemu_img_pipe(*args: str) -> str:
-    '''Run qemu-img and return its output'''
-    return qemu_img_pipe_and_status(*args)[0]
+    :return: A deserialized JSON object; probably a dict[str, Any].
+    """
+    try:
+        res = qemu_img(*args, combine_stdio=False)
+    except subprocess.CalledProcessError as exc:
+        # Terminated due to signal. Don't bother.
+        if exc.returncode < 0:
+            raise
 
-def qemu_img_log(*args):
-    result = qemu_img_pipe(*args)
-    log(result, filters=[filter_testfiles])
+        # Commands like 'check' can return failure (exit codes 2 and 3)
+        # to indicate command completion, but with errors found. For
+        # multi-command flexibility, ignore the exact error codes and
+        # *try* to load JSON.
+        try:
+            return json.loads(exc.stdout)
+        except json.JSONDecodeError:
+            # Nope. This thing is toast. Raise the /process/ error.
+            pass
+        raise
+
+    return json.loads(res.stdout)
+
+def qemu_img_measure(*args: str) -> Any:
+    return qemu_img_json("measure", "--output", "json", *args)
+
+def qemu_img_check(*args: str) -> Any:
+    return qemu_img_json("check", "--output", "json", *args)
+
+def qemu_img_info(*args: str) -> Any:
+    return qemu_img_json('info', "--output", "json", *args)
+
+def qemu_img_map(*args: str) -> Any:
+    return qemu_img_json('map', "--output", "json", *args)
+
+def qemu_img_log(*args: str, check: bool = True
+                 ) -> 'subprocess.CompletedProcess[str]':
+    result = qemu_img(*args, check=check)
+    log(result.stdout, filters=[filter_testfiles])
     return result
 
-def img_info_log(filename, filter_path=None, use_image_opts=False,
-                 extra_args=()):
+def img_info_log(filename: str, filter_path: Optional[str] = None,
+                 use_image_opts: bool = False, extra_args: Sequence[str] = (),
+                 check: bool = True,
+                 ) -> None:
     args = ['info']
     if use_image_opts:
         args.append('--image-opts')
@@ -260,7 +339,7 @@ def img_info_log(filename, filter_path=None, use_image_opts=False,
     args += extra_args
     args.append(filename)
 
-    output = qemu_img_pipe(*args)
+    output = qemu_img(*args, check=check).stdout
     if not filter_path:
         filter_path = filename
     log(filter_img_info(output, filter_path))
@@ -274,30 +353,22 @@ def qemu_io_wrap_args(args: Sequence[str]) -> List[str]:
 def qemu_io_popen(*args):
     return qemu_tool_popen(qemu_io_wrap_args(args))
 
-def qemu_io(*args):
-    '''Run qemu-io and return the stdout data'''
-    return qemu_tool_pipe_and_status('qemu-io', qemu_io_wrap_args(args))[0]
+def qemu_io(*args: str, check: bool = True, combine_stdio: bool = True
+            ) -> 'subprocess.CompletedProcess[str]':
+    """
+    Run QEMU_IO_PROG and return the status code and console output.
 
-def qemu_io_log(*args):
-    result = qemu_io(*args)
-    log(result, filters=[filter_testfiles, filter_qemu_io])
+    This function always prepends either QEMU_IO_OPTIONS or
+    QEMU_IO_OPTIONS_NO_FMT.
+    """
+    return qemu_tool(*qemu_io_wrap_args(args),
+                     check=check, combine_stdio=combine_stdio)
+
+def qemu_io_log(*args: str, check: bool = True
+                ) -> 'subprocess.CompletedProcess[str]':
+    result = qemu_io(*args, check=check)
+    log(result.stdout, filters=[filter_testfiles, filter_qemu_io])
     return result
-
-def qemu_io_silent(*args):
-    '''Run qemu-io and return the exit code, suppressing stdout'''
-    args = qemu_io_wrap_args(args)
-    result = subprocess.run(args, stdout=subprocess.DEVNULL, check=False)
-    if result.returncode < 0:
-        sys.stderr.write('qemu-io received signal %i: %s\n' %
-                         (-result.returncode, ' '.join(args)))
-    return result.returncode
-
-def qemu_io_silent_check(*args):
-    '''Run qemu-io and return the true if subprocess returned 0'''
-    args = qemu_io_wrap_args(args)
-    result = subprocess.run(args, stdout=subprocess.DEVNULL,
-                            stderr=subprocess.STDOUT, check=False)
-    return result.returncode == 0
 
 class QemuIoInteractive:
     def __init__(self, *args):
@@ -348,14 +419,30 @@ class QemuIoInteractive:
 
 
 class QemuStorageDaemon:
-    def __init__(self, *args: str, instance_id: str = 'a'):
+    _qmp: Optional[QEMUMonitorProtocol] = None
+    _qmpsock: Optional[str] = None
+    # Python < 3.8 would complain if this type were not a string literal
+    # (importing `annotations` from `__future__` would work; but not on <= 3.6)
+    _p: 'Optional[subprocess.Popen[bytes]]' = None
+
+    def __init__(self, *args: str, instance_id: str = 'a', qmp: bool = False):
         assert '--pidfile' not in args
         self.pidfile = os.path.join(test_dir, f'qsd-{instance_id}-pid')
         all_args = [qsd_prog] + list(args) + ['--pidfile', self.pidfile]
 
+        if qmp:
+            self._qmpsock = os.path.join(sock_dir, f'qsd-{instance_id}.sock')
+            all_args += ['--chardev',
+                         f'socket,id=qmp-sock,path={self._qmpsock}',
+                         '--monitor', 'qmp-sock']
+
+            self._qmp = QEMUMonitorProtocol(self._qmpsock, server=True)
+
         # Cannot use with here, we want the subprocess to stay around
         # pylint: disable=consider-using-with
         self._p = subprocess.Popen(all_args)
+        if self._qmp is not None:
+            self._qmp.accept()
         while not os.path.exists(self.pidfile):
             if self._p.poll() is not None:
                 cmd = ' '.join(all_args)
@@ -370,11 +457,24 @@ class QemuStorageDaemon:
 
         assert self._pid == self._p.pid
 
+    def qmp(self, cmd: str, args: Optional[Dict[str, object]] = None) \
+            -> QMPMessage:
+        assert self._qmp is not None
+        return self._qmp.cmd(cmd, args)
+
     def stop(self, kill_signal=15):
         self._p.send_signal(kill_signal)
         self._p.wait()
         self._p = None
 
+        if self._qmp:
+            self._qmp.close()
+
+        if self._qmpsock is not None:
+            try:
+                os.remove(self._qmpsock)
+            except OSError:
+                pass
         try:
             os.remove(self.pidfile)
         except OSError:
@@ -433,10 +533,22 @@ def qemu_nbd_popen(*args):
             p.kill()
             p.wait()
 
-def compare_images(img1, img2, fmt1=imgfmt, fmt2=imgfmt):
-    '''Return True if two image files are identical'''
-    return qemu_img('compare', '-f', fmt1,
-                    '-F', fmt2, img1, img2) == 0
+def compare_images(img1: str, img2: str,
+                   fmt1: str = imgfmt, fmt2: str = imgfmt) -> bool:
+    """
+    Compare two images with QEMU_IMG; return True if they are identical.
+
+    :raise CalledProcessError:
+        when qemu-img crashes or returns a status code of anything other
+        than 0 (identical) or 1 (different).
+    """
+    try:
+        qemu_img('compare', '-f', fmt1, '-F', fmt2, img1, img2)
+        return True
+    except subprocess.CalledProcessError as exc:
+        if exc.returncode == 1:
+            return False
+        raise
 
 def create_image(name, size):
     '''Create a fully-allocated raw image with sector markers'''
@@ -447,10 +559,14 @@ def create_image(name, size):
             file.write(sector)
             i = i + 512
 
-def image_size(img):
-    '''Return image's virtual size'''
-    r = qemu_img_pipe('info', '--output=json', '-f', imgfmt, img)
-    return json.loads(r)['virtual-size']
+def image_size(img: str) -> int:
+    """Return image's virtual size"""
+    value = qemu_img_info('-f', imgfmt, img)['virtual-size']
+    if not isinstance(value, int):
+        type_name = type(value).__name__
+        raise TypeError("Expected 'int' for 'virtual-size', "
+                        f"got '{value}' of type '{type_name}'")
+    return value
 
 def is_str(val):
     return isinstance(val, str)
@@ -489,8 +605,10 @@ def filter_qmp(qmsg, filter_fn):
     # Iterate through either lists or dicts;
     if isinstance(qmsg, list):
         items = enumerate(qmsg)
-    else:
+    elif isinstance(qmsg, dict):
         items = qmsg.items()
+    else:
+        return filter_fn(None, qmsg)
 
     for k, v in items:
         if isinstance(v, (dict, list)):
@@ -826,8 +944,12 @@ class VM(qtest.QEMUQtestMachine):
         return result
 
     # Returns None on success, and an error string on failure
-    def run_job(self, job, auto_finalize=True, auto_dismiss=False,
-                pre_finalize=None, cancel=False, wait=60.0):
+    def run_job(self, job: str, auto_finalize: bool = True,
+                auto_dismiss: bool = False,
+                pre_finalize: Optional[Callable[[], None]] = None,
+                cancel: bool = False, wait: float = 60.0,
+                filters: Iterable[Callable[[Any], Any]] = (),
+                ) -> Optional[str]:
         """
         run_job moves a job from creation through to dismissal.
 
@@ -857,7 +979,7 @@ class VM(qtest.QEMUQtestMachine):
         while True:
             ev = filter_qmp_event(self.events_wait(events, timeout=wait))
             if ev['event'] != 'JOB_STATUS_CHANGE':
-                log(ev)
+                log(ev, filters=filters)
                 continue
             status = ev['data']['status']
             if status == 'aborting':
@@ -865,18 +987,18 @@ class VM(qtest.QEMUQtestMachine):
                 for j in result['return']:
                     if j['id'] == job:
                         error = j['error']
-                        log('Job failed: %s' % (j['error']))
+                        log('Job failed: %s' % (j['error']), filters=filters)
             elif status == 'ready':
-                self.qmp_log('job-complete', id=job)
+                self.qmp_log('job-complete', id=job, filters=filters)
             elif status == 'pending' and not auto_finalize:
                 if pre_finalize:
                     pre_finalize()
                 if cancel:
-                    self.qmp_log('job-cancel', id=job)
+                    self.qmp_log('job-cancel', id=job, filters=filters)
                 else:
-                    self.qmp_log('job-finalize', id=job)
+                    self.qmp_log('job-finalize', id=job, filters=filters)
             elif status == 'concluded' and not auto_dismiss:
-                self.qmp_log('job-dismiss', id=job)
+                self.qmp_log('job-dismiss', id=job, filters=filters)
             elif status == 'null':
                 return error
 
@@ -889,7 +1011,7 @@ class VM(qtest.QEMUQtestMachine):
 
         if 'return' in result:
             assert result['return'] == {}
-            job_result = self.run_job(job_id)
+            job_result = self.run_job(job_id, filters=filters)
         else:
             job_result = result['error']
 
@@ -1209,7 +1331,7 @@ def notrun(reason):
     # Each test in qemu-iotests has a number ("seq")
     seq = os.path.basename(sys.argv[0])
 
-    with open('%s/%s.notrun' % (output_dir, seq), 'w', encoding='utf-8') \
+    with open('%s/%s.notrun' % (test_dir, seq), 'w', encoding='utf-8') \
             as outfile:
         outfile.write(reason + '\n')
     logger.warning("%s not run: %s", seq, reason)
@@ -1224,7 +1346,7 @@ def case_notrun(reason):
     # Each test in qemu-iotests has a number ("seq")
     seq = os.path.basename(sys.argv[0])
 
-    with open('%s/%s.casenotrun' % (output_dir, seq), 'a', encoding='utf-8') \
+    with open('%s/%s.casenotrun' % (test_dir, seq), 'a', encoding='utf-8') \
             as outfile:
         outfile.write('    [case not run] ' + reason + '\n')
 
@@ -1300,8 +1422,8 @@ def _verify_imgopts(unsupported: Sequence[str] = ()) -> None:
         notrun(f'not suitable for this imgopts: {imgopts}')
 
 
-def supports_quorum():
-    return 'quorum' in qemu_img_pipe('--help')
+def supports_quorum() -> bool:
+    return 'quorum' in qemu_img('--help').stdout
 
 def verify_quorum():
     '''Skip test suite if quorum support is not available'''
@@ -1317,20 +1439,20 @@ def has_working_luks() -> Tuple[bool, str]:
     """
 
     img_file = f'{test_dir}/luks-test.luks'
-    (output, status) = \
-        qemu_img_pipe_and_status('create', '-f', 'luks',
-                                 '--object', luks_default_secret_object,
-                                 '-o', luks_default_key_secret_opt,
-                                 '-o', 'iter-time=10',
-                                 img_file, '1G')
+    res = qemu_img('create', '-f', 'luks',
+                   '--object', luks_default_secret_object,
+                   '-o', luks_default_key_secret_opt,
+                   '-o', 'iter-time=10',
+                   img_file, '1G',
+                   check=False)
     try:
         os.remove(img_file)
     except OSError:
         pass
 
-    if status != 0:
-        reason = output
-        for line in output.splitlines():
+    if res.returncode:
+        reason = res.stdout
+        for line in res.stdout.splitlines():
             if img_file + ':' in line:
                 reason = line.split(img_file + ':', 1)[1].strip()
                 break
@@ -1346,6 +1468,26 @@ def verify_working_luks():
     (working, reason) = has_working_luks()
     if not working:
         notrun(reason)
+
+def supports_qcow2_zstd_compression() -> bool:
+    img_file = f'{test_dir}/qcow2-zstd-test.qcow2'
+    res = qemu_img('create', '-f', 'qcow2', '-o', 'compression_type=zstd',
+                   img_file, '0',
+                   check=False)
+    try:
+        os.remove(img_file)
+    except OSError:
+        pass
+
+    if res.returncode == 1 and \
+            "'compression-type' does not accept value 'zstd'" in res.stdout:
+        return False
+    else:
+        return True
+
+def verify_qcow2_zstd_compression():
+    if not supports_qcow2_zstd_compression():
+        notrun('zstd compression not supported')
 
 def qemu_pipe(*args: str) -> str:
     """

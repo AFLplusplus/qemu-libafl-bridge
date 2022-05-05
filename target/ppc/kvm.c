@@ -21,7 +21,6 @@
 
 #include <linux/kvm.h>
 
-#include "qemu-common.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "cpu.h"
@@ -418,7 +417,7 @@ void kvm_check_mmu(PowerPCCPU *cpu, Error **errp)
          * will be a normal mapping, not a special hugepage one used
          * for RAM.
          */
-        if (qemu_real_host_page_size < 0x10000) {
+        if (qemu_real_host_page_size() < 0x10000) {
             error_setg(errp,
                        "KVM can't supply 64kiB CI pages, which guest expects");
         }
@@ -632,7 +631,7 @@ static int kvm_put_fp(CPUState *cs)
             uint64_t *fpr = cpu_fpr_ptr(&cpu->env, i);
             uint64_t *vsrl = cpu_vsrl_ptr(&cpu->env, i);
 
-#ifdef HOST_WORDS_BIGENDIAN
+#if HOST_BIG_ENDIAN
             vsr[0] = float64_val(*fpr);
             vsr[1] = *vsrl;
 #else
@@ -710,7 +709,7 @@ static int kvm_get_fp(CPUState *cs)
                                         strerror(errno));
                 return ret;
             } else {
-#ifdef HOST_WORDS_BIGENDIAN
+#if HOST_BIG_ENDIAN
                 *fpr = vsr[0];
                 if (vsx) {
                     *vsrl = vsr[1];
@@ -1681,7 +1680,7 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
         break;
 #if defined(TARGET_PPC64)
     case KVM_EXIT_PAPR_HCALL:
-        trace_kvm_handle_papr_hcall();
+        trace_kvm_handle_papr_hcall(run->papr_hcall.nr);
         run->papr_hcall.ret = spapr_hypercall(cpu,
                                               run->papr_hcall.nr,
                                               run->papr_hcall.args);

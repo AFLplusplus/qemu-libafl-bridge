@@ -18,7 +18,6 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "qapi/error.h"
 #include "qapi/qapi-visit-sockets.h"
 #include "qemu/module.h"
@@ -461,7 +460,7 @@ static void qio_channel_socket_copy_fds(struct msghdr *msg,
             }
 
             /* O_NONBLOCK is preserved across SCM_RIGHTS so reset it */
-            qemu_set_block(fd);
+            qemu_socket_set_block(fd);
 
 #ifndef MSG_CMSG_CLOEXEC
             qemu_set_cloexec(fd);
@@ -666,9 +665,9 @@ qio_channel_socket_set_blocking(QIOChannel *ioc,
     QIOChannelSocket *sioc = QIO_CHANNEL_SOCKET(ioc);
 
     if (enabled) {
-        qemu_set_block(sioc->fd);
+        qemu_socket_set_block(sioc->fd);
     } else {
-        qemu_set_nonblock(sioc->fd);
+        qemu_socket_set_nonblock(sioc->fd);
     }
     return 0;
 }
@@ -681,9 +680,9 @@ qio_channel_socket_set_delay(QIOChannel *ioc,
     QIOChannelSocket *sioc = QIO_CHANNEL_SOCKET(ioc);
     int v = enabled ? 0 : 1;
 
-    qemu_setsockopt(sioc->fd,
-                    IPPROTO_TCP, TCP_NODELAY,
-                    &v, sizeof(v));
+    setsockopt(sioc->fd,
+               IPPROTO_TCP, TCP_NODELAY,
+               &v, sizeof(v));
 }
 
 

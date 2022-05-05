@@ -725,7 +725,8 @@ void cpu_loop_exit_sigbus(CPUState *cpu, target_ulong addr,
 }
 
 /* abort execution with signal */
-static void QEMU_NORETURN dump_core_and_abort(int target_sig)
+static G_NORETURN
+void dump_core_and_abort(int target_sig)
 {
     CPUState *cpu = thread_cpu;
     CPUArchState *env = cpu->env_ptr;
@@ -999,7 +1000,6 @@ int do_sigaction(int sig, const struct target_sigaction *act,
         oact->sa_mask = k->sa_mask;
     }
     if (act) {
-        /* FIXME: This is not threadsafe.  */
         __get_user(k->_sa_handler, &act->_sa_handler);
         __get_user(k->sa_flags, &act->sa_flags);
 #ifdef TARGET_ARCH_HAS_SA_RESTORER
@@ -1149,7 +1149,6 @@ void process_pending_signals(CPUArchState *cpu_env)
     sigset_t *blocked_set;
 
     while (qatomic_read(&ts->signal_pending)) {
-        /* FIXME: This is not threadsafe.  */
         sigfillset(&set);
         sigprocmask(SIG_SETMASK, &set, 0);
 
@@ -1200,4 +1199,27 @@ void process_pending_signals(CPUArchState *cpu_env)
         sigprocmask(SIG_SETMASK, &set, 0);
     }
     ts->in_sigsuspend = 0;
+}
+
+int process_sigsuspend_mask(sigset_t **pset, target_ulong sigset,
+                            target_ulong sigsize)
+{
+    TaskState *ts = (TaskState *)thread_cpu->opaque;
+    sigset_t *host_set = &ts->sigsuspend_mask;
+    target_sigset_t *target_sigset;
+
+    if (sigsize != sizeof(*target_sigset)) {
+        /* Like the kernel, we enforce correct size sigsets */
+        return -TARGET_EINVAL;
+    }
+
+    target_sigset = lock_user(VERIFY_READ, sigset, sigsize, 1);
+    if (!target_sigset) {
+        return -TARGET_EFAULT;
+    }
+    target_to_host_sigset(host_set, target_sigset);
+    unlock_user(target_sigset, sigset, 0);
+
+    *pset = host_set;
+    return 0;
 }

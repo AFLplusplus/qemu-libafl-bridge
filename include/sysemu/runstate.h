@@ -42,6 +42,7 @@ void vm_start(void);
  */
 int vm_prepare_start(bool step_pending);
 int vm_stop(RunState state);
+int do_vm_stop(RunState state, bool send_stop);
 int vm_stop_force_state(RunState state);
 int vm_shutdown(void);
 

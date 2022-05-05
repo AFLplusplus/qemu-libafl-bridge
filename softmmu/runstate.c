@@ -714,11 +714,37 @@ static bool main_loop_should_exit(void)
     return false;
 }
 
+//// --- Begin LibAFL code ---
+uint64_t libafl_load_addr(void);
+int libafl_qemu_main(void);
+int libafl_qemu_run(void);
+static CPUTailQ libafl_qemu_env;
+
+
+__attribute__((weak)) int libafl_qemu_main(void)
+{
+    libafl_qemu_run();
+    return 0;
+}
+
+int libafl_qemu_run(void)
+{
+    //cpus = libafl_qemu_env;
+    //vm_start();
+    //printf("wait for cpu exception\n");
+    //wait_pause_cpu();
+    return 1;
+}
+
+//// --- End LibAFL code ---
+
 void qemu_main_loop(void)
 {
 #ifdef CONFIG_PROFILER
     int64_t ti;
 #endif
+    libafl_qemu_env = cpus;
+
     while (!main_loop_should_exit()) {
 #ifdef CONFIG_PROFILER
         ti = profile_getclock();

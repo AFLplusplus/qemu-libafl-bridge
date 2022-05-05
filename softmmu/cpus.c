@@ -251,7 +251,7 @@ void cpu_interrupt(CPUState *cpu, int mask)
     }
 }
 
-static int do_vm_stop(RunState state, bool send_stop)
+int do_vm_stop(RunState state, bool send_stop)
 {
     int ret = 0;
 
@@ -577,6 +577,11 @@ void pause_all_vcpus(void)
     qemu_mutex_unlock_iothread();
     replay_mutex_lock();
     qemu_mutex_lock_iothread();
+}
+
+void wait_pause_cpu(void)
+{
+    qemu_cond_wait(&qemu_pause_cond, &qemu_global_mutex);
 }
 
 void cpu_resume(CPUState *cpu)

@@ -883,6 +883,9 @@ static const QEMUOption qemu_options[] = {
 #define ARCHHEADING(text, arch_mask)
 
 #include "qemu-options.def"
+#define QEMU_OPTION_libafl 0xaf1
+{"libafl-in", HAS_ARG, QEMU_OPTION_libafl, QEMU_ARCH_ALL},
+{"libafl-out", HAS_ARG, QEMU_OPTION_libafl, QEMU_ARCH_ALL},
     { NULL },
 };
 
@@ -2768,6 +2771,8 @@ void qmp_x_exit_preconfig(Error **errp)
     }
 }
 
+extern char *exec_path;
+
 void qemu_init(int argc, char **argv, char **envp)
 {
     QemuOpts *opts;
@@ -2836,6 +2841,7 @@ void qemu_init(int argc, char **argv, char **envp)
             }
         }
     }
+    exec_path = argv[optind-1];
 
     machine_opts_dict = qdict_new();
     if (userconfig) {
@@ -2859,6 +2865,7 @@ void qemu_init(int argc, char **argv, char **envp)
                 exit(1);
             }
             switch(popt->index) {
+            case QEMU_OPTION_libafl: continue;
             case QEMU_OPTION_cpu:
                 /* hw initialization will check this */
                 cpu_option = optarg;

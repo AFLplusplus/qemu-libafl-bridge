@@ -13192,8 +13192,8 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
 //// --- Begin LibAFL code ---
 
 struct libafl_mapinfo {
-    uint64_t start, end;
-    uint64_t offset;
+    target_ulong start, end;
+    target_ulong offset;
     const char* path;
     int flags, is_priv;
 };
@@ -13224,9 +13224,9 @@ GSList * libafl_maps_next(GSList *map_info, struct libafl_mapinfo* ret) {
         if (flags & PAGE_WRITE_ORG) libafl_flags |= PROT_WRITE;
         if (flags & PAGE_EXEC) libafl_flags |= PROT_EXEC;
 
-        ret->start = (uint64_t)min;
-        ret->end = (uint64_t)max;
-        ret->offset = (uint64_t)e->offset;
+        ret->start = (target_ulong)h2g_nocheck(min);
+        ret->end = (target_ulong)h2g_nocheck(max);
+        ret->offset = (target_ulong)e->offset;
         ret->path = e->path;
         ret->flags = libafl_flags;
         ret->is_priv = e->is_priv;

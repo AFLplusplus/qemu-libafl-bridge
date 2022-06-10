@@ -2162,15 +2162,15 @@ static void handle_query_offsets(GArray *params, void *user_ctx)
 //// --- Begin LibAFL code ---
 
 struct libafl_custom_gdb_cmd {
-    void (*callback)(uint8_t*, size_t, void*);
+    int (*callback)(uint8_t*, size_t, void*);
     void* data;
     struct libafl_custom_gdb_cmd* next;
 };
 
 struct libafl_custom_gdb_cmd* libafl_qemu_gdb_cmds = NULL;
 
-void libafl_qemu_add_gdb_cmd(void (*callback)(uint8_t*, size_t, void*), void* data);
-void libafl_qemu_add_gdb_cmd(void (*callback)(uint8_t*, size_t, void*), void* data)
+void libafl_qemu_add_gdb_cmd(int (*callback)(uint8_t*, size_t, void*), void* data);
+void libafl_qemu_add_gdb_cmd(int (*callback)(uint8_t*, size_t, void*), void* data)
 {
     struct libafl_custom_gdb_cmd* c = malloc(sizeof(struct libafl_custom_gdb_cmd));
     c->callback = callback;
@@ -2179,10 +2179,18 @@ void libafl_qemu_add_gdb_cmd(void (*callback)(uint8_t*, size_t, void*), void* da
     libafl_qemu_gdb_cmds = c;
 }
 
+void libafl_qemu_gdb_reply(const char* buf, size_t len);
+void libafl_qemu_gdb_reply(const char* buf, size_t len)
+{
+    g_autoptr(GString) hex_buf = g_string_new("O");
+    memtohex(hex_buf, (const uint8_t *) buf, len);
+    put_packet(hex_buf->str);
+}
+
 static void handle_query_rcmd(GArray *params, void *user_ctx)
 {
     // const guint8 zero = 0;
-    int len;
+    size_t len;
 
     if (!params->len) {
         put_packet("E22");
@@ -2201,12 +2209,17 @@ static void handle_query_rcmd(GArray *params, void *user_ctx)
     // g_byte_array_append(gdbserver_state.mem_buf, &zero, 1);
 
     struct libafl_custom_gdb_cmd** c = &libafl_qemu_gdb_cmds;
+    int recognized = 0;
     while (*c) {
-        (*c)->callback(gdbserver_state.mem_buf->data, gdbserver_state.mem_buf->len, (*c)->data);
+        recognized |= (*c)->callback(gdbserver_state.mem_buf->data, gdbserver_state.mem_buf->len, (*c)->data);
         c = &(*c)->next;
     }
 
-    put_packet("OK");
+    if (recognized) {
+        put_packet("OK");
+    } else {
+        put_packet("");
+    }
 }
 
 //// --- End LibAFL code ---

@@ -246,9 +246,15 @@ static bool whpx_allowed;
 static bool whp_dispatch_initialized;
 static HMODULE hWinHvPlatform, hWinHvEmulation;
 static uint32_t max_vcpu_index;
+static WHV_PROCESSOR_XSAVE_FEATURES whpx_xsave_cap;
+
 struct whpx_state whpx_global;
 struct WHPDispatch whp_dispatch;
 
+static bool whpx_has_xsave(void)
+{
+    return whpx_xsave_cap.XsaveSupport;
+}
 
 /*
  * VP support
@@ -300,6 +306,28 @@ static SegmentCache whpx_seg_h2q(const WHV_X64_SEGMENT_REGISTER *hs)
     return qs;
 }
 
+/* X64 Extended Control Registers */
+static void whpx_set_xcrs(CPUState *cpu)
+{
+    CPUX86State *env = cpu->env_ptr;
+    HRESULT hr;
+    struct whpx_state *whpx = &whpx_global;
+    WHV_REGISTER_VALUE xcr0;
+    WHV_REGISTER_NAME xcr0_name = WHvX64RegisterXCr0;
+
+    if (!whpx_has_xsave()) {
+        return;
+    }
+
+    /* Only xcr0 is supported by the hypervisor currently */
+    xcr0.Reg64 = env->xcr0;
+    hr = whp_dispatch.WHvSetVirtualProcessorRegisters(
+        whpx->partition, cpu->cpu_index, &xcr0_name, 1, &xcr0);
+    if (FAILED(hr)) {
+        error_report("WHPX: Failed to set register xcr0, hr=%08lx", hr);
+    }
+}
+
 static int whpx_set_tsc(CPUState *cpu)
 {
     CPUX86State *env = cpu->env_ptr;
@@ -345,11 +373,18 @@ static int whpx_set_tsc(CPUState *cpu)
  *
  * This mechanism is described in section 10.8.6.1 of Volume 3 of Intel 64
  * and IA-32 Architectures Software Developer's Manual.
+ *
+ * The functions below translate the value of CR8 to TPR and vice versa.
  */
 
 static uint64_t whpx_apic_tpr_to_cr8(uint64_t tpr)
 {
     return tpr >> 4;
+}
+
+static uint64_t whpx_cr8_to_apic_tpr(uint64_t cr8)
+{
+    return cr8 << 4;
 }
 
 static void whpx_set_registers(CPUState *cpu, int level)
@@ -434,6 +469,12 @@ static void whpx_set_registers(CPUState *cpu, int level)
     vcxt.values[idx++].Reg64 = vcpu->tpr;
 
     /* 8 Debug Registers - Skipped */
+
+    /*
+     * Extended control registers needs to be handled separately depending
+     * on whether xsave is supported/enabled or not.
+     */
+    whpx_set_xcrs(cpu);
 
     /* 16 XMM registers */
     assert(whpx_register_names[idx] == WHvX64RegisterXmm0);
@@ -541,6 +582,30 @@ static int whpx_get_tsc(CPUState *cpu)
     return 0;
 }
 
+/* X64 Extended Control Registers */
+static void whpx_get_xcrs(CPUState *cpu)
+{
+    CPUX86State *env = cpu->env_ptr;
+    HRESULT hr;
+    struct whpx_state *whpx = &whpx_global;
+    WHV_REGISTER_VALUE xcr0;
+    WHV_REGISTER_NAME xcr0_name = WHvX64RegisterXCr0;
+
+    if (!whpx_has_xsave()) {
+        return;
+    }
+
+    /* Only xcr0 is supported by the hypervisor currently */
+    hr = whp_dispatch.WHvGetVirtualProcessorRegisters(
+        whpx->partition, cpu->cpu_index, &xcr0_name, 1, &xcr0);
+    if (FAILED(hr)) {
+        error_report("WHPX: Failed to get register xcr0, hr=%08lx", hr);
+        return;
+    }
+
+    env->xcr0 = xcr0.Reg64;
+}
+
 static void whpx_get_registers(CPUState *cpu)
 {
     struct whpx_state *whpx = &whpx_global;
@@ -629,10 +694,16 @@ static void whpx_get_registers(CPUState *cpu)
     tpr = vcxt.values[idx++].Reg64;
     if (tpr != vcpu->tpr) {
         vcpu->tpr = tpr;
-        cpu_set_apic_tpr(x86_cpu->apic_state, tpr);
+        cpu_set_apic_tpr(x86_cpu->apic_state, whpx_cr8_to_apic_tpr(tpr));
     }
 
     /* 8 Debug Registers - Skipped */
+
+    /*
+     * Extended control registers needs to be handled separately depending
+     * on whether xsave is supported/enabled or not.
+     */
+    whpx_get_xcrs(cpu);
 
     /* 16 XMM registers */
     assert(whpx_register_names[idx] == WHvX64RegisterXmm0);
@@ -1483,7 +1554,7 @@ static void whpx_vcpu_pre_run(CPUState *cpu)
      }
 
     /* Sync the TPR to the CR8 if was modified during the intercept */
-    tpr = cpu_get_apic_tpr(x86_cpu->apic_state);
+    tpr = whpx_apic_tpr_to_cr8(cpu_get_apic_tpr(x86_cpu->apic_state));
     if (tpr != vcpu->tpr) {
         vcpu->tpr = tpr;
         reg_values[reg_count].Reg64 = tpr;
@@ -1532,7 +1603,7 @@ static void whpx_vcpu_post_run(CPUState *cpu)
     if (vcpu->tpr != tpr) {
         vcpu->tpr = tpr;
         qemu_mutex_lock_iothread();
-        cpu_set_apic_tpr(x86_cpu->apic_state, vcpu->tpr);
+        cpu_set_apic_tpr(x86_cpu->apic_state, whpx_cr8_to_apic_tpr(vcpu->tpr));
         qemu_mutex_unlock_iothread();
     }
 
@@ -2511,6 +2582,29 @@ static int whpx_accel_init(MachineState *ms)
         error_report("WHPX: Failed to create partition, hr=%08lx", hr);
         ret = -EINVAL;
         goto error;
+    }
+
+    /*
+     * Query the XSAVE capability of the partition. Any error here is not
+     * considered fatal.
+     */
+    hr = whp_dispatch.WHvGetPartitionProperty(
+        whpx->partition,
+        WHvPartitionPropertyCodeProcessorXsaveFeatures,
+        &whpx_xsave_cap,
+        sizeof(whpx_xsave_cap),
+        &whpx_cap_size);
+
+    /*
+     * Windows version which don't support this property will return with the
+     * specific error code.
+     */
+    if (FAILED(hr) && hr != WHV_E_UNKNOWN_PROPERTY) {
+        error_report("WHPX: Failed to query XSAVE capability, hr=%08lx", hr);
+    }
+
+    if (!whpx_has_xsave()) {
+        printf("WHPX: Partition is not XSAVE capable\n");
     }
 
     memset(&prop, 0, sizeof(WHV_PARTITION_PROPERTY));

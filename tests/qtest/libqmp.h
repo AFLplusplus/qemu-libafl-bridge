@@ -14,14 +14,17 @@
  * See the COPYING file in the top-level directory.
  *
  */
-#ifndef LIBQMP_H_
-#define LIBQMP_H_
+
+#ifndef LIBQMP_H
+#define LIBQMP_H
 
 #include "qapi/qmp/qdict.h"
 
 QDict *qmp_fd_receive(int fd);
+#ifndef _WIN32
 void qmp_fd_vsend_fds(int fd, int *fds, size_t fds_num,
                       const char *fmt, va_list ap) G_GNUC_PRINTF(4, 0);
+#endif
 void qmp_fd_vsend(int fd, const char *fmt, va_list ap) G_GNUC_PRINTF(2, 0);
 void qmp_fd_send(int fd, const char *fmt, ...) G_GNUC_PRINTF(2, 3);
 void qmp_fd_send_raw(int fd, const char *fmt, ...) G_GNUC_PRINTF(2, 3);
@@ -47,4 +50,4 @@ bool qmp_rsp_is_err(QDict *rsp);
  */
 void qmp_expect_error_and_unref(QDict *rsp, const char *class);
 
-#endif /* LIBQMP_H_ */
+#endif /* LIBQMP_H */

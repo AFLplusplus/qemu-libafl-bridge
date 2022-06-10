@@ -26,8 +26,18 @@
 #define QEMU_MAIN_LOOP_H
 
 #include "block/aio.h"
+#include "qom/object.h"
+#include "sysemu/event-loop-base.h"
 
 #define SIG_IPI SIGUSR1
+
+#define TYPE_MAIN_LOOP  "main-loop"
+OBJECT_DECLARE_TYPE(MainLoop, MainLoopClass, MAIN_LOOP)
+
+struct MainLoop {
+    EventLoopBase parent_obj;
+};
+typedef struct MainLoop MainLoop;
 
 /**
  * qemu_init_main_loop: Set up the process so that it can run the main loop.
@@ -284,8 +294,7 @@ bool qemu_in_main_thread(void);
 #else
 #define GLOBAL_STATE_CODE()                                         \
     do {                                                            \
-        /* FIXME: Re-enable after 7.0 release */                    \
-        /* assert(qemu_in_main_thread()); */                        \
+        assert(qemu_in_main_thread());                              \
     } while (0)
 #endif /* CONFIG_COCOA */
 

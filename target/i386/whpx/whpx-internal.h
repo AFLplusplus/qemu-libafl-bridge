@@ -1,5 +1,5 @@
-#ifndef WHP_INTERNAL_H
-#define WHP_INTERNAL_H
+#ifndef TARGET_I386_WHPX_INTERNAL_H
+#define TARGET_I386_WHPX_INTERNAL_H
 
 #include <windows.h>
 #include <WinHvPlatform.h>
@@ -47,6 +47,9 @@ extern struct whpx_state whpx_global;
 void whpx_apic_get(DeviceState *s);
 
 #define WHV_E_UNKNOWN_CAPABILITY 0x80370300L
+
+/* This should eventually come from the Windows SDK */
+#define WHV_E_UNKNOWN_PROPERTY 0x80370302
 
 #define LIST_WINHVPLATFORM_FUNCTIONS(X) \
   X(HRESULT, WHvGetCapability, (WHV_CAPABILITY_CODE CapabilityCode, VOID* CapabilityBuffer, UINT32 CapabilityBufferSizeInBytes, UINT32* WrittenSizeInBytes)) \
@@ -113,4 +116,4 @@ typedef enum WHPFunctionList {
     WINHV_PLATFORM_FNS_SUPPLEMENTAL
 } WHPFunctionList;
 
-#endif /* WHP_INTERNAL_H */
+#endif /* TARGET_I386_WHPX_INTERNAL_H */

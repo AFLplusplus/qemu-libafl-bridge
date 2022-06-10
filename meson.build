@@ -2985,7 +2985,8 @@ qom = declare_dependency(link_whole: libqom)
 
 event_loop_base = files('event-loop-base.c')
 event_loop_base = static_library('event-loop-base', sources: event_loop_base + genh,
-                                 build_by_default: true)
+                                 build_by_default: true,
+                                 pic: 'AS_SHARED_LIB' in config_host)
 event_loop_base = declare_dependency(link_whole: event_loop_base,
                                      dependencies: [qom])
 

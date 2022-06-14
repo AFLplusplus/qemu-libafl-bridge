@@ -85,8 +85,9 @@ static TCGHelperInfo libafl_exec_edge_hook_info = {
 };
 
 struct libafl_edge_hook {
-    uint64_t (*gen)(target_ulong src, target_ulong dst);
+    uint64_t (*gen)(target_ulong src, target_ulong dst, uint64_t data);
     void (*exec)(uint64_t id);
+    uint64_t data;
     uint64_t cur_id;
     TCGHelperInfo helper_info;
     struct libafl_edge_hook* next;
@@ -94,8 +95,8 @@ struct libafl_edge_hook {
 
 struct libafl_edge_hook* libafl_edge_hooks;
 
-void libafl_add_edge_hook(uint64_t (*gen)(target_ulong src, target_ulong dst), void (*exec)(uint64_t id));
-void libafl_add_edge_hook(uint64_t (*gen)(target_ulong src, target_ulong dst), void (*exec)(uint64_t id))
+void libafl_add_edge_hook(uint64_t (*gen)(target_ulong src, target_ulong dst, uint64_t data), void (*exec)(uint64_t id), uint64_t data);
+void libafl_add_edge_hook(uint64_t (*gen)(target_ulong src, target_ulong dst, uint64_t data), void (*exec)(uint64_t id), uint64_t data)
 {
     CPUState *cpu;
     CPU_FOREACH(cpu) {
@@ -105,6 +106,7 @@ void libafl_add_edge_hook(uint64_t (*gen)(target_ulong src, target_ulong dst), v
     struct libafl_edge_hook* hook = malloc(sizeof(struct libafl_edge_hook));
     hook->gen = gen;
     hook->exec = exec;
+    hook->data = data;
     hook->next = libafl_edge_hooks;
     libafl_edge_hooks = hook;
     
@@ -122,16 +124,17 @@ static TCGHelperInfo libafl_exec_block_hook_info = {
 };
 
 struct libafl_block_hook {
-    uint64_t (*gen)(target_ulong pc);
+    uint64_t (*gen)(target_ulong pc, uint64_t data);
     void (*exec)(uint64_t id);
+    uint64_t data;
     TCGHelperInfo helper_info;
     struct libafl_block_hook* next;
 };
 
 struct libafl_block_hook* libafl_block_hooks;
 
-void libafl_add_block_hook(uint64_t (*gen)(target_ulong pc), void (*exec)(uint64_t id));
-void libafl_add_block_hook(uint64_t (*gen)(target_ulong pc), void (*exec)(uint64_t id))
+void libafl_add_block_hook(uint64_t (*gen)(target_ulong pc, uint64_t data), void (*exec)(uint64_t id), uint64_t data);
+void libafl_add_block_hook(uint64_t (*gen)(target_ulong pc, uint64_t data), void (*exec)(uint64_t id), uint64_t data)
 {
     CPUState *cpu;
     CPU_FOREACH(cpu) {
@@ -141,6 +144,7 @@ void libafl_add_block_hook(uint64_t (*gen)(target_ulong pc), void (*exec)(uint64
     struct libafl_block_hook* hook = malloc(sizeof(struct libafl_block_hook));
     hook->gen = gen;
     hook->exec = exec;
+    hook->data = data;
     hook->next = libafl_block_hooks;
     libafl_block_hooks = hook;
     
@@ -1850,7 +1854,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     while (hook) {
         hook->cur_id = 0;
         if (hook->gen)
-            hook->cur_id = hook->gen(src_block, dst_block);
+            hook->cur_id = hook->gen(src_block, dst_block, hook->data);
         if (hook->cur_id != (uint64_t)-1 && hook->exec)
             no_exec_hook = 0;
         hook = hook->next;
@@ -2061,7 +2065,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     while (hook) {
         uint64_t cur_id = 0;
         if (hook->gen)
-            cur_id = hook->gen(pc);
+            cur_id = hook->gen(pc, hook->data);
         if (cur_id != (uint64_t)-1 && hook->exec) {
             TCGv_i64 tmp0 = tcg_const_i64(cur_id);
             TCGTemp *tmp1[1] = { tcgv_i64_temp(tmp0) };

@@ -48,6 +48,9 @@
 #include "tcg/tcg-internal.h"
 #include "exec/helper-head.h"
 
+#define LIBAFL_TABLES_SIZE 16384
+#define LIBAFL_TABLES_HASH(p) (((13*((size_t)(p))) ^ (((size_t)(p)) >> 15)) % LIBAFL_TABLES_SIZE)
+
 struct libafl_breakpoint {
     target_ulong addr;
     struct libafl_breakpoint* next;
@@ -58,13 +61,14 @@ struct libafl_breakpoint* libafl_qemu_breakpoints = NULL;
 struct libafl_hook {
     target_ulong addr;
     void (*callback)(uint64_t);
-    uint64_t value;
+    uint64_t data;
     TCGHelperInfo helper_info;
     size_t num;
     struct libafl_hook* next;
 };
 
-struct libafl_hook* libafl_qemu_hooks = NULL;
+struct libafl_hook* libafl_qemu_hooks[LIBAFL_TABLES_SIZE];
+size_t libafl_qemu_hooks_num = 0;
 
 __thread CPUArchState *libafl_qemu_env;
 
@@ -77,9 +81,10 @@ int libafl_qemu_read_reg(int reg, uint8_t* val);
 int libafl_qemu_num_regs(void);
 int libafl_qemu_set_breakpoint(target_ulong addr);
 int libafl_qemu_remove_breakpoint(target_ulong addr);
-size_t libafl_qemu_set_hook(target_ulong addr, void (*callback)(uint64_t), uint64_t value);
+size_t libafl_qemu_set_hook(target_ulong addr, void (*callback)(uint64_t), uint64_t data);
 size_t libafl_qemu_remove_hooks_at(target_ulong addr);
 int libafl_qemu_remove_hook(size_t num);
+struct libafl_hook* libafl_search_hook(target_ulong addr);
 void libafl_flush_jit(void);
 
 int libafl_qemu_write_reg(int reg, uint8_t* val)
@@ -177,7 +182,7 @@ int libafl_qemu_remove_breakpoint(target_ulong pc)
     return r;
 }
 
-size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(uint64_t), uint64_t value)
+size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(uint64_t), uint64_t data)
 {
     CPUState *cpu;
 
@@ -185,20 +190,19 @@ size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(uint64_t), uint64_
         libafl_breakpoint_invalidate(cpu, pc);
     }
 
+    size_t idx = LIBAFL_TABLES_HASH(pc);
+
     struct libafl_hook* hk = malloc(sizeof(struct libafl_hook));
     hk->addr = pc;
     hk->callback = callback;
-    hk->value = value;
+    hk->data = data;
     hk->helper_info.func = callback;
     hk->helper_info.name = "libafl_hook";
     hk->helper_info.flags = dh_callflag(void);
     hk->helper_info.typemask = dh_typemask(void, 0) | dh_typemask(i64, 1);
-    hk->num = 0;
-    if (libafl_qemu_hooks) {
-        hk->num = libafl_qemu_hooks->num +1;
-    }
-    hk->next = libafl_qemu_hooks;
-    libafl_qemu_hooks = hk;
+    hk->num = libafl_qemu_hooks_num++;
+    hk->next = libafl_qemu_hooks[idx];
+    libafl_qemu_hooks[idx] = hk;
     libafl_helper_table_add(&hk->helper_info);
     return hk->num;
 }
@@ -207,13 +211,13 @@ size_t libafl_qemu_remove_hooks_at(target_ulong addr)
 {
     CPUState *cpu;
     size_t r = 0;
-
-    target_ulong pc = (target_ulong) addr;
-    struct libafl_hook** hk = &libafl_qemu_hooks;
+    
+    size_t idx = LIBAFL_TABLES_HASH(addr);
+    struct libafl_hook** hk = &libafl_qemu_hooks[idx];
     while (*hk) {
-        if ((*hk)->addr == pc) {
+        if ((*hk)->addr == addr) {
             CPU_FOREACH(cpu) {
-                libafl_breakpoint_invalidate(cpu, pc);
+                libafl_breakpoint_invalidate(cpu, addr);
             }
 
             void *tmp = *hk;
@@ -230,26 +234,42 @@ size_t libafl_qemu_remove_hooks_at(target_ulong addr)
 int libafl_qemu_remove_hook(size_t num)
 {
     CPUState *cpu;
-    int r = 0;
+    size_t idx;
+    
+    for (idx = 0; idx < LIBAFL_TABLES_SIZE; ++idx) {
+        struct libafl_hook** hk = &libafl_qemu_hooks[idx];
+        while (*hk) {
+            if ((*hk)->num == num) {
+                CPU_FOREACH(cpu) {
+                    libafl_breakpoint_invalidate(cpu, (*hk)->addr);
+                }
 
-    struct libafl_hook** hk = &libafl_qemu_hooks;
-    while (*hk) {
-        if ((*hk)->num == num) {
-            CPU_FOREACH(cpu) {
-                libafl_breakpoint_invalidate(cpu, (*hk)->addr);
+                void *tmp = *hk;
+                *hk = (*hk)->next;
+                free(tmp);
+                return 1;
+            } else {
+                hk = &(*hk)->next;
             }
-
-            void *tmp = *hk;
-            *hk = (*hk)->next;
-            free(tmp);
-            r++;
-        } else {
-            hk = &(*hk)->next;
         }
     }
-    return r;
+    return 0;
 }
 
+struct libafl_hook* libafl_search_hook(target_ulong addr)
+{
+    size_t idx = LIBAFL_TABLES_HASH(addr);
+
+    struct libafl_hook* hk = libafl_qemu_hooks[idx];
+    while (hk) {
+        if (hk->addr == addr) {
+            return hk;
+        }
+        hk = hk->next;
+    }
+    
+    return NULL;
+}
 
 void libafl_flush_jit(void)
 {

@@ -78,25 +78,78 @@ void libafl_gen_write(TCGv addr, MemOp ot);
 void libafl_gen_write_N(TCGv addr, uint32_t size);
 void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot);
 
-void (*libafl_exec_edge_hook)(uint64_t id);
-uint64_t (*libafl_gen_edge_hook)(uint64_t src, uint64_t dst);
-
 static TCGHelperInfo libafl_exec_edge_hook_info = {
     .func = NULL, .name = "libafl_exec_edge_hook", \
     .flags = dh_callflag(void), \
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1)
 };
-static int exec_edge_hook_added = 0;
 
-void (*libafl_exec_block_hook)(uint64_t id);
-uint64_t (*libafl_gen_block_hook)(uint64_t pc);
+struct libafl_edge_hook {
+    uint64_t (*gen)(target_ulong src, target_ulong dst);
+    void (*exec)(uint64_t id);
+    uint64_t cur_id;
+    TCGHelperInfo helper_info;
+    struct libafl_edge_hook* next;
+};
+
+struct libafl_edge_hook* libafl_edge_hooks;
+
+void libafl_add_edge_hook(uint64_t (*gen)(target_ulong src, target_ulong dst), void (*exec)(uint64_t id));
+void libafl_add_edge_hook(uint64_t (*gen)(target_ulong src, target_ulong dst), void (*exec)(uint64_t id))
+{
+    CPUState *cpu;
+    CPU_FOREACH(cpu) {
+        tb_flush(cpu);
+    }
+
+    struct libafl_edge_hook* hook = malloc(sizeof(struct libafl_edge_hook));
+    hook->gen = gen;
+    hook->exec = exec;
+    hook->next = libafl_edge_hooks;
+    libafl_edge_hooks = hook;
+    
+    if (exec) {
+        memcpy(&hook->helper_info, &libafl_exec_edge_hook_info, sizeof(TCGHelperInfo));
+        hook->helper_info.func = exec;
+        libafl_helper_table_add(&hook->helper_info);
+    }
+}
 
 static TCGHelperInfo libafl_exec_block_hook_info = {
     .func = NULL, .name = "libafl_exec_block_hook", \
     .flags = dh_callflag(void), \
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1)
 };
-static int exec_block_hook_added = 0;
+
+struct libafl_block_hook {
+    uint64_t (*gen)(target_ulong pc);
+    void (*exec)(uint64_t id);
+    TCGHelperInfo helper_info;
+    struct libafl_block_hook* next;
+};
+
+struct libafl_block_hook* libafl_block_hooks;
+
+void libafl_add_block_hook(uint64_t (*gen)(target_ulong pc), void (*exec)(uint64_t id));
+void libafl_add_block_hook(uint64_t (*gen)(target_ulong pc), void (*exec)(uint64_t id))
+{
+    CPUState *cpu;
+    CPU_FOREACH(cpu) {
+        tb_flush(cpu);
+    }
+
+    struct libafl_block_hook* hook = malloc(sizeof(struct libafl_block_hook));
+    hook->gen = gen;
+    hook->exec = exec;
+    hook->next = libafl_block_hooks;
+    libafl_block_hooks = hook;
+    
+    if (exec) {
+        memcpy(&hook->helper_info, &libafl_exec_block_hook_info, sizeof(TCGHelperInfo));
+        hook->helper_info.func = exec;
+        libafl_helper_table_add(&hook->helper_info);
+    }
+}
 
 void (*libafl_exec_read_hook1)(uint64_t id, uint64_t addr);
 void (*libafl_exec_read_hook2)(uint64_t id, uint64_t addr);
@@ -1791,18 +1844,19 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     (void)existing_tb;
 
     assert_memory_lock();
-
-    uint32_t libafl_id = 0;
-    if (libafl_gen_edge_hook)
-        libafl_id = libafl_gen_edge_hook((uint64_t)src_block, (uint64_t)dst_block);
-    if (!libafl_exec_edge_hook || libafl_id == (uint32_t)-1)
-        return NULL;
-
-    if (!exec_edge_hook_added) {
-        exec_edge_hook_added = 1;
-        libafl_exec_edge_hook_info.func = libafl_exec_edge_hook;
-        libafl_helper_table_add(&libafl_exec_edge_hook_info);
+    
+    struct libafl_edge_hook* hook = libafl_edge_hooks;
+    int no_exec_hook = 1;
+    while (hook) {
+        hook->cur_id = 0;
+        if (hook->gen)
+            hook->cur_id = hook->gen(src_block, dst_block);
+        if (hook->cur_id != (uint64_t)-1 && hook->exec)
+            no_exec_hook = 0;
+        hook = hook->next;
     }
+    if (no_exec_hook)
+        return NULL;
 
     qemu_thread_jit_write();
 
@@ -1848,14 +1902,22 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
 
     tcg_ctx->cpu = env_cpu(env);
 
-    TCGv_i64 tmp0 = tcg_const_i64(libafl_id);
-    TCGTemp *tmp1[1] = { tcgv_i64_temp(tmp0) };
-    tcg_gen_callN(libafl_exec_edge_hook, NULL, 1, tmp1);
-    tcg_temp_free_i64(tmp0);
+    hook = libafl_edge_hooks;
+    size_t hcount = 0;
+    while (hook) {
+        if (hook->cur_id != (uint64_t)-1 && hook->exec) {
+            hcount++;
+            TCGv_i64 tmp0 = tcg_const_i64(hook->cur_id);
+            TCGTemp *tmp1[1] = { tcgv_i64_temp(tmp0) };
+            tcg_gen_callN(hook->exec, NULL, 1, tmp1);
+            tcg_temp_free_i64(tmp0);
+        }
+        hook = hook->next;
+    }
     tcg_gen_goto_tb(0);
     tcg_gen_exit_tb(tb, 0);
-    tb->size = 1;
-    tb->icount = 1;
+    tb->size = hcount;
+    tb->icount = hcount;
 
     assert(tb->size != 0);
     tcg_ctx->cpu = NULL;
@@ -1995,19 +2057,18 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
 
     //// --- Begin LibAFL code ---
 
-    uint32_t libafl_id = 0;
-    if (libafl_gen_block_hook)
-        libafl_id = libafl_gen_block_hook((uint64_t)pc);
-    if (libafl_exec_block_hook && libafl_id != (uint32_t)-1) {
-        if (!exec_block_hook_added) {
-            exec_block_hook_added = 1;
-            libafl_exec_block_hook_info.func = libafl_exec_block_hook;
-            libafl_helper_table_add(&libafl_exec_block_hook_info);
+    struct libafl_block_hook* hook = libafl_block_hooks;
+    while (hook) {
+        uint64_t cur_id = 0;
+        if (hook->gen)
+            cur_id = hook->gen(pc);
+        if (cur_id != (uint64_t)-1 && hook->exec) {
+            TCGv_i64 tmp0 = tcg_const_i64(cur_id);
+            TCGTemp *tmp1[1] = { tcgv_i64_temp(tmp0) };
+            tcg_gen_callN(hook->exec, NULL, 1, tmp1);
+            tcg_temp_free_i64(tmp0);
         }
-        TCGv_i64 tmp0 = tcg_const_i64((uint64_t)pc);
-        TCGTemp *tmp1[1] = { tcgv_i64_temp(tmp0) };
-        tcg_gen_callN(libafl_exec_block_hook, NULL, 1, tmp1);
-        tcg_temp_free_i64(tmp0);
+        hook = hook->next;
     }
     
     //// --- End LibAFL code ---

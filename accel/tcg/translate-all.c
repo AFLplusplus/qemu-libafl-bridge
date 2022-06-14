@@ -2185,17 +2185,12 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     //// --- Begin LibAFL code ---
 
     struct libafl_block_hook* hook = libafl_block_hooks;
-    int no_exec_hook = 1;
     while (hook) {
         hook->cur_id = 0;
         if (hook->gen)
             hook->cur_id = hook->gen(pc, hook->data);
-        if (hook->cur_id != (uint64_t)-1 && hook->exec)
-            no_exec_hook = 0;
         hook = hook->next;
     }
-    if (no_exec_hook)
-        return NULL;
 
     //// --- End LibAFL code ---
 

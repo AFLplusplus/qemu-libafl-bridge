@@ -22,6 +22,8 @@
 
 #include "tcg/tcg-internal.h"
 
+extern target_ulong libafl_gen_cur_pc;
+
 struct libafl_breakpoint {
     target_ulong addr;
     struct libafl_breakpoint* next;
@@ -131,6 +133,8 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
             }
             bp = bp->next;
         }
+
+        libafl_gen_cur_pc = db->pc_next;
 
         //// --- End LibAFL code ---
 

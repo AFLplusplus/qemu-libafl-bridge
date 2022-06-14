@@ -192,7 +192,7 @@ size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(target_ulong, uint
 
     size_t idx = LIBAFL_TABLES_HASH(pc);
 
-    struct libafl_hook* hk = malloc(sizeof(struct libafl_hook));
+    //struct libafl_hook* hk = malloc(sizeof(struct libafl_hook));
     /*hk->addr = pc;
     hk->callback = callback;
     hk->data = data;
@@ -204,7 +204,7 @@ size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(target_ulong, uint
     hk->next = libafl_qemu_hooks[idx];
     libafl_qemu_hooks[idx] = hk;
     libafl_helper_table_add(&hk->helper_info);*/
-    return hk->num;
+    return idx;
 }
 
 size_t libafl_qemu_remove_hooks_at(target_ulong addr)

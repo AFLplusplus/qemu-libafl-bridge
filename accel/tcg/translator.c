@@ -120,10 +120,20 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
 
         struct libafl_hook* hk = libafl_search_hook(db->pc_next);
         if (hk) {
-            TCGv_i64 tmp0 = tcg_const_i64(hk->data);
-            TCGTemp *tmp1[1] = { tcgv_i64_temp(tmp0) };
-            tcg_gen_callN(hk->callback, NULL, 1, tmp1);
+            TCGv tmp0 = tcg_const_tl(db->pc_next);
+            TCGv_i64 tmp1 = tcg_const_i64(hk->data);
+#if TARGET_LONG_BITS == 32
+            TCGTemp *tmp2[2] = { tcgv_i32_temp(tmp0), tcgv_i64_temp(tmp1) };
+#else
+            TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
+#endif
+            tcg_gen_callN(hk->callback, NULL, 2, tmp2);
+#if TARGET_LONG_BITS == 32
+            tcg_temp_free_i32(tmp0);
+#else
             tcg_temp_free_i64(tmp0);
+#endif
+            tcg_temp_free_i64(tmp1);
         }
 
         struct libafl_breakpoint* bp = libafl_qemu_breakpoints;

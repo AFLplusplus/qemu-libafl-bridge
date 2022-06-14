@@ -118,7 +118,7 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
 
         //// --- Begin LibAFL code ---
 
-        /*struct libafl_hook* hk = libafl_search_hook(db->pc_next);
+        struct libafl_hook* hk = libafl_search_hook(db->pc_next);
         if (hk) {
             TCGv tmp0 = tcg_const_tl(db->pc_next);
             TCGv_i64 tmp1 = tcg_const_i64(hk->data);
@@ -135,7 +135,7 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
 #endif
             tcg_temp_free_i64(tmp1);
         }
-*/
+
         struct libafl_breakpoint* bp = libafl_qemu_breakpoints;
         while (bp) {
             if (bp->addr == db->pc_next) {

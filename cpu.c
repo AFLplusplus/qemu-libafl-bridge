@@ -184,16 +184,16 @@ int libafl_qemu_remove_breakpoint(target_ulong pc)
 
 size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(target_ulong, uint64_t), uint64_t data)
 {
-    CPUState *cpu;
+    /*CPUState *cpu;
 
-    /*CPU_FOREACH(cpu) {
+    CPU_FOREACH(cpu) {
         libafl_breakpoint_invalidate(cpu, pc);
-    }*/
+    }
 
     size_t idx = LIBAFL_TABLES_HASH(pc);
 
-    //struct libafl_hook* hk = malloc(sizeof(struct libafl_hook));
-    /*hk->addr = pc;
+    struct libafl_hook* hk = malloc(sizeof(struct libafl_hook));
+    hk->addr = pc;
     hk->callback = callback;
     hk->data = data;
     hk->helper_info.func = callback;
@@ -203,8 +203,9 @@ size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(target_ulong, uint
     hk->num = libafl_qemu_hooks_num++;
     hk->next = libafl_qemu_hooks[idx];
     libafl_qemu_hooks[idx] = hk;
-    libafl_helper_table_add(&hk->helper_info);*/
-    return idx;
+    libafl_helper_table_add(&hk->helper_info);
+    return hk->num;*/
+    return 666;
 }
 
 size_t libafl_qemu_remove_hooks_at(target_ulong addr)

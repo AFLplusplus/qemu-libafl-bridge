@@ -191,6 +191,7 @@ size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(target_ulong, uint
     }
 
     size_t idx = LIBAFL_TABLES_HASH(pc);
+    assert(idx < LIBAFL_TABLES_SIZE);
 
     struct libafl_hook* hk = malloc(sizeof(struct libafl_hook));
     hk->addr = pc;

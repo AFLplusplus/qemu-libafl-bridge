@@ -86,7 +86,7 @@ static TCGHelperInfo libafl_exec_edge_hook_info = {
 
 struct libafl_edge_hook {
     uint64_t (*gen)(target_ulong src, target_ulong dst, uint64_t data);
-    void (*exec)(uint64_t id);
+    void (*exec)(uint64_t id, uint64_t data);
     uint64_t data;
     uint64_t cur_id;
     TCGHelperInfo helper_info;
@@ -95,8 +95,8 @@ struct libafl_edge_hook {
 
 struct libafl_edge_hook* libafl_edge_hooks;
 
-void libafl_add_edge_hook(uint64_t (*gen)(target_ulong src, target_ulong dst, uint64_t data), void (*exec)(uint64_t id), uint64_t data);
-void libafl_add_edge_hook(uint64_t (*gen)(target_ulong src, target_ulong dst, uint64_t data), void (*exec)(uint64_t id), uint64_t data)
+void libafl_add_edge_hook(uint64_t (*gen)(target_ulong src, target_ulong dst, uint64_t data), void (*exec)(uint64_t id, uint64_t data), uint64_t data);
+void libafl_add_edge_hook(uint64_t (*gen)(target_ulong src, target_ulong dst, uint64_t data), void (*exec)(uint64_t id, uint64_t data), uint64_t data)
 {
     CPUState *cpu;
     CPU_FOREACH(cpu) {
@@ -125,7 +125,7 @@ static TCGHelperInfo libafl_exec_block_hook_info = {
 
 struct libafl_block_hook {
     uint64_t (*gen)(target_ulong pc, uint64_t data);
-    void (*exec)(uint64_t id);
+    void (*exec)(uint64_t id, uint64_t data);
     uint64_t data;
     TCGHelperInfo helper_info;
     struct libafl_block_hook* next;
@@ -133,8 +133,8 @@ struct libafl_block_hook {
 
 struct libafl_block_hook* libafl_block_hooks;
 
-void libafl_add_block_hook(uint64_t (*gen)(target_ulong pc, uint64_t data), void (*exec)(uint64_t id), uint64_t data);
-void libafl_add_block_hook(uint64_t (*gen)(target_ulong pc, uint64_t data), void (*exec)(uint64_t id), uint64_t data)
+void libafl_add_block_hook(uint64_t (*gen)(target_ulong pc, uint64_t data), void (*exec)(uint64_t id, uint64_t data), uint64_t data);
+void libafl_add_block_hook(uint64_t (*gen)(target_ulong pc, uint64_t data), void (*exec)(uint64_t id, uint64_t data), uint64_t data)
 {
     CPUState *cpu;
     CPU_FOREACH(cpu) {
@@ -1912,9 +1912,11 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
         if (hook->cur_id != (uint64_t)-1 && hook->exec) {
             hcount++;
             TCGv_i64 tmp0 = tcg_const_i64(hook->cur_id);
-            TCGTemp *tmp1[1] = { tcgv_i64_temp(tmp0) };
-            tcg_gen_callN(hook->exec, NULL, 1, tmp1);
+            TCGv_i64 tmp1 = tcg_const_i64(hook->data);
+            TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
+            tcg_gen_callN(hook->exec, NULL, 2, tmp2);
             tcg_temp_free_i64(tmp0);
+            tcg_temp_free_i64(tmp1);
         }
         hook = hook->next;
     }
@@ -2068,9 +2070,11 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
             cur_id = hook->gen(pc, hook->data);
         if (cur_id != (uint64_t)-1 && hook->exec) {
             TCGv_i64 tmp0 = tcg_const_i64(cur_id);
-            TCGTemp *tmp1[1] = { tcgv_i64_temp(tmp0) };
-            tcg_gen_callN(hook->exec, NULL, 1, tmp1);
+            TCGv_i64 tmp1 = tcg_const_i64(hook->data);
+            TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
+            tcg_gen_callN(hook->exec, NULL, 2, tmp2);
             tcg_temp_free_i64(tmp0);
+            tcg_temp_free_i64(tmp1);
         }
         hook = hook->next;
     }

@@ -133,7 +133,6 @@ struct libafl_block_hook {
     uint64_t (*gen)(target_ulong pc, uint64_t data);
     void (*exec)(uint64_t id, uint64_t data);
     uint64_t data;
-    uint64_t cur_id;
     TCGHelperInfo helper_info;
     struct libafl_block_hook* next;
 };
@@ -2181,19 +2180,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
 #endif
 
     assert_memory_lock();
-
-    //// --- Begin LibAFL code ---
-
-    struct libafl_block_hook* hook = libafl_block_hooks;
-    while (hook) {
-        hook->cur_id = 0;
-        if (hook->gen)
-            hook->cur_id = hook->gen(pc, hook->data);
-        hook = hook->next;
-    }
-
-    //// --- End LibAFL code ---
-
     qemu_thread_jit_write();
 
     phys_pc = get_page_addr_code(env, pc);
@@ -2247,9 +2233,11 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
 
     //// --- Begin LibAFL code ---
 
-    hook = libafl_block_hooks;
+    struct libafl_block_hook* hook = libafl_block_hooks;
     while (hook) {
-        uint64_t cur_id = hook->cur_id;
+        uint64_t cur_id = 0;
+        if (hook->gen)
+            cur_id = hook->gen(pc, hook->data);
         if (cur_id != (uint64_t)-1 && hook->exec) {
             TCGv_i64 tmp0 = tcg_const_i64(cur_id);
             TCGv_i64 tmp1 = tcg_const_i64(hook->data);

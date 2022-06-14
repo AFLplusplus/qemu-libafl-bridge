@@ -81,7 +81,8 @@ int libafl_qemu_read_reg(int reg, uint8_t* val);
 int libafl_qemu_num_regs(void);
 int libafl_qemu_set_breakpoint(target_ulong addr);
 int libafl_qemu_remove_breakpoint(target_ulong addr);
-size_t libafl_qemu_set_hook(target_ulong addr, void (*callback)(target_ulong, uint64_t), uint64_t data);
+size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(target_ulong, uint64_t),
+                            uint64_t data, int invalidate);
 size_t libafl_qemu_remove_hooks_at(target_ulong addr);
 int libafl_qemu_remove_hook(size_t num);
 struct libafl_hook* libafl_search_hook(target_ulong addr);
@@ -182,12 +183,15 @@ int libafl_qemu_remove_breakpoint(target_ulong pc)
     return r;
 }
 
-size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(target_ulong, uint64_t), uint64_t data)
+size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(target_ulong, uint64_t),
+                            uint64_t data, int invalidate)
 {
     CPUState *cpu;
 
-    CPU_FOREACH(cpu) {
-        libafl_breakpoint_invalidate(cpu, pc);
+    if (invalidate) {
+        CPU_FOREACH(cpu) {
+            libafl_breakpoint_invalidate(cpu, pc);
+        }
     }
 
     size_t idx = LIBAFL_TABLES_HASH(pc);

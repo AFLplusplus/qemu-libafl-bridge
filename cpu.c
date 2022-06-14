@@ -186,9 +186,9 @@ size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(target_ulong, uint
 {
     CPUState *cpu;
 
-    CPU_FOREACH(cpu) {
+    /*CPU_FOREACH(cpu) {
         libafl_breakpoint_invalidate(cpu, pc);
-    }
+    }*/
 
     size_t idx = LIBAFL_TABLES_HASH(pc);
 

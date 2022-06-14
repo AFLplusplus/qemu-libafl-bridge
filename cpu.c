@@ -83,8 +83,8 @@ int libafl_qemu_set_breakpoint(target_ulong addr);
 int libafl_qemu_remove_breakpoint(target_ulong addr);
 size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(target_ulong, uint64_t),
                             uint64_t data, int invalidate);
-size_t libafl_qemu_remove_hooks_at(target_ulong addr);
-int libafl_qemu_remove_hook(size_t num);
+size_t libafl_qemu_remove_hooks_at(target_ulong addr, int invalidate);
+int libafl_qemu_remove_hook(size_t num, int invalidate);
 struct libafl_hook* libafl_search_hook(target_ulong addr);
 void libafl_flush_jit(void);
 
@@ -211,7 +211,7 @@ size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(target_ulong, uint
     return hk->num;
 }
 
-size_t libafl_qemu_remove_hooks_at(target_ulong addr)
+size_t libafl_qemu_remove_hooks_at(target_ulong addr, int invalidate)
 {
     CPUState *cpu;
     size_t r = 0;
@@ -220,8 +220,10 @@ size_t libafl_qemu_remove_hooks_at(target_ulong addr)
     struct libafl_hook** hk = &libafl_qemu_hooks[idx];
     while (*hk) {
         if ((*hk)->addr == addr) {
-            CPU_FOREACH(cpu) {
-                libafl_breakpoint_invalidate(cpu, addr);
+            if (invalidate) {
+                CPU_FOREACH(cpu) {
+                    libafl_breakpoint_invalidate(cpu, addr);
+                }
             }
 
             void *tmp = *hk;
@@ -235,7 +237,7 @@ size_t libafl_qemu_remove_hooks_at(target_ulong addr)
     return r;
 }
 
-int libafl_qemu_remove_hook(size_t num)
+int libafl_qemu_remove_hook(size_t num, int invalidate)
 {
     CPUState *cpu;
     size_t idx;
@@ -244,8 +246,10 @@ int libafl_qemu_remove_hook(size_t num)
         struct libafl_hook** hk = &libafl_qemu_hooks[idx];
         while (*hk) {
             if ((*hk)->num == num) {
-                CPU_FOREACH(cpu) {
-                    libafl_breakpoint_invalidate(cpu, (*hk)->addr);
+                if (invalidate) {
+                    CPU_FOREACH(cpu) {
+                        libafl_breakpoint_invalidate(cpu, (*hk)->addr);
+                    }
                 }
 
                 void *tmp = *hk;

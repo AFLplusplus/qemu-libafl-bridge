@@ -118,11 +118,11 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
 
         //// --- Begin LibAFL code ---
 
-        struct libafl_hook* hk = libafl_search_hook(db->pc_next);
+        /*struct libafl_hook* hk = libafl_search_hook(db->pc_next);
         if (hk) {
-            //TCGv tmp0 = tcg_const_tl(db->pc_next);
+            TCGv tmp0 = tcg_const_tl(db->pc_next);
             TCGv_i64 tmp1 = tcg_const_i64(hk->data);
-/*#if TARGET_LONG_BITS == 32
+#if TARGET_LONG_BITS == 32
             TCGTemp *tmp2[2] = { tcgv_i32_temp(tmp0), tcgv_i64_temp(tmp1) };
 #else
             TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
@@ -132,10 +132,10 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
             tcg_temp_free_i32(tmp0);
 #else
             tcg_temp_free_i64(tmp0);
-#endif*/
+#endif
             tcg_temp_free_i64(tmp1);
         }
-
+*/
         struct libafl_breakpoint* bp = libafl_qemu_breakpoints;
         while (bp) {
             if (bp->addr == db->pc_next) {

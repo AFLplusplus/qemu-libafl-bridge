@@ -5533,6 +5533,7 @@ static bool op_s_rri_rot(DisasContext *s, arg_s_rri_rot *a,
 
     if (gen == gen_sub_CC || /*gen == gen_add_CC ||*/ gen == gen_rsb_CC) {
 #ifdef TARGET_AARCH64
+      TCGv_i32 tmp2 = tcg_const_i32(imm);
       TCGv tmp1_64 = tcg_temp_new();
       TCGv tmp2_64 = tcg_temp_new();
       tcg_gen_extu_i32_i64(tmp1_64, tmp1);

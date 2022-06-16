@@ -30,6 +30,17 @@
 #include <SDL.h>
 #endif
 
+//// --- Begin LibAFL code ---
+
+int libafl_qemu_run(void);
+int libafl_qemu_run(void)
+{
+    qemu_main_loop();
+    return 1;
+}
+
+//// --- End LibAFL code ---
+
 int qemu_main(int argc, char **argv, char **envp)
 {
     qemu_init(argc, argv, envp);
@@ -39,9 +50,11 @@ int qemu_main(int argc, char **argv, char **envp)
     return 0;
 }
 
+#ifndef AS_LIB
 #ifndef CONFIG_COCOA
 int main(int argc, char **argv)
 {
     return qemu_main(argc, argv, NULL);
 }
+#endif
 #endif

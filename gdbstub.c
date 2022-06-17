@@ -951,7 +951,6 @@ static const char *get_feature_xml(const char *p, const char **newp,
 
 static int gdb_read_register(CPUState *cpu, GByteArray *buf, int reg)
 {
-    fprintf(stderr, "CPUState %p\n", cpu);
     CPUClass *cc = CPU_GET_CLASS(cpu);
     CPUArchState *env = cpu->env_ptr;
     GDBRegisterState *r;

@@ -905,6 +905,8 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
                                   target_ulong dst_block, int exit_n, target_ulong cs_base,
                                   uint32_t flags, int cflags);
 
+extern __thread int libafl_valid_current_cpu;
+
 //// --- End LibAFL code ---
 
 /* main execution loop */
@@ -916,6 +918,12 @@ int cpu_exec(CPUState *cpu)
 
     /* replay_interrupt may need current_cpu */
     current_cpu = cpu;
+
+//// --- Begin LibAFL code ---
+
+    libafl_valid_current_cpu = 1;
+
+//// --- End LibAFL code ---
 
     if (cpu_handle_halt(cpu)) {
         return EXCP_HALTED;

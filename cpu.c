@@ -70,7 +70,8 @@ struct libafl_hook {
 struct libafl_hook* libafl_qemu_hooks[LIBAFL_TABLES_SIZE];
 size_t libafl_qemu_hooks_num = 0;
 
-__thread CPUArchState *libafl_qemu_env;
+__thread CPUArchState *libafl_qemu_env = NULL;
+__thread int libafl_valid_current_cpu = 0;
 
 void libafl_helper_table_add(TCGHelperInfo* info);
 
@@ -130,6 +131,9 @@ int libafl_qemu_num_cpus(void)
 
 CPUState* libafl_qemu_current_cpu(void)
 {
+    if (!libafl_valid_current_cpu)
+        return NULL;
+
     CPUState *cpu = current_cpu;
     if (!cpu) {
         cpu = env_cpu(libafl_qemu_env);

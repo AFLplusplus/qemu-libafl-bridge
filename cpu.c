@@ -93,7 +93,7 @@ int libafl_qemu_remove_hook(size_t num, int invalidate);
 struct libafl_hook* libafl_search_hook(target_ulong addr);
 void libafl_flush_jit(void);
 
-#ifndef CONFIG_USER_ONLY
+/*
 void* libafl_qemu_g2h(CPUState *cpu, target_ulong x);
 target_ulong libafl_qemu_h2g(CPUState *cpu, void* x);
 
@@ -106,7 +106,7 @@ target_ulong libafl_qemu_h2g(CPUState *cpu, void* x)
 {
     return h2g(cpu, x);
 }
-#endif
+*/
 
 CPUState* libafl_qemu_get_cpu(int cpu_index)
 {

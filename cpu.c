@@ -79,8 +79,6 @@ static __thread GByteArray *libafl_qemu_mem_buf = NULL;
 CPUState* libafl_qemu_get_cpu(int cpu_index);
 int libafl_qemu_num_cpus(void);
 CPUState* libafl_qemu_current_cpu(void);
-void* libafl_qemu_g2h(CPUState *cpu, target_ulong x);
-target_ulong libafl_qemu_h2g(CPUState *cpu, void* x);
 
 int libafl_qemu_write_reg(CPUState* cpu, int reg, uint8_t* val);
 int libafl_qemu_read_reg(CPUState* cpu, int reg, uint8_t* val);
@@ -94,6 +92,21 @@ size_t libafl_qemu_remove_hooks_at(target_ulong addr, int invalidate);
 int libafl_qemu_remove_hook(size_t num, int invalidate);
 struct libafl_hook* libafl_search_hook(target_ulong addr);
 void libafl_flush_jit(void);
+
+#ifndef CONFIG_USER_ONLY
+void* libafl_qemu_g2h(CPUState *cpu, target_ulong x);
+target_ulong libafl_qemu_h2g(CPUState *cpu, void* x);
+
+void* libafl_qemu_g2h(CPUState *cpu, target_ulong x)
+{
+    return g2h(cpu, x);
+}
+
+target_ulong libafl_qemu_h2g(CPUState *cpu, void* x)
+{
+    return h2g(cpu, x);
+}
+#endif
 
 CPUState* libafl_qemu_get_cpu(int cpu_index)
 {
@@ -122,16 +135,6 @@ CPUState* libafl_qemu_current_cpu(void)
         cpu = env_cpu(libafl_qemu_env);
     }
     return cpu;
-}
-
-void* libafl_qemu_g2h(CPUState *cpu, target_ulong x)
-{
-    return g2h(cpu, x);
-}
-
-target_ulong libafl_qemu_h2g(CPUState *cpu, void* x)
-{
-    return h2g(cpu, x);
 }
 
 int libafl_qemu_write_reg(CPUState* cpu, int reg, uint8_t* val)

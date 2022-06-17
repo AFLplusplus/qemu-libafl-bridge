@@ -730,6 +730,17 @@ void qemu_main_loop(void)
     }
 }
 
+//// --- Begin LibAFL code ---
+
+int libafl_qemu_run(void);
+int libafl_qemu_run(void)
+{
+    qemu_main_loop();
+    return 1;
+}
+
+//// --- End LibAFL code ---
+
 void qemu_add_exit_notifier(Notifier *notify)
 {
     notifier_list_add(&exit_notifiers, notify);

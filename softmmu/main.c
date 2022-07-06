@@ -39,9 +39,11 @@ int qemu_main(int argc, char **argv, char **envp)
     return 0;
 }
 
+#ifndef AS_LIB
 #ifndef CONFIG_COCOA
 int main(int argc, char **argv)
 {
     return qemu_main(argc, argv, NULL);
 }
+#endif
 #endif

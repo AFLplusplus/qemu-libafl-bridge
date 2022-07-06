@@ -165,8 +165,6 @@ F: tests/qtest/arm-cpu-features.c
 F: hw/arm/
 F: hw/cpu/a*mpcore.c
 F: include/hw/cpu/a*mpcore.h
-F: disas/arm-a64.cc
-F: disas/libvixl/
 F: docs/system/target-arm.rst
 F: docs/system/arm/cpu-features.rst
 
@@ -1840,7 +1838,6 @@ R: Ani Sinha <ani@anisinha.ca>
 S: Supported
 F: include/hw/acpi/*
 F: include/hw/firmware/smbios.h
-F: hw/mem/*
 F: hw/acpi/*
 F: hw/smbios/*
 F: hw/i386/acpi-build.[hc]
@@ -1851,6 +1848,7 @@ F: tests/qtest/acpi-utils.[hc]
 F: tests/data/acpi/
 F: docs/specs/acpi_cpu_hotplug.rst
 F: docs/specs/acpi_mem_hotplug.rst
+F: docs/specs/acpi_nvdimm.rst
 F: docs/specs/acpi_pci_hotplug.rst
 F: docs/specs/acpi_hw_reduced_hotplug.rst
 
@@ -2157,15 +2155,6 @@ F: hw/net/rocker/
 F: qapi/rocker.json
 F: tests/rocker/
 F: docs/specs/rocker.txt
-
-NVDIMM
-M: Xiao Guangrong <xiaoguangrong.eric@gmail.com>
-S: Maintained
-F: hw/acpi/nvdimm.c
-F: hw/mem/nvdimm.c
-F: include/hw/mem/nvdimm.h
-F: docs/nvdimm.txt
-F: docs/specs/acpi_nvdimm.rst
 
 e1000x
 M: Dmitry Fleytman <dmitry.fleytman@gmail.com>
@@ -2588,6 +2577,7 @@ M: Ben Widawsky <ben.widawsky@intel.com>
 M: Jonathan Cameron <jonathan.cameron@huawei.com>
 S: Supported
 F: hw/cxl/
+F: hw/mem/cxl_type3.c
 F: include/hw/cxl/
 
 Dirty Bitmaps
@@ -2704,6 +2694,19 @@ F: softmmu/physmem.c
 F: include/exec/memory-internal.h
 F: scripts/coccinelle/memory-region-housekeeping.cocci
 
+Memory devices
+M: David Hildenbrand <david@redhat.com>
+M: Igor Mammedov <imammedo@redhat.com>
+R: Xiao Guangrong <xiaoguangrong.eric@gmail.com>
+S: Supported
+F: hw/mem/memory-device.c
+F: hw/mem/nvdimm.c
+F: hw/mem/pc-dimm.c
+F: include/hw/mem/memory-device.h
+F: include/hw/mem/nvdimm.h
+F: include/hw/mem/pc-dimm.h
+F: docs/nvdimm.txt
+
 SPICE
 M: Gerd Hoffmann <kraxel@redhat.com>
 S: Odd Fixes
@@ -2746,6 +2749,7 @@ F: softmmu/cpu-throttle.c
 F: softmmu/cpu-timers.c
 F: softmmu/icount.c
 F: softmmu/runstate-action.c
+F: softmmu/runstate.c
 F: qapi/run-state.json
 
 Read, Copy, Update (RCU)
@@ -3307,8 +3311,6 @@ M: Richard Henderson <richard.henderson@linaro.org>
 S: Maintained
 L: qemu-arm@nongnu.org
 F: tcg/aarch64/
-F: disas/arm-a64.cc
-F: disas/libvixl/
 
 ARM TCG target
 M: Richard Henderson <richard.henderson@linaro.org>
@@ -3580,6 +3582,8 @@ M: Coiby Xu <Coiby.Xu@gmail.com>
 S: Maintained
 F: block/export/vhost-user-blk-server.c
 F: block/export/vhost-user-blk-server.h
+F: block/export/virtio-blk-handler.c
+F: block/export/virtio-blk-handler.h
 F: include/qemu/vhost-user-server.h
 F: tests/qtest/libqos/vhost-user-blk.c
 F: tests/qtest/libqos/vhost-user-blk.h
@@ -3591,6 +3595,13 @@ M: Hanna Reitz <hreitz@redhat.com>
 L: qemu-block@nongnu.org
 S: Supported
 F: block/export/fuse.c
+
+VDUSE library and block device exports
+M: Xie Yongji <xieyongji@bytedance.com>
+S: Maintained
+F: subprojects/libvduse/
+F: block/export/vduse-blk.c
+F: block/export/vduse-blk.h
 
 Replication
 M: Wen Congyang <wencongyang2@huawei.com>

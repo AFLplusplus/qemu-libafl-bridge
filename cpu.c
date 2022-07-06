@@ -70,7 +70,6 @@ struct libafl_hook {
 struct libafl_hook* libafl_qemu_hooks[LIBAFL_TABLES_SIZE];
 size_t libafl_qemu_hooks_num = 0;
 
-__thread CPUArchState *libafl_qemu_env = NULL;
 __thread int libafl_valid_current_cpu = 0;
 
 void libafl_helper_table_add(TCGHelperInfo* info);
@@ -80,6 +79,7 @@ static __thread GByteArray *libafl_qemu_mem_buf = NULL;
 CPUState* libafl_qemu_get_cpu(int cpu_index);
 int libafl_qemu_num_cpus(void);
 CPUState* libafl_qemu_current_cpu(void);
+int libafl_qemu_cpu_index(CPUState*);
 
 int libafl_qemu_write_reg(CPUState* cpu, int reg, uint8_t* val);
 int libafl_qemu_read_reg(CPUState* cpu, int reg, uint8_t* val);
@@ -131,14 +131,13 @@ int libafl_qemu_num_cpus(void)
 
 CPUState* libafl_qemu_current_cpu(void)
 {
-    if (!libafl_valid_current_cpu)
-        return NULL;
+    return current_cpu;
+}
 
-    CPUState *cpu = current_cpu;
-    if (!cpu) {
-        cpu = env_cpu(libafl_qemu_env);
-    }
-    return cpu;
+int libafl_qemu_cpu_index(CPUState* cpu)
+{
+    if (cpu) return cpu->cpu_index;
+    return -1;
 }
 
 int libafl_qemu_write_reg(CPUState* cpu, int reg, uint8_t* val)

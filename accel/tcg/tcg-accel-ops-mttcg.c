@@ -95,6 +95,17 @@ static void *mttcg_cpu_thread_fn(void *arg)
             r = tcg_cpus_exec(cpu);
             qemu_mutex_lock_iothread();
             switch (r) {
+
+//// --- Begin LibAFL code ---
+
+#define EXCP_LIBAFL_BP 0xf4775747
+
+            case EXCP_LIBAFL_BP:
+                fprintf(stderr, "DIOCANEEE\n");
+                break;
+
+//// --- End LibAFL code ---
+
             case EXCP_DEBUG:
                 cpu_handle_guest_debug(cpu);
                 break;

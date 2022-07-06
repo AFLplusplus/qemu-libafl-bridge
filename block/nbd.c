@@ -77,7 +77,7 @@ typedef struct BDRVNBDState {
     QemuMutex requests_lock;
     NBDClientState state;
     CoQueue free_sema;
-    int in_flight;
+    unsigned in_flight;
     NBDClientRequest requests[MAX_NBD_REQUESTS];
     QEMUTimer *reconnect_delay_timer;
 
@@ -371,6 +371,7 @@ static bool nbd_client_connecting(BDRVNBDState *s)
 /* Called with s->requests_lock taken.  */
 static coroutine_fn void nbd_reconnect_attempt(BDRVNBDState *s)
 {
+    int ret;
     bool blocking = s->state == NBD_CLIENT_CONNECTING_WAIT;
 
     /*
@@ -379,6 +380,8 @@ static coroutine_fn void nbd_reconnect_attempt(BDRVNBDState *s)
      */
     assert(nbd_client_connecting(s));
     assert(s->in_flight == 1);
+
+    trace_nbd_reconnect_attempt(s->bs->in_flight);
 
     if (blocking && !s->reconnect_delay_timer) {
         /*
@@ -401,7 +404,8 @@ static coroutine_fn void nbd_reconnect_attempt(BDRVNBDState *s)
     }
 
     qemu_mutex_unlock(&s->requests_lock);
-    nbd_co_do_establish_connection(s->bs, blocking, NULL);
+    ret = nbd_co_do_establish_connection(s->bs, blocking, NULL);
+    trace_nbd_reconnect_attempt_result(ret, s->bs->in_flight);
     qemu_mutex_lock(&s->requests_lock);
 
     /*
@@ -521,12 +525,8 @@ static int coroutine_fn nbd_co_send_request(BlockDriverState *bs,
     if (qiov) {
         qio_channel_set_cork(s->ioc, true);
         rc = nbd_send_request(s->ioc, request);
-        if (rc >= 0) {
-            if (qio_channel_writev_all(s->ioc, qiov->iov, qiov->niov,
-                                       NULL) < 0) {
-                rc = -EIO;
-            }
-        } else if (rc >= 0) {
+        if (rc >= 0 && qio_channel_writev_all(s->ioc, qiov->iov, qiov->niov,
+                                              NULL) < 0) {
             rc = -EIO;
         }
         qio_channel_set_cork(s->ioc, false);

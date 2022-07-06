@@ -209,9 +209,13 @@ if get_option('fuzzing')
   configure_file(output: 'instrumentation-filter',
                  input: 'scripts/oss-fuzz/instrumentation-filter-template',
                  copy: true)
-  add_global_arguments(
-      cc.get_supported_arguments('-fsanitize-coverage-allowlist=instrumentation-filter'),
-      native: false, language: ['c', 'cpp', 'objc'])
+
+  if cc.compiles('int main () { return 0; }',
+                  name: '-fsanitize-coverage-allowlist=/dev/null',
+                 args: ['-fsanitize-coverage-allowlist=/dev/null'] )
+    add_global_arguments('-fsanitize-coverage-allowlist=instrumentation-filter',
+                         native: false, language: ['c', 'cpp', 'objc'])
+  endif
 
   if get_option('fuzzing_engine') == ''
     # Add CFLAGS to tell clang to add fuzzer-related instrumentation to all the
@@ -246,7 +250,6 @@ endif
 add_project_arguments('-iquote', '.',
                       '-iquote', meson.current_source_dir(),
                       '-iquote', meson.current_source_dir() / 'include',
-                      '-iquote', meson.current_source_dir() / 'disas/libvixl',
                       language: ['c', 'cpp', 'objc'])
 
 link_language = meson.get_external_property('link_language', 'cpp')
@@ -1206,7 +1209,7 @@ if gtkx11.found()
 endif
 png = not_found
 if get_option('png').allowed() and have_system
-   png = dependency('libpng', required: get_option('png'),
+   png = dependency('libpng', version: '>=1.6.34', required: get_option('png'),
                     method: 'pkg-config', kwargs: static_kwargs)
 endif
 vnc = not_found
@@ -1512,7 +1515,7 @@ have_vhost_user_blk_server = get_option('vhost_user_blk_server') \
            error_message: 'vhost_user_blk_server requires linux') \
   .require(have_vhost_user,
            error_message: 'vhost_user_blk_server requires vhost-user support') \
-  .disable_auto_if(not have_system) \
+  .disable_auto_if(not have_tools and not have_system) \
   .allowed()
 
 if get_option('fuse').disabled() and get_option('fuse_lseek').enabled()
@@ -1535,6 +1538,26 @@ if get_option('fuse_lseek').allowed()
       error('fuse-lseek requires libfuse, which was not found')
     endif
   endif
+endif
+
+have_libvduse = (targetos == 'linux')
+if get_option('libvduse').enabled()
+    if targetos != 'linux'
+        error('libvduse requires linux')
+    endif
+elif get_option('libvduse').disabled()
+    have_libvduse = false
+endif
+
+have_vduse_blk_export = (have_libvduse and targetos == 'linux')
+if get_option('vduse_blk_export').enabled()
+    if targetos != 'linux'
+        error('vduse_blk_export requires linux')
+    elif not have_libvduse
+        error('vduse_blk_export requires libvduse support')
+    endif
+elif get_option('vduse_blk_export').disabled()
+    have_vduse_blk_export = false
 endif
 
 # libbpf
@@ -1779,6 +1802,7 @@ config_host_data.set('CONFIG_VHOST_CRYPTO', have_vhost_user_crypto)
 config_host_data.set('CONFIG_VHOST_VDPA', have_vhost_vdpa)
 config_host_data.set('CONFIG_VMNET', vmnet.found())
 config_host_data.set('CONFIG_VHOST_USER_BLK_SERVER', have_vhost_user_blk_server)
+config_host_data.set('CONFIG_VDUSE_BLK_EXPORT', have_vduse_blk_export)
 config_host_data.set('CONFIG_PNG', png.found())
 config_host_data.set('CONFIG_VNC', vnc.found())
 config_host_data.set('CONFIG_VNC_JPEG', jpeg.found())
@@ -1878,6 +1902,12 @@ config_host_data.set('HAVE_GETIFADDRS', cc.has_function('getifaddrs'))
 config_host_data.set('HAVE_OPENPTY', cc.has_function('openpty', dependencies: util))
 config_host_data.set('HAVE_STRCHRNUL', cc.has_function('strchrnul'))
 config_host_data.set('HAVE_SYSTEM_FUNCTION', cc.has_function('system', prefix: '#include <stdlib.h>'))
+if rbd.found()
+  config_host_data.set('HAVE_RBD_NAMESPACE_EXISTS',
+                       cc.has_function('rbd_namespace_exists',
+                                       dependencies: rbd,
+                                       prefix: '#include <rbd/librbd.h>'))
+endif
 if rdma.found()
   config_host_data.set('HAVE_IBV_ADVISE_MR',
                        cc.has_function('ibv_advise_mr',
@@ -2341,7 +2371,6 @@ config_target_mak = {}
 
 disassemblers = {
   'alpha' : ['CONFIG_ALPHA_DIS'],
-  'arm' : ['CONFIG_ARM_DIS'],
   'avr' : ['CONFIG_AVR_DIS'],
   'cris' : ['CONFIG_CRIS_DIS'],
   'hexagon' : ['CONFIG_HEXAGON_DIS'],
@@ -2364,8 +2393,6 @@ disassemblers = {
 }
 if link_language == 'cpp'
   disassemblers += {
-    'aarch64' : [ 'CONFIG_ARM_A64_DIS'],
-    'arm' : [ 'CONFIG_ARM_DIS', 'CONFIG_ARM_A64_DIS'],
     'mips' : [ 'CONFIG_MIPS_DIS', 'CONFIG_NANOMIPS_DIS'],
   }
 endif
@@ -2982,6 +3009,12 @@ vhost_user = not_found
 if targetos == 'linux' and have_vhost_user
   libvhost_user = subproject('libvhost-user')
   vhost_user = libvhost_user.get_variable('vhost_user_dep')
+endif
+
+libvduse = not_found
+if have_libvduse
+  libvduse_proj = subproject('libvduse')
+  libvduse = libvduse_proj.get_variable('libvduse_dep')
 endif
 
 # NOTE: the trace/ subdirectory needs the qapi_trace_events variable
@@ -3803,21 +3836,24 @@ endif
 summary_info += {'strip binaries':    get_option('strip')}
 summary_info += {'sparse':            sparse}
 summary_info += {'mingw32 support':   targetos == 'windows'}
+summary(summary_info, bool_yn: true, section: 'Compilation')
 
 # snarf the cross-compilation information for tests
+summary_info = {}
+have_cross = false
 foreach target: target_dirs
   tcg_mak = meson.current_build_dir() / 'tests/tcg' / 'config-' + target + '.mak'
   if fs.exists(tcg_mak)
     config_cross_tcg = keyval.load(tcg_mak)
-    target = config_cross_tcg['TARGET_NAME']
-    compiler = ''
     if 'CC' in config_cross_tcg
-      summary_info += {target + ' tests': config_cross_tcg['CC']}
+      summary_info += {config_cross_tcg['TARGET_NAME']: config_cross_tcg['CC']}
+      have_cross = true
     endif
-   endif
+  endif
 endforeach
-
-summary(summary_info, bool_yn: true, section: 'Compilation')
+if have_cross
+  summary(summary_info, bool_yn: true, section: 'Cross compilers')
+endif
 
 # Targets and accelerators
 summary_info = {}
@@ -3871,6 +3907,7 @@ if have_block
   summary_info += {'qed support':       get_option('qed').allowed()}
   summary_info += {'parallels support': get_option('parallels').allowed()}
   summary_info += {'FUSE exports':      fuse}
+  summary_info += {'VDUSE block exports': have_vduse_blk_export}
 endif
 summary(summary_info, bool_yn: true, section: 'Block layer support')
 

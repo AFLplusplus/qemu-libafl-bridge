@@ -103,7 +103,6 @@ static void *mttcg_cpu_thread_fn(void *arg)
 #define EXCP_LIBAFL_BP 0xf4775747
 
             case EXCP_LIBAFL_BP:
-                fprintf(stderr, "DIOCANEEE\n");
                 break;
 
 //// --- End LibAFL code ---

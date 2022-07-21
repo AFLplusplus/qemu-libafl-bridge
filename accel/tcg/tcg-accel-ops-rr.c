@@ -199,8 +199,6 @@ void libafl_cpu_thread_fn(CPUState *cpu)
 
                 // TODO(libafl) should we have the iothread lock on?
                 if (r == EXCP_LIBAFL_BP) {
-                    fprintf(stderr, "DIOCANEEE\n");
-                    
                     rr_stop_kick_timer();
                     return;
                 }

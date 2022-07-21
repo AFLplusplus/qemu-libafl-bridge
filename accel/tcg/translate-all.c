@@ -688,7 +688,6 @@ void libafl_add_backdoor_hook(void (*exec)(uint64_t id, uint64_t data),
     libafl_helper_table_add(&hook->helper_info);
 }
 
-
 //// --- End LibAFL code ---
 
 /* #define DEBUG_TB_INVALIDATE */

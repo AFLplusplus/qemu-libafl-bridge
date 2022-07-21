@@ -168,17 +168,17 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
                         while (hk) {
                             TCGv tmp0 = tcg_const_tl(db->pc_next);
                             TCGv_i64 tmp1 = tcg_const_i64(hk->data);
-                #if TARGET_LONG_BITS == 32
+#if TARGET_LONG_BITS == 32
                             TCGTemp *tmp2[2] = { tcgv_i32_temp(tmp0), tcgv_i64_temp(tmp1) };
-                #else
+#else
                             TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
-                #endif
+#endif
                             tcg_gen_callN(hk->exec, NULL, 2, tmp2);
-                #if TARGET_LONG_BITS == 32
+#if TARGET_LONG_BITS == 32
                             tcg_temp_free_i32(tmp0);
-                #else
+#else
                             tcg_temp_free_i64(tmp0);
-                #endif
+#endif
                             tcg_temp_free_i64(tmp1);
                             hk = hk->next;
                         }

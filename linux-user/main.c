@@ -648,7 +648,7 @@ uint64_t libafl_load_addr(void);
 int libafl_qemu_main(void);
 int libafl_qemu_run(void);
 
-extern __thread CPUArchState *libafl_qemu_env;
+__thread CPUArchState *libafl_qemu_env;
 
 struct image_info libafl_image_info;
 struct linux_binprm bprm;

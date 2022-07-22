@@ -27,6 +27,7 @@
 #include "qemu/osdep.h"
 #include "qemu/datadir.h"
 #include "qemu/memalign.h"
+#include "qemu/guest-random.h"
 #include "qapi/error.h"
 #include "qapi/qapi-events-machine.h"
 #include "qapi/qapi-events-qdev.h"
@@ -898,6 +899,8 @@ static void spapr_dt_rtas(SpaprMachineState *spapr, void *fdt)
         add_str(hypertas, "hcall-hpt-resize");
     }
 
+    add_str(hypertas, "hcall-watchdog");
+
     _FDT(fdt_setprop(fdt, rtas, "ibm,hypertas-functions",
                      hypertas->str, hypertas->len));
     g_string_free(hypertas, TRUE);
@@ -1012,6 +1015,7 @@ static void spapr_dt_chosen(SpaprMachineState *spapr, void *fdt, bool reset)
 {
     MachineState *machine = MACHINE(spapr);
     SpaprMachineClass *smc = SPAPR_MACHINE_GET_CLASS(machine);
+    uint8_t rng_seed[32];
     int chosen;
 
     _FDT(chosen = fdt_add_subnode(fdt, 0, "chosen"));
@@ -1088,6 +1092,9 @@ static void spapr_dt_chosen(SpaprMachineState *spapr, void *fdt, bool reset)
 
         spapr_dt_ov5_platform_support(spapr, fdt, chosen);
     }
+
+    qemu_guest_getrandom_nofail(rng_seed, sizeof(rng_seed));
+    _FDT(fdt_setprop(fdt, chosen, "rng-seed", rng_seed, sizeof(rng_seed)));
 
     _FDT(spapr_dt_ovec(fdt, chosen, spapr->ov5_cas, "ibm,architecture-vec-5"));
 }
@@ -1328,6 +1335,11 @@ static bool spapr_get_pate(PPCVirtualHypervisor *vhyp, PowerPCCPU *cpu,
 
         patb = spapr->nested_ptcr & PTCR_PATB;
         pats = spapr->nested_ptcr & PTCR_PATS;
+
+        /* Check if partition table is properly aligned */
+        if (patb & MAKE_64BIT_MASK(0, pats + 12)) {
+            return false;
+        }
 
         /* Calculate number of entries */
         pats = 1ull << (pats + 12 - 4);
@@ -3051,6 +3063,8 @@ static void spapr_machine_init(MachineState *machine)
         spapr->vof->fw_size = fw_size; /* for claim() on itself */
         spapr_register_hypercall(KVMPPC_H_VOF_CLIENT, spapr_h_vof_client);
     }
+
+    spapr_watchdog_init(spapr);
 }
 
 #define DEFAULT_KVM_TYPE "auto"

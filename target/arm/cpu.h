@@ -166,12 +166,6 @@ typedef struct ARMGenericTimer {
 #define GTIMER_HYPVIRT  4
 #define NUM_GTIMERS     5
 
-typedef struct {
-    uint64_t raw_tcr;
-    uint32_t mask;
-    uint32_t base_mask;
-} TCR;
-
 #define VTCR_NSW (1u << 29)
 #define VTCR_NSA (1u << 30)
 #define VSTCR_SW VTCR_NSW
@@ -339,9 +333,9 @@ typedef struct CPUArchState {
         uint64_t vttbr_el2; /* Virtualization Translation Table Base.  */
         uint64_t vsttbr_el2; /* Secure Virtualization Translation Table. */
         /* MMU translation table base control. */
-        TCR tcr_el[4];
-        TCR vtcr_el2; /* Virtualization Translation Control.  */
-        TCR vstcr_el2; /* Secure Virtualization Translation Control. */
+        uint64_t tcr_el[4];
+        uint64_t vtcr_el2; /* Virtualization Translation Control.  */
+        uint64_t vstcr_el2; /* Secure Virtualization Translation Control. */
         uint32_t c2_data; /* MPU data cacheable bits.  */
         uint32_t c2_insn; /* MPU instruction cacheable bits.  */
         union { /* MMU domain access control register
@@ -500,6 +494,7 @@ typedef struct CPUArchState {
         uint64_t dbgwcr[16]; /* watchpoint control registers */
         uint64_t mdscr_el1;
         uint64_t oslsr_el1; /* OS Lock Status */
+        uint64_t osdlr_el1; /* OS DoubleLock status */
         uint64_t mdcr_el2;
         uint64_t mdcr_el3;
         /* Stores the architectural value of the counter *the last time it was
@@ -988,6 +983,8 @@ struct ArchCPU {
         uint32_t mvfr2;
         uint32_t id_dfr0;
         uint32_t dbgdidr;
+        uint32_t dbgdevid;
+        uint32_t dbgdevid1;
         uint64_t id_aa64isar0;
         uint64_t id_aa64isar1;
         uint64_t id_aa64pfr0;
@@ -1414,6 +1411,25 @@ FIELD(CPTR_EL3, TCPAC, 31, 1)
 #define TTBCR_ORGN1  (3U << 26)
 #define TTBCR_SH1    (1U << 28)
 #define TTBCR_EAE    (1U << 31)
+
+FIELD(VTCR, T0SZ, 0, 6)
+FIELD(VTCR, SL0, 6, 2)
+FIELD(VTCR, IRGN0, 8, 2)
+FIELD(VTCR, ORGN0, 10, 2)
+FIELD(VTCR, SH0, 12, 2)
+FIELD(VTCR, TG0, 14, 2)
+FIELD(VTCR, PS, 16, 3)
+FIELD(VTCR, VS, 19, 1)
+FIELD(VTCR, HA, 21, 1)
+FIELD(VTCR, HD, 22, 1)
+FIELD(VTCR, HWU59, 25, 1)
+FIELD(VTCR, HWU60, 26, 1)
+FIELD(VTCR, HWU61, 27, 1)
+FIELD(VTCR, HWU62, 28, 1)
+FIELD(VTCR, NSW, 29, 1)
+FIELD(VTCR, NSA, 30, 1)
+FIELD(VTCR, DS, 32, 1)
+FIELD(VTCR, SL2, 33, 1)
 
 /* Bit definitions for ARMv8 SPSR (PSTATE) format.
  * Only these are valid when in AArch64 mode; in
@@ -2250,6 +2266,15 @@ FIELD(DBGDIDR, VERSION, 16, 4)
 FIELD(DBGDIDR, CTX_CMPS, 20, 4)
 FIELD(DBGDIDR, BRPS, 24, 4)
 FIELD(DBGDIDR, WRPS, 28, 4)
+
+FIELD(DBGDEVID, PCSAMPLE, 0, 4)
+FIELD(DBGDEVID, WPADDRMASK, 4, 4)
+FIELD(DBGDEVID, BPADDRMASK, 8, 4)
+FIELD(DBGDEVID, VECTORCATCH, 12, 4)
+FIELD(DBGDEVID, VIRTEXTNS, 16, 4)
+FIELD(DBGDEVID, DOUBLELOCK, 20, 4)
+FIELD(DBGDEVID, AUXREGS, 24, 4)
+FIELD(DBGDEVID, CIDMASK, 28, 4)
 
 FIELD(MVFR0, SIMDREG, 0, 4)
 FIELD(MVFR0, FPSP, 4, 4)
@@ -3146,6 +3171,11 @@ FIELD(TBFLAG_A32, HSTR_ACTIVE, 9, 1)
  * the same thing as the current security state of the processor!
  */
 FIELD(TBFLAG_A32, NS, 10, 1)
+/*
+ * Indicates that SME Streaming mode is active, and SMCR_ELx.FA64 is not.
+ * This requires an SME trap from AArch32 mode when using NEON.
+ */
+FIELD(TBFLAG_A32, SME_TRAP_NONSTREAMING, 11, 1)
 
 /*
  * Bit usage when in AArch32 state, for M-profile only.
@@ -3183,6 +3213,8 @@ FIELD(TBFLAG_A64, SMEEXC_EL, 20, 2)
 FIELD(TBFLAG_A64, PSTATE_SM, 22, 1)
 FIELD(TBFLAG_A64, PSTATE_ZA, 23, 1)
 FIELD(TBFLAG_A64, SVL, 24, 4)
+/* Indicates that SME Streaming mode is active, and SMCR_ELx.FA64 is not. */
+FIELD(TBFLAG_A64, SME_TRAP_NONSTREAMING, 28, 1)
 
 /*
  * Helpers for using the above.
@@ -3373,9 +3405,12 @@ static inline MemTxAttrs *typecheck_memtxattrs(MemTxAttrs *x)
 
 /*
  * AArch64 usage of the PAGE_TARGET_* bits for linux-user.
+ * Note that with the Linux kernel, PROT_MTE may not be cleared by mprotect
+ * mprotect but PROT_BTI may be cleared.  C.f. the kernel's VM_ARCH_CLEAR.
  */
-#define PAGE_BTI  PAGE_TARGET_1
-#define PAGE_MTE  PAGE_TARGET_2
+#define PAGE_BTI            PAGE_TARGET_1
+#define PAGE_MTE            PAGE_TARGET_2
+#define PAGE_TARGET_STICKY  PAGE_MTE
 
 #ifdef TARGET_TAGGED_ADDRESSES
 /**
@@ -3719,9 +3754,19 @@ static inline bool isar_feature_aa32_ssbs(const ARMISARegisters *id)
     return FIELD_EX32(id->id_pfr2, ID_PFR2, SSBS) != 0;
 }
 
+static inline bool isar_feature_aa32_debugv7p1(const ARMISARegisters *id)
+{
+    return FIELD_EX32(id->id_dfr0, ID_DFR0, COPDBG) >= 5;
+}
+
 static inline bool isar_feature_aa32_debugv8p2(const ARMISARegisters *id)
 {
     return FIELD_EX32(id->id_dfr0, ID_DFR0, COPDBG) >= 8;
+}
+
+static inline bool isar_feature_aa32_doublelock(const ARMISARegisters *id)
+{
+    return FIELD_EX32(id->dbgdevid, DBGDEVID, DOUBLELOCK) > 0;
 }
 
 /*
@@ -4146,6 +4191,11 @@ static inline bool isar_feature_aa64_sme_i16i64(const ARMISARegisters *id)
 static inline bool isar_feature_aa64_sme_fa64(const ARMISARegisters *id)
 {
     return FIELD_EX64(id->id_aa64smfr0, ID_AA64SMFR0, FA64);
+}
+
+static inline bool isar_feature_aa64_doublelock(const ARMISARegisters *id)
+{
+    return FIELD_SEX64(id->id_aa64dfr0, ID_AA64DFR0, DOUBLELOCK) >= 0;
 }
 
 /*

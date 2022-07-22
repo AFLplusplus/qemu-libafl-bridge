@@ -307,6 +307,11 @@ void hmp_info_migrate(Monitor *mon, const QDict *qdict)
             monitor_printf(mon, "postcopy ram: %" PRIu64 " kbytes\n",
                            info->ram->postcopy_bytes >> 10);
         }
+        if (info->ram->dirty_sync_missed_zero_copy) {
+            monitor_printf(mon,
+                           "Zero-copy-send fallbacks happened: %" PRIu64 " times\n",
+                           info->ram->dirty_sync_missed_zero_copy);
+        }
     }
 
     if (info->has_disk) {
@@ -2337,6 +2342,8 @@ static void print_stats_results(Monitor *mon, StatsTarget target,
 
         if (stats_value->type == QTYPE_QNUM) {
             monitor_printf(mon, ": %" PRId64 "\n", stats_value->u.scalar);
+        } else if (stats_value->type == QTYPE_QBOOL) {
+            monitor_printf(mon, ": %s\n", stats_value->u.boolean ? "yes" : "no");
         } else if (stats_value->type == QTYPE_QLIST) {
             uint64List *list;
             int i;

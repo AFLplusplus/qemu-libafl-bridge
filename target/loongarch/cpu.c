@@ -18,7 +18,6 @@
 #include "fpu/softfloat-helpers.h"
 #include "cpu-csr.h"
 #include "sysemu/reset.h"
-#include "hw/loader.h"
 
 const char * const regnames[32] = {
     "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
@@ -51,6 +50,7 @@ static const char * const excp_names[] = {
     [EXCCODE_IPE] = "Instruction privilege error",
     [EXCCODE_FPE] = "Floating Point Exception",
     [EXCCODE_DBP] = "Debug breakpoint",
+    [EXCCODE_BCE] = "Bound Check Exception",
 };
 
 const char *loongarch_exception_name(int32_t exception)
@@ -82,6 +82,7 @@ static void loongarch_cpu_set_pc(CPUState *cs, vaddr value)
     env->pc = value;
 }
 
+#ifndef CONFIG_USER_ONLY
 #include "hw/loongarch/virt.h"
 
 void loongarch_cpu_set_irq(void *opaque, int irq, int level)
@@ -139,7 +140,7 @@ static void loongarch_cpu_do_interrupt(CPUState *cs)
 
     if (cs->exception_index != EXCCODE_INT) {
         if (cs->exception_index < 0 ||
-            cs->exception_index > ARRAY_SIZE(excp_names)) {
+            cs->exception_index >= ARRAY_SIZE(excp_names)) {
             name = "unknown";
         } else {
             name = excp_names[cs->exception_index];
@@ -171,23 +172,26 @@ static void loongarch_cpu_do_interrupt(CPUState *cs)
         cause = cs->exception_index;
         update_badinstr = 0;
         break;
-    case EXCCODE_ADEM:
     case EXCCODE_SYS:
     case EXCCODE_BRK:
+    case EXCCODE_INE:
+    case EXCCODE_IPE:
+    case EXCCODE_FPE:
+    case EXCCODE_BCE:
+        env->CSR_BADV = env->pc;
+        QEMU_FALLTHROUGH;
+    case EXCCODE_ADEM:
     case EXCCODE_PIL:
     case EXCCODE_PIS:
     case EXCCODE_PME:
     case EXCCODE_PNR:
     case EXCCODE_PNX:
     case EXCCODE_PPI:
-    case EXCCODE_INE:
-    case EXCCODE_IPE:
-    case EXCCODE_FPE:
         cause = cs->exception_index;
         break;
     default:
-        qemu_log("Error: exception(%d) '%s' has not been supported\n",
-                 cs->exception_index, excp_names[cs->exception_index]);
+        qemu_log("Error: exception(%d) has not been supported\n",
+                 cs->exception_index);
         abort();
     }
 
@@ -218,6 +222,10 @@ static void loongarch_cpu_do_interrupt(CPUState *cs)
 
     env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, PLV, 0);
     env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, IE, 0);
+
+    if (vec_size) {
+        vec_size = (1 << vec_size) * 4;
+    }
 
     if  (cs->exception_index == EXCCODE_INT) {
         /* Interrupt */
@@ -292,6 +300,7 @@ static bool loongarch_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
     }
     return false;
 }
+#endif
 
 #ifdef CONFIG_TCG
 static void loongarch_cpu_synchronize_from_tb(CPUState *cs,
@@ -306,6 +315,9 @@ static void loongarch_cpu_synchronize_from_tb(CPUState *cs,
 
 static bool loongarch_cpu_has_work(CPUState *cs)
 {
+#ifdef CONFIG_USER_ONLY
+    return true;
+#else
     LoongArchCPU *cpu = LOONGARCH_CPU(cs);
     CPULoongArchState *env = &cpu->env;
     bool has_work = false;
@@ -316,6 +328,7 @@ static bool loongarch_cpu_has_work(CPUState *cs)
     }
 
     return has_work;
+#endif
 }
 
 static void loongarch_la464_initfn(Object *obj)
@@ -328,6 +341,7 @@ static void loongarch_la464_initfn(Object *obj)
         env->cpucfg[i] = 0x0;
     }
 
+    cpu->dtb_compatible = "loongarch,Loongson-3A5000";
     env->cpucfg[0] = 0x14c010;  /* PRID */
 
     uint32_t data = 0;
@@ -393,7 +407,7 @@ static void loongarch_la464_initfn(Object *obj)
     data = 0;
     data = FIELD_DP32(data, CPUCFG20, L3IU_WAYS, 15);
     data = FIELD_DP32(data, CPUCFG20, L3IU_SETS, 14);
-    data = FIELD_DP32(data, CPUCFG20, L3IU_SETS, 6);
+    data = FIELD_DP32(data, CPUCFG20, L3IU_SIZE, 6);
     env->cpucfg[20] = data;
 
     env->CSR_ASID = FIELD_DP64(0, CSR_ASID, ASIDBITS, 0xa);
@@ -464,7 +478,10 @@ static void loongarch_cpu_reset(DeviceState *dev)
         env->CSR_DMW[n] = FIELD_DP64(env->CSR_DMW[n], CSR_DMW, PLV3, 0);
     }
 
+#ifndef CONFIG_USER_ONLY
     env->pc = 0x1c000000;
+    memset(env->tlb, 0, sizeof(env->tlb));
+#endif
 
     restore_fp_status(env);
     cs->exception_index = -1;
@@ -495,6 +512,7 @@ static void loongarch_cpu_realizefn(DeviceState *dev, Error **errp)
     lacc->parent_realize(dev, errp);
 }
 
+#ifndef CONFIG_USER_ONLY
 static void loongarch_qemu_write(void *opaque, hwaddr addr,
                                  uint64_t val, unsigned size)
 {
@@ -529,13 +547,16 @@ static const MemoryRegionOps loongarch_qemu_ops = {
         .max_access_size = 8,
     },
 };
+#endif
 
 static void loongarch_cpu_init(Object *obj)
 {
     LoongArchCPU *cpu = LOONGARCH_CPU(obj);
-    CPULoongArchState *env = &cpu->env;
 
     cpu_set_cpustate_pointers(cpu);
+
+#ifndef CONFIG_USER_ONLY
+    CPULoongArchState *env = &cpu->env;
     qdev_init_gpio_in(DEVICE(cpu), loongarch_cpu_set_irq, N_IRQS);
     timer_init_ns(&cpu->timer, QEMU_CLOCK_VIRTUAL,
                   &loongarch_constant_timer_cb, cpu);
@@ -545,17 +566,28 @@ static void loongarch_cpu_init(Object *obj)
     memory_region_init_io(&env->iocsr_mem, OBJECT(cpu), &loongarch_qemu_ops,
                           NULL, "iocsr_misc", 0x428);
     memory_region_add_subregion(&env->system_iocsr, 0, &env->iocsr_mem);
+#endif
 }
 
 static ObjectClass *loongarch_cpu_class_by_name(const char *cpu_model)
 {
     ObjectClass *oc;
-    char *typename;
 
-    typename = g_strdup_printf(LOONGARCH_CPU_TYPE_NAME("%s"), cpu_model);
-    oc = object_class_by_name(typename);
-    g_free(typename);
-    return oc;
+    oc = object_class_by_name(cpu_model);
+    if (!oc) {
+        g_autofree char *typename 
+            = g_strdup_printf(LOONGARCH_CPU_TYPE_NAME("%s"), cpu_model);
+        oc = object_class_by_name(typename);
+        if (!oc) {
+            return NULL;
+        }
+    }
+
+    if (object_class_dynamic_cast(oc, TYPE_LOONGARCH_CPU)
+        && !object_class_is_abstract(oc)) {
+        return oc;
+    }
+    return NULL;
 }
 
 void loongarch_cpu_dump_state(CPUState *cs, FILE *f, int flags)
@@ -612,18 +644,22 @@ static struct TCGCPUOps loongarch_tcg_ops = {
     .initialize = loongarch_translate_init,
     .synchronize_from_tb = loongarch_cpu_synchronize_from_tb,
 
+#ifndef CONFIG_USER_ONLY
     .tlb_fill = loongarch_cpu_tlb_fill,
     .cpu_exec_interrupt = loongarch_cpu_exec_interrupt,
     .do_interrupt = loongarch_cpu_do_interrupt,
     .do_transaction_failed = loongarch_cpu_do_transaction_failed,
+#endif
 };
 #endif /* CONFIG_TCG */
 
+#ifndef CONFIG_USER_ONLY
 #include "hw/core/sysemu-cpu-ops.h"
 
 static const struct SysemuCPUOps loongarch_sysemu_ops = {
     .get_phys_page_debug = loongarch_cpu_get_phys_page_debug,
 };
+#endif
 
 static void loongarch_cpu_class_init(ObjectClass *c, void *data)
 {
@@ -639,8 +675,10 @@ static void loongarch_cpu_class_init(ObjectClass *c, void *data)
     cc->has_work = loongarch_cpu_has_work;
     cc->dump_state = loongarch_cpu_dump_state;
     cc->set_pc = loongarch_cpu_set_pc;
+#ifndef CONFIG_USER_ONLY
     dc->vmsd = &vmstate_loongarch_cpu;
     cc->sysemu_ops = &loongarch_sysemu_ops;
+#endif
     cc->disas_set_info = loongarch_cpu_disas_set_info;
     cc->gdb_read_register = loongarch_cpu_gdb_read_register;
     cc->gdb_write_register = loongarch_cpu_gdb_write_register;

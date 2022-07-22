@@ -70,15 +70,21 @@ struct libafl_hook {
 struct libafl_hook* libafl_qemu_hooks[LIBAFL_TABLES_SIZE];
 size_t libafl_qemu_hooks_num = 0;
 
-__thread CPUArchState *libafl_qemu_env;
+__thread int libafl_valid_current_cpu = 0;
 
 void libafl_helper_table_add(TCGHelperInfo* info);
 
-static GByteArray *libafl_qemu_mem_buf = NULL;
+static __thread GByteArray *libafl_qemu_mem_buf = NULL;
 
-int libafl_qemu_write_reg(int reg, uint8_t* val);
-int libafl_qemu_read_reg(int reg, uint8_t* val);
-int libafl_qemu_num_regs(void);
+CPUState* libafl_qemu_get_cpu(int cpu_index);
+int libafl_qemu_num_cpus(void);
+CPUState* libafl_qemu_current_cpu(void);
+int libafl_qemu_cpu_index(CPUState*);
+
+int libafl_qemu_write_reg(CPUState* cpu, int reg, uint8_t* val);
+int libafl_qemu_read_reg(CPUState* cpu, int reg, uint8_t* val);
+int libafl_qemu_num_regs(CPUState* cpu);
+
 int libafl_qemu_set_breakpoint(target_ulong addr);
 int libafl_qemu_remove_breakpoint(target_ulong addr);
 size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(target_ulong, uint64_t),
@@ -88,16 +94,54 @@ int libafl_qemu_remove_hook(size_t num, int invalidate);
 struct libafl_hook* libafl_search_hook(target_ulong addr);
 void libafl_flush_jit(void);
 
-int libafl_qemu_write_reg(int reg, uint8_t* val)
-{
-    CPUState *cpu = current_cpu;
-    if (!cpu) {
-        cpu = env_cpu(libafl_qemu_env);
-        if (!cpu) {
-            return 0;
-        }
-    }
+/*
+void* libafl_qemu_g2h(CPUState *cpu, target_ulong x);
+target_ulong libafl_qemu_h2g(CPUState *cpu, void* x);
 
+void* libafl_qemu_g2h(CPUState *cpu, target_ulong x)
+{
+    return g2h(cpu, x);
+}
+
+target_ulong libafl_qemu_h2g(CPUState *cpu, void* x)
+{
+    return h2g(cpu, x);
+}
+*/
+
+CPUState* libafl_qemu_get_cpu(int cpu_index)
+{
+    CPUState *cpu;
+    CPU_FOREACH(cpu) {
+        if (cpu->cpu_index == cpu_index)
+            return cpu;
+    }
+    return NULL;
+}
+
+int libafl_qemu_num_cpus(void)
+{
+    CPUState *cpu;
+    int num = 0;
+    CPU_FOREACH(cpu) {
+        num++;
+    }
+    return num;
+}
+
+CPUState* libafl_qemu_current_cpu(void)
+{
+    return current_cpu;
+}
+
+int libafl_qemu_cpu_index(CPUState* cpu)
+{
+    if (cpu) return cpu->cpu_index;
+    return -1;
+}
+
+int libafl_qemu_write_reg(CPUState* cpu, int reg, uint8_t* val)
+{
     CPUClass *cc = CPU_GET_CLASS(cpu);
     if (reg < cc->gdb_num_core_regs) {
         return cc->gdb_write_register(cpu, val, reg);
@@ -105,16 +149,8 @@ int libafl_qemu_write_reg(int reg, uint8_t* val)
     return 0;
 }
 
-int libafl_qemu_read_reg(int reg, uint8_t* val)
+int libafl_qemu_read_reg(CPUState* cpu, int reg, uint8_t* val)
 {
-    CPUState *cpu = current_cpu;
-    if (!cpu) {
-        cpu = env_cpu(libafl_qemu_env);
-        if (!cpu) {
-            return 0;
-        }
-    }
-
     if (libafl_qemu_mem_buf == NULL) {
         libafl_qemu_mem_buf = g_byte_array_sized_new(64);
     }
@@ -131,16 +167,8 @@ int libafl_qemu_read_reg(int reg, uint8_t* val)
     return 0;
 }
 
-int libafl_qemu_num_regs(void)
+int libafl_qemu_num_regs(CPUState* cpu)
 {
-    CPUState *cpu = current_cpu;
-    if (!cpu) {
-        cpu = env_cpu(libafl_qemu_env);
-        if (!cpu) {
-            return 0;
-        }
-    }
-
     CPUClass *cc = CPU_GET_CLASS(cpu);
     return cc->gdb_num_core_regs;
 }

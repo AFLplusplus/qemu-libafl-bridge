@@ -1878,14 +1878,46 @@ static void handle_read_all_regs(GArray *params, void *user_ctx)
 static void handle_file_io(GArray *params, void *user_ctx)
 {
     if (params->len >= 1 && gdbserver_state.current_syscall_cb) {
-        target_ulong ret, err;
+        uint64_t ret;
+        int err;
 
-        ret = (target_ulong)get_param(params, 0)->val_ull;
+        ret = get_param(params, 0)->val_ull;
         if (params->len >= 2) {
-            err = (target_ulong)get_param(params, 1)->val_ull;
+            err = get_param(params, 1)->val_ull;
         } else {
             err = 0;
         }
+
+        /* Convert GDB error numbers back to host error numbers. */
+#define E(X)  case GDB_E##X: err = E##X; break
+        switch (err) {
+        case 0:
+            break;
+        E(PERM);
+        E(NOENT);
+        E(INTR);
+        E(BADF);
+        E(ACCES);
+        E(FAULT);
+        E(BUSY);
+        E(EXIST);
+        E(NODEV);
+        E(NOTDIR);
+        E(ISDIR);
+        E(INVAL);
+        E(NFILE);
+        E(MFILE);
+        E(FBIG);
+        E(NOSPC);
+        E(SPIPE);
+        E(ROFS);
+        E(NAMETOOLONG);
+        default:
+            err = EINVAL;
+            break;
+        }
+#undef E
+
         gdbserver_state.current_syscall_cb(gdbserver_state.c_cpu, ret, err);
         gdbserver_state.current_syscall_cb = NULL;
     }
@@ -2151,22 +2183,6 @@ static void handle_query_thread_extra(GArray *params, void *user_ctx)
     put_strbuf();
 }
 
-#ifdef CONFIG_USER_ONLY
-static void handle_query_offsets(GArray *params, void *user_ctx)
-{
-    TaskState *ts;
-
-    ts = gdbserver_state.c_cpu->opaque;
-    g_string_printf(gdbserver_state.str_buf,
-                    "Text=" TARGET_ABI_FMT_lx
-                    ";Data=" TARGET_ABI_FMT_lx
-                    ";Bss=" TARGET_ABI_FMT_lx,
-                    ts->info->code_offset,
-                    ts->info->data_offset,
-                    ts->info->data_offset);
-    put_strbuf();
-}
-
 //// --- Begin LibAFL code ---
 
 struct libafl_custom_gdb_cmd {
@@ -2194,6 +2210,26 @@ void libafl_qemu_gdb_reply(const char* buf, size_t len)
     memtohex(hex_buf, (const uint8_t *) buf, len);
     put_packet(hex_buf->str);
 }
+
+//// --- End LibAFL code ---
+
+#ifdef CONFIG_USER_ONLY
+static void handle_query_offsets(GArray *params, void *user_ctx)
+{
+    TaskState *ts;
+
+    ts = gdbserver_state.c_cpu->opaque;
+    g_string_printf(gdbserver_state.str_buf,
+                    "Text=" TARGET_ABI_FMT_lx
+                    ";Data=" TARGET_ABI_FMT_lx
+                    ";Bss=" TARGET_ABI_FMT_lx,
+                    ts->info->code_offset,
+                    ts->info->data_offset,
+                    ts->info->data_offset);
+    put_strbuf();
+}
+
+//// --- Begin LibAFL code ---
 
 static void handle_query_rcmd(GArray *params, void *user_ctx)
 {
@@ -2251,6 +2287,23 @@ static void handle_query_rcmd(GArray *params, void *user_ctx)
     g_assert(gdbserver_state.mem_buf->len == 0);
     len = len / 2;
     hextomem(gdbserver_state.mem_buf, get_param(params, 0)->data, len);
+
+//// --- Begin LibAFL code ---
+
+    struct libafl_custom_gdb_cmd** c = &libafl_qemu_gdb_cmds;
+    int recognized = 0;
+    while (*c) {
+        recognized |= (*c)->callback(gdbserver_state.mem_buf->data, gdbserver_state.mem_buf->len, (*c)->data);
+        c = &(*c)->next;
+    }
+
+    if (recognized) {
+        put_packet("OK");
+        return;
+    }
+
+//// --- End LibAFL code ---
+
     g_byte_array_append(gdbserver_state.mem_buf, &zero, 1);
     qemu_chr_be_write(gdbserver_state.mon_chr, gdbserver_state.mem_buf->data,
                       gdbserver_state.mem_buf->len);

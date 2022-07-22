@@ -139,6 +139,111 @@ static void rr_force_rcu(Notifier *notify, void *data)
     rr_kick_next_cpu();
 }
 
+//// --- Begin LibAFL code ---
+
+#define EXCP_LIBAFL_BP 0xf4775747
+
+void libafl_cpu_thread_fn(CPUState *cpu);
+
+static void default_libafl_start_vcpu(CPUState *cpu) {
+    libafl_cpu_thread_fn(cpu);
+}
+
+void (*libafl_start_vcpu)(CPUState *cpu) = default_libafl_start_vcpu;
+
+void libafl_cpu_thread_fn(CPUState *cpu)
+{
+    rr_start_kick_timer();
+    
+    while (1) {
+        qemu_mutex_unlock_iothread();
+        replay_mutex_lock();
+        qemu_mutex_lock_iothread();
+
+        if (icount_enabled()) {
+            /* Account partial waits to QEMU_CLOCK_VIRTUAL.  */
+            icount_account_warp_timer();
+            /*
+             * Run the timers here.  This is much more efficient than
+             * waking up the I/O thread and waiting for completion.
+             */
+            icount_handle_deadline();
+        }
+
+        replay_mutex_unlock();
+
+        if (!cpu) {
+            cpu = first_cpu;
+        }
+
+        while (cpu && cpu_work_list_empty(cpu) && !cpu->exit_request) {
+
+            qatomic_mb_set(&rr_current_cpu, cpu);
+            current_cpu = cpu;
+
+            qemu_clock_enable(QEMU_CLOCK_VIRTUAL,
+                              (cpu->singlestep_enabled & SSTEP_NOTIMER) == 0);
+
+            if (cpu_can_run(cpu)) {
+                int r;
+
+                qemu_mutex_unlock_iothread();
+                if (icount_enabled()) {
+                    icount_prepare_for_run(cpu);
+                }
+                r = tcg_cpus_exec(cpu);
+                if (icount_enabled()) {
+                    icount_process_data(cpu);
+                }
+                qemu_mutex_lock_iothread();
+
+                // TODO(libafl) should we have the iothread lock on?
+                if (r == EXCP_LIBAFL_BP) {
+                    rr_stop_kick_timer();
+                    return;
+                }
+
+                if (r == EXCP_DEBUG) {
+                    cpu_handle_guest_debug(cpu);
+                    break;
+                } else if (r == EXCP_ATOMIC) {
+                    qemu_mutex_unlock_iothread();
+                    cpu_exec_step_atomic(cpu);
+                    qemu_mutex_lock_iothread();
+                    break;
+                }
+            } else if (cpu->stop) {
+                if (cpu->unplug) {
+                    cpu = CPU_NEXT(cpu);
+                }
+                break;
+            }
+
+            cpu = CPU_NEXT(cpu);
+        } /* while (cpu && !cpu->exit_request).. */
+
+        /* Does not need qatomic_mb_set because a spurious wakeup is okay.  */
+        qatomic_set(&rr_current_cpu, NULL);
+
+        if (cpu && cpu->exit_request) {
+            qatomic_mb_set(&cpu->exit_request, 0);
+        }
+
+        if (icount_enabled() && all_cpu_threads_idle()) {
+            /*
+             * When all cpus are sleeping (e.g in WFI), to avoid a deadlock
+             * in the main_loop, wake it up in order to start the warp timer.
+             */
+            qemu_notify_event();
+        }
+
+        rr_wait_io_event();
+        rr_deal_with_unplugged_cpus();
+    }
+}
+
+//// --- End LibAFL code ---
+
 /*
  * In the single-threaded case each vCPU is simulated in turn. If
  * there is more than a single vCPU we create a simple timer to kick
@@ -152,7 +257,9 @@ static void *rr_cpu_thread_fn(void *arg)
     Notifier force_rcu;
     CPUState *cpu = arg;
 
-    assert(tcg_enabled());
+    g_assert(tcg_enabled());
+    tcg_cpu_init_cflags(cpu, false);
+
     rcu_register_thread();
     force_rcu.notify = rr_force_rcu;
     rcu_add_force_rcu_notifier(&force_rcu);
@@ -177,12 +284,24 @@ static void *rr_cpu_thread_fn(void *arg)
         }
     }
 
-    rr_start_kick_timer();
+    // rr_start_kick_timer();
 
     cpu = first_cpu;
 
     /* process any pending work */
     cpu->exit_request = 1;
+
+    //// --- Begin LibAFL code ---
+
+    libafl_start_vcpu(cpu);
+
+    rcu_remove_force_rcu_notifier(&force_rcu);
+    rcu_unregister_thread();
+    return NULL;
+
+    //// --- End LibAFL code ---
+
+    // The following dead code is from the original QEMU codebase
 
     while (1) {
         qemu_mutex_unlock_iothread();
@@ -274,9 +393,6 @@ void rr_start_vcpu_thread(CPUState *cpu)
     char thread_name[VCPU_THREAD_NAME_SIZE];
     static QemuCond *single_tcg_halt_cond;
     static QemuThread *single_tcg_cpu_thread;
-
-    g_assert(tcg_enabled());
-    tcg_cpu_init_cflags(cpu, false);
 
     if (!single_tcg_cpu_thread) {
         cpu->thread = g_new0(QemuThread, 1);

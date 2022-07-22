@@ -82,6 +82,14 @@ static bool check_tcg_memory_orders_compatible(void)
 
 static bool default_mttcg_enabled(void)
 {
+
+//// --- Begin LibAFL code ---
+
+    // Only the RR ops works with libafl_qemu, so avoid MTTCG by default
+    return false;
+
+//// --- End LibAFL code ---
+
     if (icount_enabled() || TCG_OVERSIZED_GUEST) {
         return false;
     } else {

@@ -43,6 +43,15 @@ extern struct libafl_hook* libafl_qemu_hooks;
 
 struct libafl_hook* libafl_search_hook(target_ulong addr);
 
+struct libafl_backdoor_hook {
+    void (*exec)(target_ulong pc, uint64_t data);
+    uint64_t data;
+    TCGHelperInfo helper_info;
+    struct libafl_backdoor_hook* next;
+};
+
+extern struct libafl_backdoor_hook* libafl_backdoor_hooks;
+
 //// --- End LibAFL code ---
 
 /* Pairs with tcg_clear_temp_count.
@@ -146,6 +155,41 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
 
         libafl_gen_cur_pc = db->pc_next;
 
+        // 0x0f, 0x3a, 0xf2, 0x44
+        uint8_t backdoor = translator_ldub(cpu->env_ptr, db, db->pc_next);
+        if (backdoor == 0x0f) {
+            backdoor = translator_ldub(cpu->env_ptr, db, db->pc_next +1);
+            if (backdoor == 0x3a) {
+                backdoor = translator_ldub(cpu->env_ptr, db, db->pc_next +2);
+                if (backdoor == 0xf2) {
+                    backdoor = translator_ldub(cpu->env_ptr, db, db->pc_next +3);
+                    if (backdoor == 0x44) {
+                        struct libafl_backdoor_hook* hk = libafl_backdoor_hooks;
+                        while (hk) {
+                            TCGv tmp0 = tcg_const_tl(db->pc_next);
+                            TCGv_i64 tmp1 = tcg_const_i64(hk->data);
+#if TARGET_LONG_BITS == 32
+                            TCGTemp *tmp2[2] = { tcgv_i32_temp(tmp0), tcgv_i64_temp(tmp1) };
+#else
+                            TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
+#endif
+                            tcg_gen_callN(hk->exec, NULL, 2, tmp2);
+#if TARGET_LONG_BITS == 32
+                            tcg_temp_free_i32(tmp0);
+#else
+                            tcg_temp_free_i64(tmp0);
+#endif
+                            tcg_temp_free_i64(tmp1);
+                            hk = hk->next;
+                        }
+
+                        db->pc_next += 4;
+                        goto post_translate_insn;
+                    }
+                }
+            }
+        }
+
         //// --- End LibAFL code ---
 
         /* Disassemble one instruction.  The translate_insn hook should
@@ -161,6 +205,8 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
             tcg_debug_assert(!(cflags & CF_MEMI_ONLY));
             ops->translate_insn(db, cpu);
         }
+
+post_translate_insn:
 
         /* Stop translation if translate_insn so indicated.  */
         if (db->is_jmp != DISAS_NEXT) {

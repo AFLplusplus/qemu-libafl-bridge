@@ -981,7 +981,8 @@ static void select_vgahw(const MachineClass *machine_class, const char *p)
 
             if (vga_interface_available(t) && ti->opt_name) {
                 printf("%-20s %s%s\n", ti->opt_name, ti->name ?: "",
-                       g_str_equal(ti->opt_name, def) ? " (default)" : "");
+                        (def && g_str_equal(ti->opt_name, def)) ?
+                        " (default)" : "");
             }
         }
         exit(0);
@@ -1521,13 +1522,18 @@ machine_parse_property_opt(QemuOptsList *opts_list, const char *propname,
 }
 
 static const char *pid_file;
-static Notifier qemu_unlink_pidfile_notifier;
+struct UnlinkPidfileNotifier {
+    Notifier notifier;
+    char *pid_file_realpath;
+};
+static struct UnlinkPidfileNotifier qemu_unlink_pidfile_notifier;
 
 static void qemu_unlink_pidfile(Notifier *n, void *data)
 {
-    if (pid_file) {
-        unlink(pid_file);
-    }
+    struct UnlinkPidfileNotifier *upn;
+
+    upn = DO_UPCAST(struct UnlinkPidfileNotifier, notifier, n);
+    unlink(upn->pid_file_realpath);
 }
 
 static const QEMUOption *lookup_opt(int argc, char **argv,
@@ -1917,8 +1923,7 @@ static void qemu_create_late_backends(void)
         exit(1);
 
     /* now chardevs have been created we may have semihosting to connect */
-    qemu_semihosting_connect_chardevs();
-    qemu_semihosting_console_init();
+    qemu_semihosting_chardev_init();
 }
 
 static void qemu_resolve_machine_memdev(void)
@@ -2271,8 +2276,7 @@ static void configure_accelerators(const char *progname)
     }
 
     if (init_failed && !qtest_chrdev) {
-        AccelClass *ac = ACCEL_GET_CLASS(current_accel());
-        error_report("falling back to %s", ac->name);
+        error_report("falling back to %s", current_accel_name());
     }
 
     if (icount_enabled() && !tcg_enabled()) {
@@ -2432,13 +2436,30 @@ static void qemu_maybe_daemonize(const char *pid_file)
     os_daemonize();
     rcu_disable_atfork();
 
-    if (pid_file && !qemu_write_pidfile(pid_file, &err)) {
-        error_reportf_err(err, "cannot create PID file: ");
-        exit(1);
-    }
+    if (pid_file) {
+        char *pid_file_realpath = NULL;
 
-    qemu_unlink_pidfile_notifier.notify = qemu_unlink_pidfile;
-    qemu_add_exit_notifier(&qemu_unlink_pidfile_notifier);
+        if (!qemu_write_pidfile(pid_file, &err)) {
+            error_reportf_err(err, "cannot create PID file: ");
+            exit(1);
+        }
+
+        pid_file_realpath = g_malloc0(PATH_MAX);
+        if (!realpath(pid_file, pid_file_realpath)) {
+            error_report("cannot resolve PID file path: %s: %s",
+                         pid_file, strerror(errno));
+            unlink(pid_file);
+            exit(1);
+        }
+
+        qemu_unlink_pidfile_notifier = (struct UnlinkPidfileNotifier) {
+            .notifier = {
+                .notify = qemu_unlink_pidfile,
+            },
+            .pid_file_realpath = pid_file_realpath,
+        };
+        qemu_add_exit_notifier(&qemu_unlink_pidfile_notifier.notifier);
+    }
 }
 
 static void qemu_init_displays(void)

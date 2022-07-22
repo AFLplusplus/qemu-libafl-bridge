@@ -35,6 +35,15 @@
 #include <sys/sysctl.h>
 #endif
 
+#ifdef __HAIKU__
+#include <kernel/image.h>
+#endif
+
+#ifdef G_OS_WIN32
+#include <pathcch.h>
+#include <wchar.h>
+#endif
+
 #include "qemu/ctype.h"
 #include "qemu/cutils.h"
 #include "qemu/error-report.h"
@@ -872,6 +881,25 @@ int parse_debug_env(const char *name, int max, int initial)
     return debug;
 }
 
+const char *si_prefix(unsigned int exp10)
+{
+    static const char *prefixes[] = {
+        "a", "f", "p", "n", "u", "m", "", "K", "M", "G", "T", "P", "E"
+    };
+
+    exp10 += 18;
+    assert(exp10 % 3 == 0 && exp10 / 3 < ARRAY_SIZE(prefixes));
+    return prefixes[exp10 / 3];
+}
+
+const char *iec_binary_prefix(unsigned int exp2)
+{
+    static const char *prefixes[] = { "", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei" };
+
+    assert(exp2 % 10 == 0 && exp2 / 10 < ARRAY_SIZE(prefixes));
+    return prefixes[exp2 / 10];
+}
+
 /*
  * Return human readable string for size @val.
  * @val can be anything that uint64_t allows (no more than "16 EiB").
@@ -880,7 +908,6 @@ int parse_debug_env(const char *name, int max, int initial)
  */
 char *size_to_str(uint64_t val)
 {
-    static const char *suffixes[] = { "", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei" };
     uint64_t div;
     int i;
 
@@ -891,25 +918,23 @@ char *size_to_str(uint64_t val)
      * (see e41b509d68afb1f for more info)
      */
     frexp(val / (1000.0 / 1024.0), &i);
-    i = (i - 1) / 10;
-    div = 1ULL << (i * 10);
+    i = (i - 1) / 10 * 10;
+    div = 1ULL << i;
 
-    return g_strdup_printf("%0.3g %sB", (double)val / div, suffixes[i]);
+    return g_strdup_printf("%0.3g %sB", (double)val / div, iec_binary_prefix(i));
 }
 
 char *freq_to_str(uint64_t freq_hz)
 {
-    static const char *const suffixes[] = { "", "K", "M", "G", "T", "P", "E" };
     double freq = freq_hz;
-    size_t idx = 0;
+    size_t exp10 = 0;
 
     while (freq >= 1000.0) {
         freq /= 1000.0;
-        idx++;
+        exp10 += 3;
     }
-    assert(idx < ARRAY_SIZE(suffixes));
 
-    return g_strdup_printf("%0.3g %sHz", freq, suffixes[idx]);
+    return g_strdup_printf("%0.3g %sHz", freq, si_prefix(exp10));
 }
 
 int qemu_pstrcmp0(const char **str1, const char **str2)
@@ -1058,31 +1083,52 @@ char *get_relocated_path(const char *dir)
 
     /* Fail if qemu_init_exec_dir was not called.  */
     assert(exec_dir[0]);
-    if (!starts_with_prefix(dir) || !starts_with_prefix(bindir)) {
-        return g_strdup(dir);
-    }
 
     result = g_string_new(exec_dir);
+    g_string_append(result, "/qemu-bundle");
+    if (access(result->str, R_OK) == 0) {
+#ifdef G_OS_WIN32
+        size_t size = mbsrtowcs(NULL, &dir, 0, &(mbstate_t){0}) + 1;
+        PWSTR wdir = g_new(WCHAR, size);
+        mbsrtowcs(wdir, &dir, size, &(mbstate_t){0});
 
-    /* Advance over common components.  */
-    len_dir = len_bindir = prefix_len;
-    do {
-        dir += len_dir;
-        bindir += len_bindir;
-        dir = next_component(dir, &len_dir);
-        bindir = next_component(bindir, &len_bindir);
-    } while (len_dir && len_dir == len_bindir && !memcmp(dir, bindir, len_dir));
+        PCWSTR wdir_skipped_root;
+        PathCchSkipRoot(wdir, &wdir_skipped_root);
 
-    /* Ascend from bindir to the common prefix with dir.  */
-    while (len_bindir) {
-        bindir += len_bindir;
-        g_string_append(result, "/..");
-        bindir = next_component(bindir, &len_bindir);
+        size = wcsrtombs(NULL, &wdir_skipped_root, 0, &(mbstate_t){0});
+        char *cursor = result->str + result->len;
+        g_string_set_size(result, result->len + size);
+        wcsrtombs(cursor, &wdir_skipped_root, size + 1, &(mbstate_t){0});
+        g_free(wdir);
+#else
+        g_string_append(result, dir);
+#endif
+    } else if (!starts_with_prefix(dir) || !starts_with_prefix(bindir)) {
+        g_string_assign(result, dir);
+    } else {
+        g_string_assign(result, exec_dir);
+
+        /* Advance over common components.  */
+        len_dir = len_bindir = prefix_len;
+        do {
+            dir += len_dir;
+            bindir += len_bindir;
+            dir = next_component(dir, &len_dir);
+            bindir = next_component(bindir, &len_bindir);
+        } while (len_dir && len_dir == len_bindir && !memcmp(dir, bindir, len_dir));
+
+        /* Ascend from bindir to the common prefix with dir.  */
+        while (len_bindir) {
+            bindir += len_bindir;
+            g_string_append(result, "/..");
+            bindir = next_component(bindir, &len_bindir);
+        }
+
+        if (*dir) {
+            assert(G_IS_DIR_SEPARATOR(dir[-1]));
+            g_string_append(result, dir - 1);
+        }
     }
 
-    if (*dir) {
-        assert(G_IS_DIR_SEPARATOR(dir[-1]));
-        g_string_append(result, dir - 1);
-    }
     return g_string_free(result, false);
 }

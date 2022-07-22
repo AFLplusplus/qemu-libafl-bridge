@@ -70,6 +70,8 @@ static void *mttcg_cpu_thread_fn(void *arg)
     assert(tcg_enabled());
     g_assert(!icount_enabled());
 
+    tcg_cpu_init_cflags(cpu, current_machine->smp.max_cpus > 1);
+
     rcu_register_thread();
     force_rcu.notifier.notify = mttcg_force_rcu;
     force_rcu.cpu = cpu;
@@ -95,6 +97,16 @@ static void *mttcg_cpu_thread_fn(void *arg)
             r = tcg_cpus_exec(cpu);
             qemu_mutex_lock_iothread();
             switch (r) {
+
+//// --- Begin LibAFL code ---
+
+#define EXCP_LIBAFL_BP 0xf4775747
+
+            case EXCP_LIBAFL_BP:
+                break;
+
+//// --- End LibAFL code ---
+
             case EXCP_DEBUG:
                 cpu_handle_guest_debug(cpu);
                 break;
@@ -138,9 +150,6 @@ void mttcg_kick_vcpu_thread(CPUState *cpu)
 void mttcg_start_vcpu_thread(CPUState *cpu)
 {
     char thread_name[VCPU_THREAD_NAME_SIZE];
-
-    g_assert(tcg_enabled());
-    tcg_cpu_init_cflags(cpu, current_machine->smp.max_cpus > 1);
 
     cpu->thread = g_new0(QemuThread, 1);
     cpu->halt_cond = g_malloc0(sizeof(QemuCond));

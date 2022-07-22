@@ -79,6 +79,7 @@ void libafl_gen_read_N(TCGv addr, size_t size);
 void libafl_gen_write(TCGv addr, MemOp ot);
 void libafl_gen_write_N(TCGv addr, size_t size);
 void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot);
+void libafl_gen_backdoor(target_ulong pc);
 
 static TCGHelperInfo libafl_exec_edge_hook_info = {
     .func = NULL, .name = "libafl_exec_edge_hook", \
@@ -654,6 +655,37 @@ void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot)
         }
         hook = hook->next;
     }
+}
+
+static TCGHelperInfo libafl_exec_backdoor_hook_info = {
+    .func = NULL, .name = "libafl_exec_backdoor_hook", \
+    .flags = dh_callflag(void), \
+    .typemask = dh_typemask(void, 0) | dh_typemask(tl, 1) | dh_typemask(i64, 2)
+};
+
+struct libafl_backdoor_hook {
+    void (*exec)(target_ulong pc, uint64_t data);
+    uint64_t data;
+    TCGHelperInfo helper_info;
+    struct libafl_backdoor_hook* next;
+};
+
+struct libafl_backdoor_hook* libafl_backdoor_hooks;
+
+void libafl_add_backdoor_hook(void (*exec)(target_ulong pc, uint64_t data),
+                              uint64_t data);
+void libafl_add_backdoor_hook(void (*exec)(uint64_t id, uint64_t data),
+                              uint64_t data)
+{
+    struct libafl_backdoor_hook* hook = malloc(sizeof(struct libafl_backdoor_hook));
+    hook->exec = exec;
+    hook->data = data;
+    hook->next = libafl_backdoor_hooks;
+    libafl_backdoor_hooks = hook;
+    
+    memcpy(&hook->helper_info, &libafl_exec_backdoor_hook_info, sizeof(TCGHelperInfo));
+    hook->helper_info.func = exec;
+    libafl_helper_table_add(&hook->helper_info);
 }
 
 //// --- End LibAFL code ---
@@ -3063,6 +3095,15 @@ int page_get_flags(target_ulong address)
     return p->flags;
 }
 
+/*
+ * Allow the target to decide if PAGE_TARGET_[12] may be reset.
+ * By default, they are not kept.
+ */
+#ifndef PAGE_TARGET_STICKY
+#define PAGE_TARGET_STICKY  0
+#endif
+#define PAGE_STICKY  (PAGE_ANON | PAGE_TARGET_STICKY)
+
 /* Modify the flags of a page and invalidate the code if necessary.
    The flag PAGE_WRITE_ORG is positioned automatically depending
    on PAGE_WRITE.  The mmap_lock should already be held.  */
@@ -3106,8 +3147,8 @@ void page_set_flags(target_ulong start, target_ulong end, int flags)
             p->target_data = NULL;
             p->flags = flags;
         } else {
-            /* Using mprotect on a page does not change MAP_ANON. */
-            p->flags = (p->flags & PAGE_ANON) | flags;
+            /* Using mprotect on a page does not change sticky bits. */
+            p->flags = (p->flags & PAGE_STICKY) | flags;
         }
     }
 }

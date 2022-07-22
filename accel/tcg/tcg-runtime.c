@@ -33,13 +33,71 @@
 
 //// --- Begin LibAFL code ---
 
+#ifndef CONFIG_USER_ONLY
+
+#include "sysemu/runstate.h"
+#include "migration/snapshot.h"
+#include "qapi/error.h"
+#include "qemu/error-report.h"
+#include "qemu/main-loop.h"
+
+void libafl_save_qemu_snapshot(char *name);
+void libafl_load_qemu_snapshot(char *name);
+
+static void save_snapshot_cb(void* opaque)
+{
+    char* name = (char*)opaque;
+    Error *err = NULL;
+    if(!save_snapshot(name, true, NULL, false, NULL, &err)) {
+        error_report_err(err);
+        error_report("Could not save snapshot");
+    }
+}
+
+void libafl_save_qemu_snapshot(char *name)
+{
+    aio_bh_schedule_oneshot_full(qemu_get_aio_context(), save_snapshot_cb, (void*)name, "save_snapshot");
+}
+
+static void load_snapshot_cb(void* opaque)
+{
+    char* name = (char*)opaque;
+    Error *err = NULL;
+
+    int saved_vm_running = runstate_is_running();
+    vm_stop(RUN_STATE_RESTORE_VM);
+
+    bool loaded = load_snapshot(name, NULL, false, NULL, &err);
+
+    if(!loaded) {
+        error_report_err(err);
+        error_report("Could not load snapshot");
+    }
+    if (loaded && saved_vm_running) {
+        vm_start();
+    }
+}
+
+void libafl_load_qemu_snapshot(char *name)
+{
+    aio_bh_schedule_oneshot_full(qemu_get_aio_context(), load_snapshot_cb, (void*)name, "load_snapshot");
+}
+
+#endif
+
 #define EXCP_LIBAFL_BP 0xf4775747
+
+void libafl_qemu_trigger_breakpoint(CPUState* cpu);
+
+void libafl_qemu_trigger_breakpoint(CPUState* cpu)
+{
+    cpu->exception_index = EXCP_LIBAFL_BP;
+    cpu_loop_exit(cpu);
+}
 
 void HELPER(libafl_qemu_handle_breakpoint)(CPUArchState *env)
 {
-    CPUState* cpu = env_cpu(env);
-    cpu->exception_index = EXCP_LIBAFL_BP;
-    cpu_loop_exit(cpu);
+    libafl_qemu_trigger_breakpoint(env_cpu(env));
 }
 
 //// --- End LibAFL code ---

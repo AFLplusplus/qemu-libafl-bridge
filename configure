@@ -693,6 +693,21 @@ meson_option_build_array() {
   printf ']\n'
 }
 
+meson_option_build_array() {
+  printf '['
+  (if test "$targetos" == windows; then
+    IFS=\;
+  else
+    IFS=:
+  fi
+  for e in $1; do
+    e=${e/'\'/'\\'}
+    e=${e/\"/'\"'}
+    printf '"""%s""",' "$e"
+  done)
+  printf ']\n'
+}
+
 . $source_path/scripts/meson-buildoptions.sh
 
 meson_options=

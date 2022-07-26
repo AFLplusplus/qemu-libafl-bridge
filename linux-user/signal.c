@@ -764,7 +764,7 @@ void dump_core_and_abort(int target_sig)
     sigfillset(&act.sa_mask);
     act.sa_handler = SIG_DFL;
     act.sa_flags = 0;
-    sigaction(host_sig, &act, NULL);
+    // sigaction(host_sig, &act, NULL); // LibAFL uses it's own handler
 
     /* For some reason raise(host_sig) doesn't send the signal when
      * statically linked on x86-64. */

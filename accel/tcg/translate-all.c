@@ -674,7 +674,7 @@ struct libafl_backdoor_hook* libafl_backdoor_hooks;
 
 void libafl_add_backdoor_hook(void (*exec)(target_ulong pc, uint64_t data),
                               uint64_t data);
-void libafl_add_backdoor_hook(void (*exec)(uint64_t id, uint64_t data),
+void libafl_add_backdoor_hook(void (*exec)(target_ulong id, uint64_t data),
                               uint64_t data)
 {
     struct libafl_backdoor_hook* hook = malloc(sizeof(struct libafl_backdoor_hook));

@@ -38,45 +38,45 @@ option('trace_file', type: 'string', value: 'trace',
 # on the configure script command line.  After adding an option
 # here make sure to run "make update-buildoptions".
 
-option('docs', type : 'feature', value : 'auto',
+option('docs', type : 'feature', value : 'disabled',
        description: 'Documentations build support')
 option('fuzzing', type : 'boolean', value: false,
        description: 'build fuzzing targets')
-option('gettext', type : 'feature', value : 'auto',
+option('gettext', type : 'feature', value : 'disabled',
        description: 'Localization of the GTK+ user interface')
 option('module_upgrades', type : 'boolean', value : false,
        description: 'try to load modules from alternate paths for upgrades')
 option('install_blobs', type : 'boolean', value : true,
        description: 'install provided firmware blobs')
-option('sparse', type : 'feature', value : 'auto',
+option('sparse', type : 'feature', value : 'disabled',
        description: 'sparse checker')
-option('guest_agent', type : 'feature', value : 'auto',
+option('guest_agent', type : 'feature', value : 'disabled',
        description: 'Build QEMU Guest Agent')
-option('guest_agent_msi', type : 'feature', value : 'auto',
+option('guest_agent_msi', type : 'feature', value : 'disabled',
        description: 'Build MSI package for the QEMU Guest Agent')
-option('tools', type : 'feature', value : 'auto',
+option('tools', type : 'feature', value : 'disabled',
        description: 'build support utilities that come with QEMU')
-option('qga_vss', type : 'feature', value: 'auto',
+option('qga_vss', type : 'feature', value: 'disabled',
        description: 'build QGA VSS support (broken with MinGW)')
 
-option('malloc_trim', type : 'feature', value : 'auto',
+option('malloc_trim', type : 'feature', value : 'disabled',
        description: 'enable libc malloc_trim() for memory optimization')
 option('malloc', type : 'combo', choices : ['system', 'tcmalloc', 'jemalloc'],
        value: 'system', description: 'choose memory allocator to use')
 
-option('kvm', type: 'feature', value: 'auto',
+option('kvm', type: 'feature', value: 'disabled',
        description: 'KVM acceleration support')
-option('hax', type: 'feature', value: 'auto',
+option('hax', type: 'feature', value: 'disabled',
        description: 'HAX acceleration support')
-option('whpx', type: 'feature', value: 'auto',
+option('whpx', type: 'feature', value: 'disabled',
        description: 'WHPX acceleration support')
-option('hvf', type: 'feature', value: 'auto',
+option('hvf', type: 'feature', value: 'disabled',
        description: 'HVF acceleration support')
-option('nvmm', type: 'feature', value: 'auto',
+option('nvmm', type: 'feature', value: 'disabled',
        description: 'NVMM acceleration support')
-option('xen', type: 'feature', value: 'auto',
+option('xen', type: 'feature', value: 'disabled',
        description: 'Xen backend support')
-option('xen_pci_passthrough', type: 'feature', value: 'auto',
+option('xen_pci_passthrough', type: 'feature', value: 'disabled',
        description: 'Xen PCI passthrough support')
 option('tcg', type: 'feature', value: 'enabled',
        description: 'TCG support')
@@ -86,13 +86,13 @@ option('cfi', type: 'boolean', value: 'false',
        description: 'Control-Flow Integrity (CFI)')
 option('cfi_debug', type: 'boolean', value: 'false',
        description: 'Verbose errors in case of CFI violation')
-option('multiprocess', type: 'feature', value: 'auto',
+option('multiprocess', type: 'feature', value: 'disabled',
        description: 'Out of process device emulation support')
 option('vfio_user_server', type: 'feature', value: 'disabled',
        description: 'vfio-user server support')
-option('dbus_display', type: 'feature', value: 'auto',
+option('dbus_display', type: 'feature', value: 'disabled',
        description: '-display dbus support')
-option('tpm', type : 'feature', value : 'auto',
+option('tpm', type : 'feature', value : 'disabled',
        description: 'TPM support')
 
 # Do not enable it by default even for Mingw32, because it doesn't
@@ -100,198 +100,198 @@ option('tpm', type : 'feature', value : 'auto',
 option('membarrier', type: 'feature', value: 'disabled',
        description: 'membarrier system call (for Linux 4.14+ or Windows')
 
-option('avx2', type: 'feature', value: 'auto',
+option('avx2', type: 'feature', value: 'disabled',
        description: 'AVX2 optimizations')
 option('avx512f', type: 'feature', value: 'disabled',
        description: 'AVX512F optimizations')
-option('keyring', type: 'feature', value: 'auto',
+option('keyring', type: 'feature', value: 'disabled',
        description: 'Linux keyring support')
 
-option('attr', type : 'feature', value : 'auto',
+option('attr', type : 'feature', value : 'disabled',
        description: 'attr/xattr support')
-option('auth_pam', type : 'feature', value : 'auto',
+option('auth_pam', type : 'feature', value : 'disabled',
        description: 'PAM access control')
-option('brlapi', type : 'feature', value : 'auto',
+option('brlapi', type : 'feature', value : 'disabled',
        description: 'brlapi character device driver')
-option('bzip2', type : 'feature', value : 'auto',
+option('bzip2', type : 'feature', value : 'disabled',
        description: 'bzip2 support for DMG images')
-option('cap_ng', type : 'feature', value : 'auto',
+option('cap_ng', type : 'feature', value : 'disabled',
        description: 'cap_ng support')
-option('bpf', type : 'feature', value : 'auto',
+option('bpf', type : 'feature', value : 'disabled',
         description: 'eBPF support')
-option('cocoa', type : 'feature', value : 'auto',
+option('cocoa', type : 'feature', value : 'disabled',
        description: 'Cocoa user interface (macOS only)')
-option('curl', type : 'feature', value : 'auto',
+option('curl', type : 'feature', value : 'disabled',
        description: 'CURL block device driver')
-option('gio', type : 'feature', value : 'auto',
+option('gio', type : 'feature', value : 'disabled',
        description: 'use libgio for D-Bus support')
-option('glusterfs', type : 'feature', value : 'auto',
+option('glusterfs', type : 'feature', value : 'disabled',
        description: 'Glusterfs block device driver')
-option('libiscsi', type : 'feature', value : 'auto',
+option('libiscsi', type : 'feature', value : 'disabled',
        description: 'libiscsi userspace initiator')
-option('libnfs', type : 'feature', value : 'auto',
+option('libnfs', type : 'feature', value : 'disabled',
        description: 'libnfs block device driver')
-option('mpath', type : 'feature', value : 'auto',
+option('mpath', type : 'feature', value : 'disabled',
        description: 'Multipath persistent reservation passthrough')
-option('numa', type : 'feature', value : 'auto',
+option('numa', type : 'feature', value : 'disabled',
        description: 'libnuma support')
-option('iconv', type : 'feature', value : 'auto',
+option('iconv', type : 'feature', value : 'disabled',
        description: 'Font glyph conversion support')
-option('curses', type : 'feature', value : 'auto',
+option('curses', type : 'feature', value : 'disabled',
        description: 'curses UI')
-option('gnutls', type : 'feature', value : 'auto',
+option('gnutls', type : 'feature', value : 'disabled',
        description: 'GNUTLS cryptography support')
-option('nettle', type : 'feature', value : 'auto',
+option('nettle', type : 'feature', value : 'disabled',
        description: 'nettle cryptography support')
-option('gcrypt', type : 'feature', value : 'auto',
+option('gcrypt', type : 'feature', value : 'disabled',
        description: 'libgcrypt cryptography support')
 option('crypto_afalg', type : 'feature', value : 'disabled',
        description: 'Linux AF_ALG crypto backend driver')
-option('libdaxctl', type : 'feature', value : 'auto',
+option('libdaxctl', type : 'feature', value : 'disabled',
        description: 'libdaxctl support')
-option('libpmem', type : 'feature', value : 'auto',
+option('libpmem', type : 'feature', value : 'disabled',
        description: 'libpmem support')
-option('libssh', type : 'feature', value : 'auto',
+option('libssh', type : 'feature', value : 'disabled',
        description: 'ssh block device support')
-option('libudev', type : 'feature', value : 'auto',
+option('libudev', type : 'feature', value : 'disabled',
        description: 'Use libudev to enumerate host devices')
-option('libusb', type : 'feature', value : 'auto',
+option('libusb', type : 'feature', value : 'disabled',
        description: 'libusb support for USB passthrough')
-option('linux_aio', type : 'feature', value : 'auto',
+option('linux_aio', type : 'feature', value : 'disabled',
        description: 'Linux AIO support')
-option('linux_io_uring', type : 'feature', value : 'auto',
+option('linux_io_uring', type : 'feature', value : 'disabled',
        description: 'Linux io_uring support')
-option('lzfse', type : 'feature', value : 'auto',
+option('lzfse', type : 'feature', value : 'disabled',
        description: 'lzfse support for DMG images')
-option('lzo', type : 'feature', value : 'auto',
+option('lzo', type : 'feature', value : 'disabled',
        description: 'lzo compression support')
-option('rbd', type : 'feature', value : 'auto',
+option('rbd', type : 'feature', value : 'disabled',
        description: 'Ceph block device driver')
-option('opengl', type : 'feature', value : 'auto',
+option('opengl', type : 'feature', value : 'disabled',
        description: 'OpenGL support')
-option('rdma', type : 'feature', value : 'auto',
+option('rdma', type : 'feature', value : 'disabled',
        description: 'Enable RDMA-based migration')
-option('pvrdma', type : 'feature', value : 'auto',
+option('pvrdma', type : 'feature', value : 'disabled',
        description: 'Enable PVRDMA support')
-option('gtk', type : 'feature', value : 'auto',
+option('gtk', type : 'feature', value : 'disabled',
        description: 'GTK+ user interface')
-option('sdl', type : 'feature', value : 'auto',
+option('sdl', type : 'feature', value : 'disabled',
        description: 'SDL user interface')
-option('sdl_image', type : 'feature', value : 'auto',
+option('sdl_image', type : 'feature', value : 'disabled',
        description: 'SDL Image support for icons')
-option('seccomp', type : 'feature', value : 'auto',
+option('seccomp', type : 'feature', value : 'disabled',
        description: 'seccomp support')
-option('smartcard', type : 'feature', value : 'auto',
+option('smartcard', type : 'feature', value : 'disabled',
        description: 'CA smartcard emulation support')
-option('snappy', type : 'feature', value : 'auto',
+option('snappy', type : 'feature', value : 'disabled',
        description: 'snappy compression support')
-option('spice', type : 'feature', value : 'auto',
+option('spice', type : 'feature', value : 'disabled',
        description: 'Spice server support')
-option('spice_protocol', type : 'feature', value : 'auto',
+option('spice_protocol', type : 'feature', value : 'disabled',
        description: 'Spice protocol support')
-option('u2f', type : 'feature', value : 'auto',
+option('u2f', type : 'feature', value : 'disabled',
        description: 'U2F emulation support')
-option('canokey', type : 'feature', value : 'auto',
+option('canokey', type : 'feature', value : 'disabled',
        description: 'CanoKey support')
-option('usb_redir', type : 'feature', value : 'auto',
+option('usb_redir', type : 'feature', value : 'disabled',
        description: 'libusbredir support')
-option('l2tpv3', type : 'feature', value : 'auto',
+option('l2tpv3', type : 'feature', value : 'disabled',
        description: 'l2tpv3 network backend support')
-option('netmap', type : 'feature', value : 'auto',
+option('netmap', type : 'feature', value : 'disabled',
        description: 'netmap network backend support')
-option('vde', type : 'feature', value : 'auto',
+option('vde', type : 'feature', value : 'disabled',
        description: 'vde network backend support')
-option('vmnet', type : 'feature', value : 'auto',
+option('vmnet', type : 'feature', value : 'disabled',
        description: 'vmnet.framework network backend support')
-option('virglrenderer', type : 'feature', value : 'auto',
+option('virglrenderer', type : 'feature', value : 'disabled',
        description: 'virgl rendering support')
-option('png', type : 'feature', value : 'auto',
+option('png', type : 'feature', value : 'disabled',
        description: 'PNG support with libpng')
-option('vnc', type : 'feature', value : 'auto',
+option('vnc', type : 'feature', value : 'disabled',
        description: 'VNC server')
-option('vnc_jpeg', type : 'feature', value : 'auto',
+option('vnc_jpeg', type : 'feature', value : 'disabled',
        description: 'JPEG lossy compression for VNC server')
-option('vnc_sasl', type : 'feature', value : 'auto',
+option('vnc_sasl', type : 'feature', value : 'disabled',
        description: 'SASL authentication for VNC server')
-option('vte', type : 'feature', value : 'auto',
+option('vte', type : 'feature', value : 'disabled',
        description: 'vte support for the gtk UI')
-option('xkbcommon', type : 'feature', value : 'auto',
+option('xkbcommon', type : 'feature', value : 'disabled',
        description: 'xkbcommon support')
-option('zstd', type : 'feature', value : 'auto',
+option('zstd', type : 'feature', value : 'disabled',
        description: 'zstd compression support')
-option('fuse', type: 'feature', value: 'auto',
+option('fuse', type: 'feature', value: 'disabled',
        description: 'FUSE block device export')
-option('fuse_lseek', type : 'feature', value : 'auto',
+option('fuse_lseek', type : 'feature', value : 'disabled',
        description: 'SEEK_HOLE/SEEK_DATA support for FUSE exports')
 
 option('trace_backends', type: 'array', value: ['log'],
        choices: ['dtrace', 'ftrace', 'log', 'nop', 'simple', 'syslog', 'ust'],
        description: 'Set available tracing backends')
 
-option('alsa', type: 'feature', value: 'auto',
+option('alsa', type: 'feature', value: 'disabled',
        description: 'ALSA sound support')
-option('coreaudio', type: 'feature', value: 'auto',
+option('coreaudio', type: 'feature', value: 'disabled',
        description: 'CoreAudio sound support')
-option('dsound', type: 'feature', value: 'auto',
+option('dsound', type: 'feature', value: 'disabled',
        description: 'DirectSound sound support')
-option('jack', type: 'feature', value: 'auto',
+option('jack', type: 'feature', value: 'disabled',
        description: 'JACK sound support')
-option('oss', type: 'feature', value: 'auto',
+option('oss', type: 'feature', value: 'disabled',
        description: 'OSS sound support')
-option('pa', type: 'feature', value: 'auto',
+option('pa', type: 'feature', value: 'disabled',
        description: 'PulseAudio sound support')
 
-option('vhost_kernel', type: 'feature', value: 'auto',
+option('vhost_kernel', type: 'feature', value: 'disabled',
        description: 'vhost kernel backend support')
-option('vhost_net', type: 'feature', value: 'auto',
+option('vhost_net', type: 'feature', value: 'disabled',
        description: 'vhost-net kernel acceleration support')
 option('vhost_user', type: 'feature', value: 'auto',
        description: 'vhost-user backend support')
-option('vhost_crypto', type: 'feature', value: 'auto',
+option('vhost_crypto', type: 'feature', value: 'disabled',
        description: 'vhost-user crypto backend support')
-option('vhost_vdpa', type: 'feature', value: 'auto',
+option('vhost_vdpa', type: 'feature', value: 'disabled',
        description: 'vhost-vdpa kernel backend support')
-option('vhost_user_blk_server', type: 'feature', value: 'auto',
+option('vhost_user_blk_server', type: 'feature', value: 'disabled',
        description: 'build vhost-user-blk server')
-option('virtfs', type: 'feature', value: 'auto',
+option('virtfs', type: 'feature', value: 'disabled',
        description: 'virtio-9p support')
-option('virtiofsd', type: 'feature', value: 'auto',
+option('virtiofsd', type: 'feature', value: 'disabled',
        description: 'build virtiofs daemon (virtiofsd)')
 option('libvduse', type: 'feature', value: 'auto',
        description: 'build VDUSE Library')
-option('vduse_blk_export', type: 'feature', value: 'auto',
+option('vduse_blk_export', type: 'feature', value: 'disabled',
        description: 'VDUSE block export support')
 
-option('capstone', type: 'feature', value: 'auto',
+option('capstone', type: 'feature', value: 'disabled',
        description: 'Whether and how to find the capstone library')
-option('slirp', type: 'combo', value: 'auto',
-       choices: ['disabled', 'enabled', 'auto', 'system', 'internal'],
+option('slirp', type: 'combo', value: 'internal',
+       choices: ['disabled', 'enabled', 'disabled', 'system', 'internal'],
        description: 'Whether and how to find the slirp library')
-option('fdt', type: 'combo', value: 'auto',
-       choices: ['disabled', 'enabled', 'auto', 'system', 'internal'],
+option('fdt', type: 'combo', value: 'internal',
+       choices: ['disabled', 'enabled', 'disabled', 'system', 'internal'],
        description: 'Whether and how to find the libfdt library')
 
-option('selinux', type: 'feature', value: 'auto',
+option('selinux', type: 'feature', value: 'disabled',
        description: 'SELinux support in qemu-nbd')
-option('live_block_migration', type: 'feature', value: 'auto',
+option('live_block_migration', type: 'feature', value: 'disabled',
        description: 'block migration in the main migration stream')
-option('replication', type: 'feature', value: 'auto',
+option('replication', type: 'feature', value: 'disabled',
        description: 'replication support')
-option('bochs', type: 'feature', value: 'auto',
+option('bochs', type: 'feature', value: 'disabled',
        description: 'bochs image format support')
-option('cloop', type: 'feature', value: 'auto',
+option('cloop', type: 'feature', value: 'disabled',
        description: 'cloop image format support')
-option('dmg', type: 'feature', value: 'auto',
+option('dmg', type: 'feature', value: 'disabled',
        description: 'dmg image format support')
-option('qcow1', type: 'feature', value: 'auto',
+option('qcow1', type: 'feature', value: 'disabled',
        description: 'qcow1 image format support')
-option('vdi', type: 'feature', value: 'auto',
+option('vdi', type: 'feature', value: 'disabled',
        description: 'vdi image format support')
-option('vvfat', type: 'feature', value: 'auto',
+option('vvfat', type: 'feature', value: 'disabled',
        description: 'vvfat image format support')
-option('qed', type: 'feature', value: 'auto',
+option('qed', type: 'feature', value: 'disabled',
        description: 'qed image format support')
-option('parallels', type: 'feature', value: 'auto',
+option('parallels', type: 'feature', value: 'disabled',
        description: 'parallels image format support')
 option('block_drv_whitelist_in_tools', type: 'boolean', value: false,
        description: 'use block whitelist also in tools instead of only QEMU')
@@ -309,5 +309,5 @@ option('gprof', type: 'boolean', value: false,
        description: 'QEMU profiling with gprof')
 option('profiler', type: 'boolean', value: false,
        description: 'profiler support')
-option('slirp_smbd', type : 'feature', value : 'auto',
+option('slirp_smbd', type : 'feature', value : 'disabled',
        description: 'use smbd (at path --smbd=*) in slirp networking')

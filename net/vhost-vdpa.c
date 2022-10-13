@@ -35,7 +35,9 @@ typedef struct VhostVDPAState {
     VHostNetState *vhost_net;
 
     /* Control commands shadow buffers */
-    void *cvq_cmd_out_buffer, *cvq_cmd_in_buffer;
+    void *cvq_cmd_out_buffer;
+    virtio_net_ctrl_ack *status;
+
     bool started;
 } VhostVDPAState;
 
@@ -92,6 +94,7 @@ static const uint64_t vdpa_svq_device_features =
     BIT_ULL(VIRTIO_NET_F_MRG_RXBUF) |
     BIT_ULL(VIRTIO_NET_F_STATUS) |
     BIT_ULL(VIRTIO_NET_F_CTRL_VQ) |
+    BIT_ULL(VIRTIO_NET_F_MQ) |
     BIT_ULL(VIRTIO_F_ANY_LAYOUT) |
     BIT_ULL(VIRTIO_NET_F_CTRL_MAC_ADDR) |
     BIT_ULL(VIRTIO_NET_F_RSC_EXT) |
@@ -158,7 +161,7 @@ static void vhost_vdpa_cleanup(NetClientState *nc)
     struct vhost_dev *dev = &s->vhost_net->dev;
 
     qemu_vfree(s->cvq_cmd_out_buffer);
-    qemu_vfree(s->cvq_cmd_in_buffer);
+    qemu_vfree(s->status);
     if (dev->vq_index + dev->nvqs == dev->vq_index_end) {
         g_clear_pointer(&s->vhost_vdpa.iova_tree, vhost_iova_tree_delete);
     }
@@ -244,7 +247,7 @@ static void vhost_vdpa_cvq_unmap_buf(struct vhost_vdpa *v, void *addr)
         error_report("Device cannot unmap: %s(%d)", g_strerror(r), r);
     }
 
-    vhost_iova_tree_remove(tree, map);
+    vhost_iova_tree_remove(tree, *map);
 }
 
 static size_t vhost_vdpa_net_cvq_cmd_len(void)
@@ -263,29 +266,20 @@ static size_t vhost_vdpa_net_cvq_cmd_page_len(void)
     return ROUND_UP(vhost_vdpa_net_cvq_cmd_len(), qemu_real_host_page_size());
 }
 
-/** Copy and map a guest buffer. */
-static bool vhost_vdpa_cvq_map_buf(struct vhost_vdpa *v,
-                                   const struct iovec *out_data,
-                                   size_t out_num, size_t data_len, void *buf,
-                                   size_t *written, bool write)
+/** Map CVQ buffer. */
+static int vhost_vdpa_cvq_map_buf(struct vhost_vdpa *v, void *buf, size_t size,
+                                  bool write)
 {
     DMAMap map = {};
     int r;
 
-    if (unlikely(!data_len)) {
-        qemu_log_mask(LOG_GUEST_ERROR, "%s: invalid legnth of %s buffer\n",
-                      __func__, write ? "in" : "out");
-        return false;
-    }
-
-    *written = iov_to_buf(out_data, out_num, 0, buf, data_len);
     map.translated_addr = (hwaddr)(uintptr_t)buf;
-    map.size = vhost_vdpa_net_cvq_cmd_page_len() - 1;
+    map.size = size - 1;
     map.perm = write ? IOMMU_RW : IOMMU_RO,
     r = vhost_iova_tree_map_alloc(v->iova_tree, &map);
     if (unlikely(r != IOVA_OK)) {
         error_report("Cannot map injected element");
-        return false;
+        return r;
     }
 
     r = vhost_vdpa_dma_map(v, map.iova, vhost_vdpa_net_cvq_cmd_page_len(), buf,
@@ -294,63 +288,195 @@ static bool vhost_vdpa_cvq_map_buf(struct vhost_vdpa *v,
         goto dma_map_err;
     }
 
-    return true;
+    return 0;
 
 dma_map_err:
-    vhost_iova_tree_remove(v->iova_tree, &map);
-    return false;
+    vhost_iova_tree_remove(v->iova_tree, map);
+    return r;
 }
 
-/**
- * Copy the guest element into a dedicated buffer suitable to be sent to NIC
- *
- * @iov: [0] is the out buffer, [1] is the in one
- */
-static bool vhost_vdpa_net_cvq_map_elem(VhostVDPAState *s,
-                                        VirtQueueElement *elem,
-                                        struct iovec *iov)
+static int vhost_vdpa_net_cvq_start(NetClientState *nc)
 {
-    size_t in_copied;
-    bool ok;
+    VhostVDPAState *s;
+    int r;
 
-    iov[0].iov_base = s->cvq_cmd_out_buffer;
-    ok = vhost_vdpa_cvq_map_buf(&s->vhost_vdpa, elem->out_sg, elem->out_num,
-                                vhost_vdpa_net_cvq_cmd_len(), iov[0].iov_base,
-                                &iov[0].iov_len, false);
-    if (unlikely(!ok)) {
-        return false;
+    assert(nc->info->type == NET_CLIENT_DRIVER_VHOST_VDPA);
+
+    s = DO_UPCAST(VhostVDPAState, nc, nc);
+    if (!s->vhost_vdpa.shadow_vqs_enabled) {
+        return 0;
     }
 
-    iov[1].iov_base = s->cvq_cmd_in_buffer;
-    ok = vhost_vdpa_cvq_map_buf(&s->vhost_vdpa, NULL, 0,
-                                sizeof(virtio_net_ctrl_ack), iov[1].iov_base,
-                                &in_copied, true);
-    if (unlikely(!ok)) {
+    r = vhost_vdpa_cvq_map_buf(&s->vhost_vdpa, s->cvq_cmd_out_buffer,
+                               vhost_vdpa_net_cvq_cmd_page_len(), false);
+    if (unlikely(r < 0)) {
+        return r;
+    }
+
+    r = vhost_vdpa_cvq_map_buf(&s->vhost_vdpa, s->status,
+                               vhost_vdpa_net_cvq_cmd_page_len(), true);
+    if (unlikely(r < 0)) {
         vhost_vdpa_cvq_unmap_buf(&s->vhost_vdpa, s->cvq_cmd_out_buffer);
-        return false;
     }
 
-    iov[1].iov_len = sizeof(virtio_net_ctrl_ack);
-    return true;
+    return r;
 }
+
+static void vhost_vdpa_net_cvq_stop(NetClientState *nc)
+{
+    VhostVDPAState *s = DO_UPCAST(VhostVDPAState, nc, nc);
+
+    assert(nc->info->type == NET_CLIENT_DRIVER_VHOST_VDPA);
+
+    if (s->vhost_vdpa.shadow_vqs_enabled) {
+        vhost_vdpa_cvq_unmap_buf(&s->vhost_vdpa, s->cvq_cmd_out_buffer);
+        vhost_vdpa_cvq_unmap_buf(&s->vhost_vdpa, s->status);
+    }
+}
+
+static ssize_t vhost_vdpa_net_cvq_add(VhostVDPAState *s, size_t out_len,
+                                      size_t in_len)
+{
+    /* Buffers for the device */
+    const struct iovec out = {
+        .iov_base = s->cvq_cmd_out_buffer,
+        .iov_len = out_len,
+    };
+    const struct iovec in = {
+        .iov_base = s->status,
+        .iov_len = sizeof(virtio_net_ctrl_ack),
+    };
+    VhostShadowVirtqueue *svq = g_ptr_array_index(s->vhost_vdpa.shadow_vqs, 0);
+    int r;
+
+    r = vhost_svq_add(svq, &out, 1, &in, 1, NULL);
+    if (unlikely(r != 0)) {
+        if (unlikely(r == -ENOSPC)) {
+            qemu_log_mask(LOG_GUEST_ERROR, "%s: No space on device queue\n",
+                          __func__);
+        }
+        return r;
+    }
+
+    /*
+     * We can poll here since we've had BQL from the time we sent the
+     * descriptor. Also, we need to take the answer before SVQ pulls by itself,
+     * when BQL is released
+     */
+    return vhost_svq_poll(svq);
+}
+
+static ssize_t vhost_vdpa_net_load_cmd(VhostVDPAState *s, uint8_t class,
+                                       uint8_t cmd, const void *data,
+                                       size_t data_size)
+{
+    const struct virtio_net_ctrl_hdr ctrl = {
+        .class = class,
+        .cmd = cmd,
+    };
+
+    assert(data_size < vhost_vdpa_net_cvq_cmd_page_len() - sizeof(ctrl));
+
+    memcpy(s->cvq_cmd_out_buffer, &ctrl, sizeof(ctrl));
+    memcpy(s->cvq_cmd_out_buffer + sizeof(ctrl), data, data_size);
+
+    return vhost_vdpa_net_cvq_add(s, sizeof(ctrl) + data_size,
+                                  sizeof(virtio_net_ctrl_ack));
+}
+
+static int vhost_vdpa_net_load_mac(VhostVDPAState *s, const VirtIONet *n)
+{
+    uint64_t features = n->parent_obj.guest_features;
+    if (features & BIT_ULL(VIRTIO_NET_F_CTRL_MAC_ADDR)) {
+        ssize_t dev_written = vhost_vdpa_net_load_cmd(s, VIRTIO_NET_CTRL_MAC,
+                                                  VIRTIO_NET_CTRL_MAC_ADDR_SET,
+                                                  n->mac, sizeof(n->mac));
+        if (unlikely(dev_written < 0)) {
+            return dev_written;
+        }
+
+        return *s->status != VIRTIO_NET_OK;
+    }
+
+    return 0;
+}
+
+static int vhost_vdpa_net_load_mq(VhostVDPAState *s,
+                                  const VirtIONet *n)
+{
+    struct virtio_net_ctrl_mq mq;
+    uint64_t features = n->parent_obj.guest_features;
+    ssize_t dev_written;
+
+    if (!(features & BIT_ULL(VIRTIO_NET_F_MQ))) {
+        return 0;
+    }
+
+    mq.virtqueue_pairs = cpu_to_le16(n->curr_queue_pairs);
+    dev_written = vhost_vdpa_net_load_cmd(s, VIRTIO_NET_CTRL_MQ,
+                                          VIRTIO_NET_CTRL_MQ_VQ_PAIRS_SET, &mq,
+                                          sizeof(mq));
+    if (unlikely(dev_written < 0)) {
+        return dev_written;
+    }
+
+    return *s->status != VIRTIO_NET_OK;
+}
+
+static int vhost_vdpa_net_load(NetClientState *nc)
+{
+    VhostVDPAState *s = DO_UPCAST(VhostVDPAState, nc, nc);
+    struct vhost_vdpa *v = &s->vhost_vdpa;
+    const VirtIONet *n;
+    int r;
+
+    assert(nc->info->type == NET_CLIENT_DRIVER_VHOST_VDPA);
+
+    if (!v->shadow_vqs_enabled) {
+        return 0;
+    }
+
+    n = VIRTIO_NET(v->dev->vdev);
+    r = vhost_vdpa_net_load_mac(s, n);
+    if (unlikely(r < 0)) {
+        return r;
+    }
+    r = vhost_vdpa_net_load_mq(s, n);
+    if (unlikely(r)) {
+        return r;
+    }
+
+    return 0;
+}
+
+static NetClientInfo net_vhost_vdpa_cvq_info = {
+    .type = NET_CLIENT_DRIVER_VHOST_VDPA,
+    .size = sizeof(VhostVDPAState),
+    .receive = vhost_vdpa_receive,
+    .start = vhost_vdpa_net_cvq_start,
+    .load = vhost_vdpa_net_load,
+    .stop = vhost_vdpa_net_cvq_stop,
+    .cleanup = vhost_vdpa_cleanup,
+    .has_vnet_hdr = vhost_vdpa_has_vnet_hdr,
+    .has_ufo = vhost_vdpa_has_ufo,
+    .check_peer_type = vhost_vdpa_check_peer_type,
+};
 
 /**
  * Do not forward commands not supported by SVQ. Otherwise, the device could
  * accept it and qemu would not know how to update the device model.
  */
-static bool vhost_vdpa_net_cvq_validate_cmd(const struct iovec *out,
-                                            size_t out_num)
+static bool vhost_vdpa_net_cvq_validate_cmd(const void *out_buf, size_t len)
 {
     struct virtio_net_ctrl_hdr ctrl;
-    size_t n;
 
-    n = iov_to_buf(out, out_num, 0, &ctrl, sizeof(ctrl));
-    if (unlikely(n < sizeof(ctrl))) {
+    if (unlikely(len < sizeof(ctrl))) {
         qemu_log_mask(LOG_GUEST_ERROR,
-                      "%s: invalid legnth of out buffer %zu\n", __func__, n);
+                      "%s: invalid legnth of out buffer %zu\n", __func__, len);
         return false;
     }
 
+    memcpy(&ctrl, out_buf, sizeof(ctrl));
     switch (ctrl.class) {
     case VIRTIO_NET_CTRL_MAC:
         switch (ctrl.cmd) {
@@ -358,6 +484,15 @@ static bool vhost_vdpa_net_cvq_validate_cmd(const struct iovec *out,
             return true;
         default:
             qemu_log_mask(LOG_GUEST_ERROR, "%s: invalid mac cmd %u\n",
+                          __func__, ctrl.cmd);
+        };
+        break;
+    case VIRTIO_NET_CTRL_MQ:
+        switch (ctrl.cmd) {
+        case VIRTIO_NET_CTRL_MQ_VQ_PAIRS_SET:
+            return true;
+        default:
+            qemu_log_mask(LOG_GUEST_ERROR, "%s: invalid mq cmd %u\n",
                           __func__, ctrl.cmd);
         };
         break;
@@ -380,58 +515,44 @@ static int vhost_vdpa_net_handle_ctrl_avail(VhostShadowVirtqueue *svq,
                                             void *opaque)
 {
     VhostVDPAState *s = opaque;
-    size_t in_len, dev_written;
+    size_t in_len;
     virtio_net_ctrl_ack status = VIRTIO_NET_ERR;
-    /* out and in buffers sent to the device */
-    struct iovec dev_buffers[2] = {
-        { .iov_base = s->cvq_cmd_out_buffer },
-        { .iov_base = s->cvq_cmd_in_buffer },
+    /* Out buffer sent to both the vdpa device and the device model */
+    struct iovec out = {
+        .iov_base = s->cvq_cmd_out_buffer,
     };
     /* in buffer used for device model */
     const struct iovec in = {
         .iov_base = &status,
         .iov_len = sizeof(status),
     };
-    int r = -EINVAL;
+    ssize_t dev_written = -EINVAL;
     bool ok;
 
-    ok = vhost_vdpa_net_cvq_map_elem(s, elem, dev_buffers);
+    out.iov_len = iov_to_buf(elem->out_sg, elem->out_num, 0,
+                             s->cvq_cmd_out_buffer,
+                             vhost_vdpa_net_cvq_cmd_len());
+    ok = vhost_vdpa_net_cvq_validate_cmd(s->cvq_cmd_out_buffer, out.iov_len);
     if (unlikely(!ok)) {
         goto out;
     }
 
-    ok = vhost_vdpa_net_cvq_validate_cmd(&dev_buffers[0], 1);
-    if (unlikely(!ok)) {
+    dev_written = vhost_vdpa_net_cvq_add(s, out.iov_len, sizeof(status));
+    if (unlikely(dev_written < 0)) {
         goto out;
     }
 
-    r = vhost_svq_add(svq, &dev_buffers[0], 1, &dev_buffers[1], 1, elem);
-    if (unlikely(r != 0)) {
-        if (unlikely(r == -ENOSPC)) {
-            qemu_log_mask(LOG_GUEST_ERROR, "%s: No space on device queue\n",
-                          __func__);
-        }
-        goto out;
-    }
-
-    /*
-     * We can poll here since we've had BQL from the time we sent the
-     * descriptor. Also, we need to take the answer before SVQ pulls by itself,
-     * when BQL is released
-     */
-    dev_written = vhost_svq_poll(svq);
     if (unlikely(dev_written < sizeof(status))) {
         error_report("Insufficient written data (%zu)", dev_written);
         goto out;
     }
 
-    memcpy(&status, dev_buffers[1].iov_base, sizeof(status));
-    if (status != VIRTIO_NET_OK) {
-        goto out;
+    if (*s->status != VIRTIO_NET_OK) {
+        return VIRTIO_NET_ERR;
     }
 
     status = VIRTIO_NET_ERR;
-    virtio_net_handle_ctrl_iov(svq->vdev, &in, 1, dev_buffers, 1);
+    virtio_net_handle_ctrl_iov(svq->vdev, &in, 1, &out, 1);
     if (status != VIRTIO_NET_OK) {
         error_report("Bad CVQ processing in model");
     }
@@ -444,13 +565,7 @@ out:
     }
     vhost_svq_push_elem(svq, elem, MIN(in_len, sizeof(status)));
     g_free(elem);
-    if (dev_buffers[0].iov_base) {
-        vhost_vdpa_cvq_unmap_buf(&s->vhost_vdpa, dev_buffers[0].iov_base);
-    }
-    if (dev_buffers[1].iov_base) {
-        vhost_vdpa_cvq_unmap_buf(&s->vhost_vdpa, dev_buffers[1].iov_base);
-    }
-    return r;
+    return dev_written < 0 ? dev_written : 0;
 }
 
 static const VhostShadowVirtqueueOps vhost_vdpa_net_svq_ops = {
@@ -475,7 +590,7 @@ static NetClientState *net_vhost_vdpa_init(NetClientState *peer,
         nc = qemu_new_net_client(&net_vhost_vdpa_info, peer, device,
                                  name);
     } else {
-        nc = qemu_new_net_control_client(&net_vhost_vdpa_info, peer,
+        nc = qemu_new_net_control_client(&net_vhost_vdpa_cvq_info, peer,
                                          device, name);
     }
     snprintf(nc->info_str, sizeof(nc->info_str), TYPE_VHOST_VDPA);
@@ -489,14 +604,12 @@ static NetClientState *net_vhost_vdpa_init(NetClientState *peer,
         s->cvq_cmd_out_buffer = qemu_memalign(qemu_real_host_page_size(),
                                             vhost_vdpa_net_cvq_cmd_page_len());
         memset(s->cvq_cmd_out_buffer, 0, vhost_vdpa_net_cvq_cmd_page_len());
-        s->cvq_cmd_in_buffer = qemu_memalign(qemu_real_host_page_size(),
-                                            vhost_vdpa_net_cvq_cmd_page_len());
-        memset(s->cvq_cmd_in_buffer, 0, vhost_vdpa_net_cvq_cmd_page_len());
+        s->status = qemu_memalign(qemu_real_host_page_size(),
+                                  vhost_vdpa_net_cvq_cmd_page_len());
+        memset(s->status, 0, vhost_vdpa_net_cvq_cmd_page_len());
 
         s->vhost_vdpa.shadow_vq_ops = &vhost_vdpa_net_svq_ops;
         s->vhost_vdpa.shadow_vq_ops_opaque = s;
-        error_setg(&s->vhost_vdpa.migration_blocker,
-                   "Migration disabled: vhost-vdpa uses CVQ.");
     }
     ret = vhost_vdpa_add(nc, (void *)&s->vhost_vdpa, queue_pair_index, nvqs);
     if (ret) {
@@ -566,7 +679,7 @@ int net_init_vhost_vdpa(const Netdev *netdev, const char *name,
     g_autofree NetClientState **ncs = NULL;
     g_autoptr(VhostIOVATree) iova_tree = NULL;
     NetClientState *nc;
-    int queue_pairs, r, i, has_cvq = 0;
+    int queue_pairs, r, i = 0, has_cvq = 0;
 
     assert(netdev->type == NET_CLIENT_DRIVER_VHOST_VDPA);
     opts = &netdev->u.vhost_vdpa;
@@ -582,7 +695,7 @@ int net_init_vhost_vdpa(const Netdev *netdev, const char *name,
 
     r = vhost_vdpa_get_features(vdpa_device_fd, &features, errp);
     if (unlikely(r < 0)) {
-        return r;
+        goto err;
     }
 
     queue_pairs = vhost_vdpa_get_max_queue_pairs(vdpa_device_fd, features,

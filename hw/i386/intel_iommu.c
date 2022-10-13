@@ -1187,7 +1187,7 @@ static int vtd_page_walk_one(IOMMUTLBEvent *event, vtd_page_walk_info *info)
                     return ret;
                 }
                 /* Drop any existing mapping */
-                iova_tree_remove(as->iova_tree, &target);
+                iova_tree_remove(as->iova_tree, target);
                 /* Recover the correct type */
                 event->type = IOMMU_NOTIFIER_MAP;
                 entry->perm = cache_perm;
@@ -1200,7 +1200,7 @@ static int vtd_page_walk_one(IOMMUTLBEvent *event, vtd_page_walk_info *info)
             trace_vtd_page_walk_one_skip_unmap(entry->iova, entry->addr_mask);
             return 0;
         }
-        iova_tree_remove(as->iova_tree, &target);
+        iova_tree_remove(as->iova_tree, target);
     }
 
     trace_vtd_page_walk_one(info->domain_id, entry->iova,
@@ -3563,7 +3563,7 @@ static void vtd_address_space_unmap(VTDAddressSpace *as, IOMMUNotifier *n)
 
     map.iova = n->start;
     map.size = size;
-    iova_tree_remove(as->iova_tree, &map);
+    iova_tree_remove(as->iova_tree, map);
 }
 
 static void vtd_address_space_unmap_all(IntelIOMMUState *s)
@@ -3816,6 +3816,11 @@ static bool vtd_decide_config(IntelIOMMUState *s, Error **errp)
     if (s->intr_eim == ON_OFF_AUTO_ON && !s->buggy_eim) {
         if (!kvm_irqchip_is_split()) {
             error_setg(errp, "eim=on requires accel=kvm,kernel-irqchip=split");
+            return false;
+        }
+        if (!kvm_enable_x2apic()) {
+            error_setg(errp, "eim=on requires support on the KVM side"
+                             "(X2APIC_API, first shipped in v4.7)");
             return false;
         }
     }

@@ -767,19 +767,10 @@ static void lo_init(void *userdata, struct fuse_conn_info *conn)
         fuse_log(FUSE_LOG_DEBUG, "lo_init: enabling killpriv_v2\n");
         conn->want |= FUSE_CAP_HANDLE_KILLPRIV_V2;
         lo->killpriv_v2 = 1;
-    } else if (lo->user_killpriv_v2 == -1 &&
-               conn->capable & FUSE_CAP_HANDLE_KILLPRIV_V2) {
-        /*
-         * User did not specify a value for killpriv_v2. By default enable it
-         * if connection offers this capability
-         */
-        fuse_log(FUSE_LOG_DEBUG, "lo_init: enabling killpriv_v2\n");
-        conn->want |= FUSE_CAP_HANDLE_KILLPRIV_V2;
-        lo->killpriv_v2 = 1;
     } else {
         /*
-         * Either user specified to disable killpriv_v2, or connection does
-         * not offer this capability. Disable killpriv_v2 in both the cases
+         * Either user specified to disable killpriv_v2, or did not
+         * specify anything. Disable killpriv_v2 in both the cases.
          */
         fuse_log(FUSE_LOG_DEBUG, "lo_init: disabling killpriv_v2\n");
         conn->want &= ~FUSE_CAP_HANDLE_KILLPRIV_V2;
@@ -4194,6 +4185,7 @@ static void setup_nofile_rlimit(unsigned long rlimit_nofile)
 static void log_func(enum fuse_log_level level, const char *fmt, va_list ap)
 {
     g_autofree char *localfmt = NULL;
+    char buf[64];
 
     if (current_log_level < level) {
         return;
@@ -4206,9 +4198,11 @@ static void log_func(enum fuse_log_level level, const char *fmt, va_list ap)
                                        fmt);
         } else {
             g_autoptr(GDateTime) now = g_date_time_new_now_utc();
-            g_autofree char *nowstr = g_date_time_format(now, "%Y-%m-%d %H:%M:%S.%f%z");
+            g_autofree char *nowstr = g_date_time_format(now,
+                                       "%Y-%m-%d %H:%M:%S.%%06d%z");
+            snprintf(buf, 64, nowstr, g_date_time_get_microsecond(now));
             localfmt = g_strdup_printf("[%s] [ID: %08ld] %s",
-                                       nowstr, syscall(__NR_gettid), fmt);
+                                       buf, syscall(__NR_gettid), fmt);
         }
         fmt = localfmt;
     }

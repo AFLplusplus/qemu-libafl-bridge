@@ -647,7 +647,16 @@ static int test_migrate_start(QTestState **from, QTestState **to,
     }
 
     if (!getenv("QTEST_LOG") && args->hide_stderr) {
+#ifndef _WIN32
         ignore_stderr = "2>/dev/null";
+#else
+        /*
+         * On Windows the QEMU executable is created via CreateProcess() and
+         * IO redirection does not work, so don't bother adding IO redirection
+         * to the command line.
+         */
+        ignore_stderr = "";
+#endif
     } else {
         ignore_stderr = "";
     }
@@ -761,14 +770,14 @@ test_migrate_tls_psk_start_common(QTestState *from,
     data->workdir = g_strdup_printf("%s/tlscredspsk0", tmpfs);
     data->pskfile = g_strdup_printf("%s/%s", data->workdir,
                                     QCRYPTO_TLS_CREDS_PSKFILE);
-    mkdir(data->workdir, 0700);
+    g_mkdir_with_parents(data->workdir, 0700);
     test_tls_psk_init(data->pskfile);
 
     if (mismatch) {
         data->workdiralt = g_strdup_printf("%s/tlscredspskalt0", tmpfs);
         data->pskfilealt = g_strdup_printf("%s/%s", data->workdiralt,
                                            QCRYPTO_TLS_CREDS_PSKFILE);
-        mkdir(data->workdiralt, 0700);
+        g_mkdir_with_parents(data->workdiralt, 0700);
         test_tls_psk_init_alt(data->pskfilealt);
     }
 
@@ -873,12 +882,20 @@ test_migrate_tls_x509_start_common(QTestState *from,
         data->clientcert = g_strdup_printf("%s/client-cert.pem", data->workdir);
     }
 
-    mkdir(data->workdir, 0700);
+    g_mkdir_with_parents(data->workdir, 0700);
 
     test_tls_init(data->keyfile);
+#ifndef _WIN32
     g_assert(link(data->keyfile, data->serverkey) == 0);
+#else
+    g_assert(CreateHardLink(data->serverkey, data->keyfile, NULL) != 0);
+#endif
     if (args->clientcert) {
+#ifndef _WIN32
         g_assert(link(data->keyfile, data->clientkey) == 0);
+#else
+        g_assert(CreateHardLink(data->clientkey, data->keyfile, NULL) != 0);
+#endif
     }
 
     TLS_ROOT_REQ_SIMPLE(cacertreq, data->cacert);
@@ -1307,7 +1324,9 @@ static void test_precopy_common(MigrateCommon *args)
     }
 
     /* Wait for the first serial output from the source */
-    wait_for_serial("src_serial");
+    if (args->result == MIG_TEST_SUCCEED) {
+        wait_for_serial("src_serial");
+    }
 
     if (!args->connect_uri) {
         g_autofree char *local_connect_uri =
@@ -1383,6 +1402,7 @@ static void test_precopy_unix_dirty_ring(void)
 }
 
 #ifdef CONFIG_GNUTLS
+#ifndef _WIN32
 static void test_precopy_unix_tls_psk(void)
 {
     g_autofree char *uri = g_strdup_printf("unix:%s/migsocket", tmpfs);
@@ -1395,6 +1415,7 @@ static void test_precopy_unix_tls_psk(void)
 
     test_precopy_common(&args);
 }
+#endif /* _WIN32 */
 
 #ifdef CONFIG_TASN1
 static void test_precopy_unix_tls_x509_default_host(void)
@@ -1503,6 +1524,7 @@ static void test_precopy_tcp_plain(void)
 }
 
 #ifdef CONFIG_GNUTLS
+#ifndef _WIN32
 static void test_precopy_tcp_tls_psk_match(void)
 {
     MigrateCommon args = {
@@ -1513,6 +1535,7 @@ static void test_precopy_tcp_tls_psk_match(void)
 
     test_precopy_common(&args);
 }
+#endif /* _WIN32 */
 
 static void test_precopy_tcp_tls_psk_mismatch(void)
 {
@@ -1621,6 +1644,7 @@ static void test_precopy_tcp_tls_x509_reject_anon_client(void)
 #endif /* CONFIG_TASN1 */
 #endif /* CONFIG_GNUTLS */
 
+#ifndef _WIN32
 static void *test_migrate_fd_start_hook(QTestState *from,
                                         QTestState *to)
 {
@@ -1689,6 +1713,7 @@ static void test_migrate_fd_proto(void)
     };
     test_precopy_common(&args);
 }
+#endif /* _WIN32 */
 
 static void do_test_validate_uuid(MigrateStart *args, bool should_fail)
 {
@@ -1768,7 +1793,7 @@ static void test_migrate_auto_converge(void)
     g_autofree char *uri = g_strdup_printf("unix:%s/migsocket", tmpfs);
     MigrateStart args = {};
     QTestState *from, *to;
-    int64_t remaining, percentage;
+    int64_t percentage;
 
     /*
      * We want the test to be stable and as fast as possible.
@@ -1776,14 +1801,6 @@ static void test_migrate_auto_converge(void)
      * so we need to decrease a bandwidth.
      */
     const int64_t init_pct = 5, inc_pct = 50, max_pct = 95;
-    const int64_t max_bandwidth = 400000000; /* ~400Mb/s */
-    const int64_t downtime_limit = 250; /* 250ms */
-    /*
-     * We migrate through unix-socket (> 500Mb/s).
-     * Thus, expected migration speed ~= bandwidth limit (< 500Mb/s).
-     * So, we can predict expected_threshold
-     */
-    const int64_t expected_threshold = max_bandwidth * downtime_limit / 1000;
 
     if (test_migrate_start(&from, &to, uri, &args)) {
         return;
@@ -1818,8 +1835,7 @@ static void test_migrate_auto_converge(void)
     /* The first percentage of throttling should be equal to init_pct */
     g_assert_cmpint(percentage, ==, init_pct);
     /* Now, when we tested that throttling works, let it converge */
-    migrate_set_parameter_int(from, "downtime-limit", downtime_limit);
-    migrate_set_parameter_int(from, "max-bandwidth", max_bandwidth);
+    migrate_ensure_converge(from);
 
     /*
      * Wait for pre-switchover status to check last throttle percentage
@@ -1830,18 +1846,12 @@ static void test_migrate_auto_converge(void)
     /* The final percentage of throttling shouldn't be greater than max_pct */
     percentage = read_migrate_property_int(from, "cpu-throttle-percentage");
     g_assert_cmpint(percentage, <=, max_pct);
-
-    remaining = read_ram_property_int(from, "remaining");
-    g_assert_cmpint(remaining, <,
-                    (expected_threshold + expected_threshold / 100));
-
     migrate_continue(from, "pre-switchover");
 
     qtest_qmp_eventwait(to, "RESUME");
 
     wait_for_serial("dest_serial");
     wait_for_migration_complete(from);
-
 
     test_migrate_end(from, to, true);
 }
@@ -1923,6 +1933,7 @@ static void test_multifd_tcp_zstd(void)
 #endif
 
 #ifdef CONFIG_GNUTLS
+#ifndef _WIN32
 static void *
 test_migrate_multifd_tcp_tls_psk_start_match(QTestState *from,
                                              QTestState *to)
@@ -1930,6 +1941,7 @@ test_migrate_multifd_tcp_tls_psk_start_match(QTestState *from,
     test_migrate_precopy_tcp_multifd_start_common(from, to, "none");
     return test_migrate_tls_psk_start_match(from, to);
 }
+#endif /* _WIN32 */
 
 static void *
 test_migrate_multifd_tcp_tls_psk_start_mismatch(QTestState *from,
@@ -1981,6 +1993,7 @@ test_migrate_multifd_tls_x509_start_reject_anon_client(QTestState *from,
 }
 #endif /* CONFIG_TASN1 */
 
+#ifndef _WIN32
 static void test_multifd_tcp_tls_psk_match(void)
 {
     MigrateCommon args = {
@@ -1990,6 +2003,7 @@ static void test_multifd_tcp_tls_psk_match(void)
     };
     test_precopy_common(&args);
 }
+#endif /* _WIN32 */
 
 static void test_multifd_tcp_tls_psk_mismatch(void)
 {
@@ -2439,20 +2453,18 @@ int main(int argc, char **argv)
 {
     char template[] = "/tmp/migration-test-XXXXXX";
     const bool has_kvm = qtest_has_accel("kvm");
+    const bool has_uffd = ufd_version_check();
+    const char *arch = qtest_get_arch();
     int ret;
 
     g_test_init(&argc, &argv, NULL);
-
-    if (!ufd_version_check()) {
-        return g_test_run();
-    }
 
     /*
      * On ppc64, the test only works with kvm-hv, but not with kvm-pr and TCG
      * is touchy due to race conditions on dirty bits (especially on PPC for
      * some reason)
      */
-    if (g_str_equal(qtest_get_arch(), "ppc64") &&
+    if (g_str_equal(arch, "ppc64") &&
         (!has_kvm || access("/sys/module/kvm_hv", F_OK))) {
         g_test_message("Skipping test: kvm_hv not available");
         return g_test_run();
@@ -2462,45 +2474,51 @@ int main(int argc, char **argv)
      * Similar to ppc64, s390x seems to be touchy with TCG, so disable it
      * there until the problems are resolved
      */
-    if (g_str_equal(qtest_get_arch(), "s390x") && !has_kvm) {
+    if (g_str_equal(arch, "s390x") && !has_kvm) {
         g_test_message("Skipping test: s390x host with KVM is required");
         return g_test_run();
     }
 
-    tmpfs = mkdtemp(template);
+    tmpfs = g_mkdtemp(template);
     if (!tmpfs) {
-        g_test_message("mkdtemp on path (%s): %s", template, strerror(errno));
+        g_test_message("g_mkdtemp on path (%s): %s", template, strerror(errno));
     }
     g_assert(tmpfs);
 
     module_call_init(MODULE_INIT_QOM);
 
-    qtest_add_func("/migration/postcopy/unix", test_postcopy);
-    qtest_add_func("/migration/postcopy/plain", test_postcopy);
-    qtest_add_func("/migration/postcopy/recovery/plain",
-                   test_postcopy_recovery);
-    qtest_add_func("/migration/postcopy/preempt/plain", test_postcopy_preempt);
-    qtest_add_func("/migration/postcopy/preempt/recovery/plain",
-                    test_postcopy_preempt_recovery);
+    if (has_uffd) {
+        qtest_add_func("/migration/postcopy/plain", test_postcopy);
+        qtest_add_func("/migration/postcopy/recovery/plain",
+                       test_postcopy_recovery);
+        qtest_add_func("/migration/postcopy/preempt/plain", test_postcopy_preempt);
+        qtest_add_func("/migration/postcopy/preempt/recovery/plain",
+                       test_postcopy_preempt_recovery);
+    }
 
     qtest_add_func("/migration/bad_dest", test_baddest);
     qtest_add_func("/migration/precopy/unix/plain", test_precopy_unix_plain);
     qtest_add_func("/migration/precopy/unix/xbzrle", test_precopy_unix_xbzrle);
 #ifdef CONFIG_GNUTLS
+#ifndef _WIN32
     qtest_add_func("/migration/precopy/unix/tls/psk",
                    test_precopy_unix_tls_psk);
-    /*
-     * NOTE: psk test is enough for postcopy, as other types of TLS
-     * channels are tested under precopy.  Here what we want to test is the
-     * general postcopy path that has TLS channel enabled.
-     */
-    qtest_add_func("/migration/postcopy/tls/psk", test_postcopy_tls_psk);
-    qtest_add_func("/migration/postcopy/recovery/tls/psk",
-                   test_postcopy_recovery_tls_psk);
-    qtest_add_func("/migration/postcopy/preempt/tls/psk",
-                   test_postcopy_preempt_tls_psk);
-    qtest_add_func("/migration/postcopy/preempt/recovery/tls/psk",
-                   test_postcopy_preempt_all);
+#endif
+
+    if (has_uffd) {
+        /*
+         * NOTE: psk test is enough for postcopy, as other types of TLS
+         * channels are tested under precopy.  Here what we want to test is the
+         * general postcopy path that has TLS channel enabled.
+         */
+        qtest_add_func("/migration/postcopy/tls/psk", test_postcopy_tls_psk);
+        qtest_add_func("/migration/postcopy/recovery/tls/psk",
+                       test_postcopy_recovery_tls_psk);
+        qtest_add_func("/migration/postcopy/preempt/tls/psk",
+                       test_postcopy_preempt_tls_psk);
+        qtest_add_func("/migration/postcopy/preempt/recovery/tls/psk",
+                       test_postcopy_preempt_all);
+    }
 #ifdef CONFIG_TASN1
     qtest_add_func("/migration/precopy/unix/tls/x509/default-host",
                    test_precopy_unix_tls_x509_default_host);
@@ -2511,8 +2529,10 @@ int main(int argc, char **argv)
 
     qtest_add_func("/migration/precopy/tcp/plain", test_precopy_tcp_plain);
 #ifdef CONFIG_GNUTLS
+#ifndef _WIN32
     qtest_add_func("/migration/precopy/tcp/tls/psk/match",
                    test_precopy_tcp_tls_psk_match);
+#endif
     qtest_add_func("/migration/precopy/tcp/tls/psk/mismatch",
                    test_precopy_tcp_tls_psk_mismatch);
 #ifdef CONFIG_TASN1
@@ -2534,7 +2554,9 @@ int main(int argc, char **argv)
 #endif /* CONFIG_GNUTLS */
 
     /* qtest_add_func("/migration/ignore_shared", test_ignore_shared); */
+#ifndef _WIN32
     qtest_add_func("/migration/fd_proto", test_migrate_fd_proto);
+#endif
     qtest_add_func("/migration/validate_uuid", test_validate_uuid);
     qtest_add_func("/migration/validate_uuid_error", test_validate_uuid_error);
     qtest_add_func("/migration/validate_uuid_src_not_set",
@@ -2554,8 +2576,10 @@ int main(int argc, char **argv)
                    test_multifd_tcp_zstd);
 #endif
 #ifdef CONFIG_GNUTLS
+#ifndef _WIN32
     qtest_add_func("/migration/multifd/tcp/tls/psk/match",
                    test_multifd_tcp_tls_psk_match);
+#endif
     qtest_add_func("/migration/multifd/tcp/tls/psk/mismatch",
                    test_multifd_tcp_tls_psk_mismatch);
 #ifdef CONFIG_TASN1
@@ -2572,7 +2596,7 @@ int main(int argc, char **argv)
 #endif /* CONFIG_TASN1 */
 #endif /* CONFIG_GNUTLS */
 
-    if (kvm_dirty_ring_supported()) {
+    if (g_str_equal(arch, "x86_64") && has_kvm && kvm_dirty_ring_supported()) {
         qtest_add_func("/migration/dirty_ring",
                        test_precopy_unix_dirty_ring);
         qtest_add_func("/migration/vcpu_dirty_limit",

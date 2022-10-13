@@ -592,8 +592,7 @@ build_gtdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     acpi_table_begin(&table, table_data);
 
     /* CntControlBase Physical Address */
-    /* FIXME: invalid value, should be 0xFFFFFFFFFFFFFFFF if not impl. ? */
-    build_append_int_noprefix(table_data, 0, 8);
+    build_append_int_noprefix(table_data, 0xFFFFFFFFFFFFFFFF, 8);
     build_append_int_noprefix(table_data, 0, 4); /* Reserved */
     /*
      * FIXME: clarify comment:
@@ -618,7 +617,7 @@ build_gtdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     /* Non-Secure EL2 timer Flags */
     build_append_int_noprefix(table_data, irqflags, 4);
     /* CntReadBase Physical address */
-    build_append_int_noprefix(table_data, 0, 8);
+    build_append_int_noprefix(table_data, 0xFFFFFFFFFFFFFFFF, 8);
     /* Platform Timer Count */
     build_append_int_noprefix(table_data, 0, 4);
     /* Platform Timer Offset */
@@ -732,7 +731,7 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
         uint32_t pmu_interrupt = arm_feature(&armcpu->env, ARM_FEATURE_PMU) ?
                                              PPI(VIRTUAL_PMU_IRQ) : 0;
 
-        if (vms->gic_version == 2) {
+        if (vms->gic_version == VIRT_GIC_VERSION_2) {
             physical_base_address = memmap[VIRT_GIC_CPU].base;
             gicv = memmap[VIRT_GIC_VCPU].base;
             gich = memmap[VIRT_GIC_HYP].base;
@@ -762,7 +761,7 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
         build_append_int_noprefix(table_data, armcpu->mp_affinity, 8);
     }
 
-    if (vms->gic_version == 3) {
+    if (vms->gic_version != VIRT_GIC_VERSION_2) {
         build_append_gicr(table_data, memmap[VIRT_GIC_REDIST].base,
                                       memmap[VIRT_GIC_REDIST].size);
         if (virt_gicv3_redist_region_count(vms) == 2) {

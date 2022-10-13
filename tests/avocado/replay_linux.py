@@ -55,6 +55,7 @@ class ReplayLinux(LinuxTest):
             '%s,drive=disk%s-rr%s' % (device, id, bus_string))
 
     def launch_and_wait(self, record, args, shift):
+        self.require_netdev('user')
         vm = self.get_vm()
         vm.add_args('-smp', '1')
         vm.add_args('-m', '1024')
@@ -189,3 +190,4 @@ class ReplayLinuxAarch64(ReplayLinux):
 
         self.run_rr(shift=3,
                     args=(*self.get_common_args(),
+                          "-machine", "virt,gic-version=3"))

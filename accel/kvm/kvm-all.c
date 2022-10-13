@@ -175,7 +175,7 @@ bool kvm_direct_msi_allowed;
 bool kvm_ioeventfd_any_length_allowed;
 bool kvm_msi_use_devid;
 bool kvm_has_guest_debug;
-int kvm_sstep_flags;
+static int kvm_sstep_flags;
 static bool kvm_immediate_exit;
 static hwaddr kvm_max_slot_size = ~0;
 
@@ -719,12 +719,32 @@ static void kvm_dirty_ring_mark_page(KVMState *s, uint32_t as_id,
 
 static bool dirty_gfn_is_dirtied(struct kvm_dirty_gfn *gfn)
 {
-    return gfn->flags == KVM_DIRTY_GFN_F_DIRTY;
+    /*
+     * Read the flags before the value.  Pairs with barrier in
+     * KVM's kvm_dirty_ring_push() function.
+     */
+    return qatomic_load_acquire(&gfn->flags) == KVM_DIRTY_GFN_F_DIRTY;
 }
 
 static void dirty_gfn_set_collected(struct kvm_dirty_gfn *gfn)
 {
-    gfn->flags = KVM_DIRTY_GFN_F_RESET;
+    /*
+     * Use a store-release so that the CPU that executes KVM_RESET_DIRTY_RINGS
+     * sees the full content of the ring:
+     *
+     * CPU0                     CPU1                         CPU2
+     * ------------------------------------------------------------------------------
+     *                                                       fill gfn0
+     *                                                       store-rel flags for gfn0
+     * load-acq flags for gfn0
+     * store-rel RESET for gfn0
+     *                          ioctl(RESET_RINGS)
+     *                            load-acq flags for gfn0
+     *                            check if flags have RESET
+     *
+     * The synchronization goes from CPU2 to CPU0 to CPU1.
+     */
+    qatomic_store_release(&gfn->flags, KVM_DIRTY_GFN_F_RESET);
 }
 
 /*
@@ -2265,7 +2285,7 @@ static void kvm_irqchip_create(KVMState *s)
     ret = kvm_arch_irqchip_create(s);
     if (ret == 0) {
         if (s->kernel_irqchip_split == ON_OFF_AUTO_ON) {
-            perror("Split IRQ chip mode not supported.");
+            error_report("Split IRQ chip mode not supported.");
             exit(1);
         } else {
             ret = kvm_vm_ioctl(s, KVM_CREATE_IRQCHIP);
@@ -3267,8 +3287,13 @@ int kvm_update_guest_debug(CPUState *cpu, unsigned long reinject_trap)
     return data.err;
 }
 
-int kvm_insert_breakpoint(CPUState *cpu, target_ulong addr,
-                          target_ulong len, int type)
+bool kvm_supports_guest_debug(void)
+{
+    /* probed during kvm_init() */
+    return kvm_has_guest_debug;
+}
+
+int kvm_insert_breakpoint(CPUState *cpu, int type, hwaddr addr, hwaddr len)
 {
     struct kvm_sw_breakpoint *bp;
     int err;
@@ -3306,8 +3331,7 @@ int kvm_insert_breakpoint(CPUState *cpu, target_ulong addr,
     return 0;
 }
 
-int kvm_remove_breakpoint(CPUState *cpu, target_ulong addr,
-                          target_ulong len, int type)
+int kvm_remove_breakpoint(CPUState *cpu, int type, hwaddr addr, hwaddr len)
 {
     struct kvm_sw_breakpoint *bp;
     int err;
@@ -3371,28 +3395,6 @@ void kvm_remove_all_breakpoints(CPUState *cpu)
     }
 }
 
-#else /* !KVM_CAP_SET_GUEST_DEBUG */
-
-int kvm_update_guest_debug(CPUState *cpu, unsigned long reinject_trap)
-{
-    return -EINVAL;
-}
-
-int kvm_insert_breakpoint(CPUState *cpu, target_ulong addr,
-                          target_ulong len, int type)
-{
-    return -EINVAL;
-}
-
-int kvm_remove_breakpoint(CPUState *cpu, target_ulong addr,
-                          target_ulong len, int type)
-{
-    return -EINVAL;
-}
-
-void kvm_remove_all_breakpoints(CPUState *cpu)
-{
-}
 #endif /* !KVM_CAP_SET_GUEST_DEBUG */
 
 static int kvm_set_signal_mask(CPUState *cpu, const sigset_t *sigset)
@@ -3692,6 +3694,17 @@ static void kvm_accel_instance_init(Object *obj)
     s->kvm_dirty_ring_size = 0;
 }
 
+/**
+ * kvm_gdbstub_sstep_flags():
+ *
+ * Returns: SSTEP_* flags that KVM supports for guest debug. The
+ * support is probed during kvm_init()
+ */
+static int kvm_gdbstub_sstep_flags(void)
+{
+    return kvm_sstep_flags;
+}
+
 static void kvm_accel_class_init(ObjectClass *oc, void *data)
 {
     AccelClass *ac = ACCEL_CLASS(oc);
@@ -3699,6 +3712,7 @@ static void kvm_accel_class_init(ObjectClass *oc, void *data)
     ac->init_machine = kvm_init;
     ac->has_memory = kvm_accel_has_memory;
     ac->allowed = &kvm_allowed;
+    ac->gdbstub_supported_sstep_flags = kvm_gdbstub_sstep_flags;
 
     object_class_property_add(oc, "kernel-irqchip", "on|off|split",
         NULL, kvm_set_kernel_irqchip,
@@ -3888,7 +3902,7 @@ exit:
 typedef struct StatsDescriptors {
     const char *ident; /* cache key, currently the StatsTarget */
     struct kvm_stats_desc *kvm_stats_desc;
-    struct kvm_stats_header *kvm_stats_header;
+    struct kvm_stats_header kvm_stats_header;
     QTAILQ_ENTRY(StatsDescriptors) next;
 } StatsDescriptors;
 
@@ -3919,7 +3933,7 @@ static StatsDescriptors *find_stats_descriptors(StatsTarget target, int stats_fd
     descriptors = g_new0(StatsDescriptors, 1);
 
     /* Read stats header */
-    kvm_stats_header = g_malloc(sizeof(*kvm_stats_header));
+    kvm_stats_header = &descriptors->kvm_stats_header;
     ret = read(stats_fd, kvm_stats_header, sizeof(*kvm_stats_header));
     if (ret != sizeof(*kvm_stats_header)) {
         error_setg(errp, "KVM stats: failed to read stats header: "
@@ -3944,7 +3958,6 @@ static StatsDescriptors *find_stats_descriptors(StatsTarget target, int stats_fd
         g_free(kvm_stats_desc);
         return NULL;
     }
-    descriptors->kvm_stats_header = kvm_stats_header;
     descriptors->kvm_stats_desc = kvm_stats_desc;
     descriptors->ident = ident;
     QTAILQ_INSERT_TAIL(&stats_descriptors, descriptors, next);
@@ -3969,7 +3982,7 @@ static void query_stats(StatsResultList **result, StatsTarget target,
         return;
     }
 
-    kvm_stats_header = descriptors->kvm_stats_header;
+    kvm_stats_header = &descriptors->kvm_stats_header;
     kvm_stats_desc = descriptors->kvm_stats_desc;
     size_desc = sizeof(*kvm_stats_desc) + kvm_stats_header->name_size;
 
@@ -4034,7 +4047,7 @@ static void query_stats_schema(StatsSchemaList **result, StatsTarget target,
         return;
     }
 
-    kvm_stats_header = descriptors->kvm_stats_header;
+    kvm_stats_header = &descriptors->kvm_stats_header;
     kvm_stats_desc = descriptors->kvm_stats_desc;
     size_desc = sizeof(*kvm_stats_desc) + kvm_stats_header->name_size;
 
@@ -4131,7 +4144,9 @@ void query_stats_schemas_cb(StatsSchemaList **result, Error **errp)
     query_stats_schema(result, STATS_TARGET_VM, stats_fd, errp);
     close(stats_fd);
 
-    stats_args.result.schema = result;
-    stats_args.errp = errp;
-    run_on_cpu(first_cpu, query_stats_schema_vcpu, RUN_ON_CPU_HOST_PTR(&stats_args));
+    if (first_cpu) {
+        stats_args.result.schema = result;
+        stats_args.errp = errp;
+        run_on_cpu(first_cpu, query_stats_schema_vcpu, RUN_ON_CPU_HOST_PTR(&stats_args));
+    }
 }

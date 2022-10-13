@@ -32,6 +32,7 @@ static int connect_qga(char *path)
             g_usleep(G_USEC_PER_SEC);
         }
         if (i++ == 10) {
+            close(s);
             return -1;
         }
     } while (ret == -1);
@@ -59,8 +60,8 @@ fixture_setup(TestFixture *fixture, gconstpointer data, gchar **envp)
 
     fixture->loop = g_main_loop_new(NULL, FALSE);
 
-    fixture->test_dir = g_strdup("/tmp/qgatest.XXXXXX");
-    g_assert_nonnull(mkdtemp(fixture->test_dir));
+    fixture->test_dir = g_strdup_printf("%s/qgatest.XXXXXX", g_get_tmp_dir());
+    g_assert_nonnull(g_mkdtemp(fixture->test_dir));
 
     path = g_build_filename(fixture->test_dir, "sock", NULL);
     cwd = g_get_current_dir();
@@ -629,7 +630,7 @@ static void test_qga_get_time(gconstpointer fix)
     g_assert_cmpint(time, >, 0);
 }
 
-static void test_qga_blacklist(gconstpointer data)
+static void test_qga_blockedrpcs(gconstpointer data)
 {
     TestFixture fix;
     QDict *ret, *error;
@@ -637,7 +638,7 @@ static void test_qga_blacklist(gconstpointer data)
 
     fixture_setup(&fix, "-b guest-ping,guest-get-time", NULL);
 
-    /* check blacklist */
+    /* check blocked RPCs */
     ret = qmp_fd(fix.fd, "{'execute': 'guest-ping'}");
     g_assert_nonnull(ret);
     error = qdict_get_qdict(ret, "error");
@@ -729,7 +730,7 @@ static void test_qga_config(gconstpointer data)
     g_assert_true(g_key_file_get_boolean(kf, "general", "verbose", &error));
     g_assert_no_error(error);
 
-    strv = g_key_file_get_string_list(kf, "general", "blacklist", &n, &error);
+    strv = g_key_file_get_string_list(kf, "general", "block-rpcs", &n, &error);
     g_assert_cmpint(n, ==, 2);
     g_assert_true(g_strv_contains((const char * const *)strv,
                                   "guest-ping"));
@@ -968,7 +969,7 @@ int main(int argc, char **argv)
     g_test_add_data_func("/qga/fsfreeze-status", &fix,
                          test_qga_fsfreeze_status);
 
-    g_test_add_data_func("/qga/blacklist", NULL, test_qga_blacklist);
+    g_test_add_data_func("/qga/blockedrpcs", NULL, test_qga_blockedrpcs);
     g_test_add_data_func("/qga/config", NULL, test_qga_config);
     g_test_add_data_func("/qga/guest-exec", &fix, test_qga_guest_exec);
     g_test_add_data_func("/qga/guest-exec-invalid", &fix,

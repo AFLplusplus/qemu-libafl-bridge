@@ -1129,7 +1129,7 @@ Virt
 M: Xiaojuan Yang <yangxiaojuan@loongson.cn>
 M: Song Gao <gaosong@loongson.cn>
 S: Maintained
-F: docs/system/loongarch/loongson3.rst
+F: docs/system/loongarch/virt.rst
 F: configs/targets/loongarch64-softmmu.mak
 F: configs/devices/loongarch64-softmmu/default.mak
 F: hw/loongarch/
@@ -1282,7 +1282,7 @@ F: hw/openrisc/openrisc_sim.c
 
 PowerPC Machines
 ----------------
-405 (ref405ep and taihu)
+405 (ref405ep)
 L: qemu-ppc@nongnu.org
 S: Orphan
 F: hw/ppc/ppc405_boards.c
@@ -2030,8 +2030,10 @@ virtio-blk
 M: Stefan Hajnoczi <stefanha@redhat.com>
 L: qemu-block@nongnu.org
 S: Supported
+F: hw/block/virtio-blk-common.c
 F: hw/block/virtio-blk.c
 F: hw/block/dataplane/*
+F: include/hw/virtio/virtio-blk-common.h
 F: tests/qtest/virtio-blk-test.c
 T: git https://github.com/stefanha/qemu.git block
 
@@ -2097,6 +2099,14 @@ F: hw/virtio/vhost-user-rng.c
 F: hw/virtio/vhost-user-rng-pci.c
 F: include/hw/virtio/vhost-user-rng.h
 F: tools/vhost-user-rng/*
+
+vhost-user-gpio
+M: Alex Bennée <alex.bennee@linaro.org>
+R: Viresh Kumar <viresh.kumar@linaro.org>
+S: Maintained
+F: hw/virtio/vhost-user-gpio*
+F: include/hw/virtio/vhost-user-gpio.h
+F: tests/qtest/libqos/virtio-gpio.*
 
 virtio-crypto
 M: Gonglei <arei.gonglei@huawei.com>
@@ -2271,11 +2281,13 @@ S: Maintained
 F: contrib/vhost-user-blk/
 F: contrib/vhost-user-scsi/
 F: hw/block/vhost-user-blk.c
+F: hw/block/virtio-blk-common.c
 F: hw/scsi/vhost-user-scsi.c
 F: hw/virtio/vhost-user-blk-pci.c
 F: hw/virtio/vhost-user-scsi-pci.c
 F: include/hw/virtio/vhost-user-blk.h
 F: include/hw/virtio/vhost-user-scsi.h
+F: include/hw/virtio/virtio-blk-common.h
 
 vhost-user-gpu
 M: Marc-André Lureau <marcandre.lureau@redhat.com>
@@ -2438,6 +2450,7 @@ X: audio/jackaudio.c
 X: audio/ossaudio.c
 X: audio/paaudio.c
 X: audio/sdlaudio.c
+X: audio/sndioaudio.c
 X: audio/spiceaudio.c
 F: qapi/audio.json
 
@@ -2481,6 +2494,12 @@ M: Gerd Hoffmann <kraxel@redhat.com>
 R: Thomas Huth <huth@tuxfamily.org>
 S: Odd Fixes
 F: audio/sdlaudio.c
+
+Sndio Audio backend
+M: Gerd Hoffmann <kraxel@redhat.com>
+R: Alexandre Ratchov <alex@caoua.org>
+S: Odd Fixes
+F: audio/sndioaudio.c
 
 Block layer core
 M: Kevin Wolf <kwolf@redhat.com>
@@ -2670,7 +2689,7 @@ GDB stub
 M: Alex Bennée <alex.bennee@linaro.org>
 R: Philippe Mathieu-Daudé <f4bug@amsat.org>
 S: Maintained
-F: gdbstub*
+F: gdbstub/*
 F: include/exec/gdbstub.h
 F: gdb-xml/
 F: tests/tcg/multiarch/gdbstub/
@@ -2978,7 +2997,6 @@ F: include/hw/registerfields.h
 SLIRP
 M: Samuel Thibault <samuel.thibault@ens-lyon.org>
 S: Maintained
-F: slirp/
 F: net/slirp.c
 F: include/net/slirp.h
 T: git https://people.debian.org/~sthibault/qemu.git slirp
@@ -3724,7 +3742,8 @@ GitLab custom runner (Works On Arm Sponsored)
 M: Alex Bennée <alex.bennee@linaro.org>
 M: Philippe Mathieu-Daudé <f4bug@amsat.org>
 S: Maintained
-F: .gitlab-ci.d/custom-runners/ubuntu-20.04-aarch64.yml
+F: .gitlab-ci.d/custom-runners/ubuntu-22.04-aarch64.yml
+F: .gitlab-ci.d/custom-runners/ubuntu-22.04-aarch32.yml
 
 Documentation
 -------------

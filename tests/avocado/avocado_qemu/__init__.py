@@ -227,6 +227,10 @@ def exec_command_and_wait_for_pattern(test, command,
     _console_interaction(test, success_message, failure_message, command + '\r')
 
 class QemuBaseTest(avocado.Test):
+
+    # default timeout for all tests, can be overridden
+    timeout = 120
+
     def _get_unique_tag_val(self, tag_name):
         """
         Gets a tag value, if unique for a key
@@ -294,6 +298,12 @@ class QemuSystemTest(QemuBaseTest):
         if not checker(qemu_bin=self.qemu_bin):
             self.cancel("%s accelerator does not seem to be "
                         "available" % accelerator)
+
+    def require_netdev(self, netdevname):
+        netdevhelp = run_cmd([self.qemu_bin,
+                             '-M', 'none', '-netdev', 'help'])[0];
+        if netdevhelp.find('\n' + netdevname + '\n') < 0:
+            self.cancel('no support for user networking')
 
     def _new_vm(self, name, *args):
         self._sd = tempfile.TemporaryDirectory(prefix="avo_qemu_sock_")
@@ -508,11 +518,10 @@ class LinuxDistro:
 class LinuxTest(LinuxSSHMixIn, QemuSystemTest):
     """Facilitates having a cloud-image Linux based available.
 
-    For tests that indent to interact with guests, this is a better choice
+    For tests that intend to interact with guests, this is a better choice
     to start with than the more vanilla `QemuSystemTest` class.
     """
 
-    timeout = 900
     distro = None
     username = 'root'
     password = 'password'
@@ -547,6 +556,7 @@ class LinuxTest(LinuxSSHMixIn, QemuSystemTest):
 
     def setUp(self, ssh_pubkey=None, network_device_type='virtio-net'):
         super().setUp()
+        self.require_netdev('user')
         self._set_distro()
         self.vm.add_args('-smp', self.smp)
         self.vm.add_args('-m', self.memory)

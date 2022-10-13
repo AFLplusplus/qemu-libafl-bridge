@@ -360,7 +360,6 @@ struct MachineState {
     CpuTopology smp;
     struct NVDIMMState *nvdimms_state;
     struct NumaState *numa_state;
-    CXLFixedMemoryWindowOptionsList *cfmws_list;
 };
 
 #define DEFINE_MACHINE(namestr, machine_initfn) \
@@ -379,6 +378,9 @@ struct MachineState {
         type_register_static(&machine_initfn##_typeinfo); \
     } \
     type_init(machine_initfn##_register_types)
+
+extern GlobalProperty hw_compat_7_1[];
+extern const size_t hw_compat_7_1_len;
 
 extern GlobalProperty hw_compat_7_0[];
 extern const size_t hw_compat_7_0_len;

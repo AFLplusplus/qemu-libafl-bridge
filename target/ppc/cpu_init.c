@@ -5700,6 +5700,33 @@ static void register_power9_mmu_sprs(CPUPPCState *env)
 #endif
 }
 
+static void register_power10_hash_sprs(CPUPPCState *env)
+{
+    /*
+     * it's the OS responsability to generate a random value for the registers
+     * in each process' context. So, initialize it with 0 here.
+     */
+    uint64_t hashkeyr_initial_value = 0, hashpkeyr_initial_value = 0;
+#if defined(CONFIG_USER_ONLY)
+    /* in linux-user, setup the hash register with a random value */
+    GRand *rand = g_rand_new();
+    hashkeyr_initial_value =
+        ((uint64_t)g_rand_int(rand) << 32) | (uint64_t)g_rand_int(rand);
+    hashpkeyr_initial_value =
+        ((uint64_t)g_rand_int(rand) << 32) | (uint64_t)g_rand_int(rand);
+    g_rand_free(rand);
+#endif
+    spr_register(env, SPR_HASHKEYR, "HASHKEYR",
+            SPR_NOACCESS, SPR_NOACCESS,
+            &spr_read_generic, &spr_write_generic,
+            hashkeyr_initial_value);
+    spr_register_hv(env, SPR_HASHPKEYR, "HASHPKEYR",
+            SPR_NOACCESS, SPR_NOACCESS,
+            SPR_NOACCESS, SPR_NOACCESS,
+            &spr_read_generic, &spr_write_generic,
+            hashpkeyr_initial_value);
+}
+
 /*
  * Initialize PMU counter overflow timers for Power8 and
  * newer Power chips when using TCG.
@@ -5912,15 +5939,25 @@ static void init_proc_POWER7(CPUPPCState *env)
     ppcPOWER7_irq_init(env_archcpu(env));
 }
 
-static bool ppc_pvr_match_power7(PowerPCCPUClass *pcc, uint32_t pvr)
+static bool ppc_pvr_match_power7(PowerPCCPUClass *pcc, uint32_t pvr, bool best)
 {
-    if ((pvr & CPU_POWERPC_POWER_SERVER_MASK) == CPU_POWERPC_POWER7P_BASE) {
-        return true;
+    uint32_t base = pvr & CPU_POWERPC_POWER_SERVER_MASK;
+    uint32_t pcc_base = pcc->pvr & CPU_POWERPC_POWER_SERVER_MASK;
+
+    if (!best) {
+        if (base == CPU_POWERPC_POWER7_BASE) {
+            return true;
+        }
+        if (base == CPU_POWERPC_POWER7P_BASE) {
+            return true;
+        }
     }
-    if ((pvr & CPU_POWERPC_POWER_SERVER_MASK) == CPU_POWERPC_POWER7_BASE) {
-        return true;
+
+    if (base != pcc_base) {
+        return false;
     }
-    return false;
+
+    return true;
 }
 
 static bool cpu_has_work_POWER7(CPUState *cs)
@@ -6073,18 +6110,27 @@ static void init_proc_POWER8(CPUPPCState *env)
     ppcPOWER7_irq_init(env_archcpu(env));
 }
 
-static bool ppc_pvr_match_power8(PowerPCCPUClass *pcc, uint32_t pvr)
+static bool ppc_pvr_match_power8(PowerPCCPUClass *pcc, uint32_t pvr, bool best)
 {
-    if ((pvr & CPU_POWERPC_POWER_SERVER_MASK) == CPU_POWERPC_POWER8NVL_BASE) {
-        return true;
+    uint32_t base = pvr & CPU_POWERPC_POWER_SERVER_MASK;
+    uint32_t pcc_base = pcc->pvr & CPU_POWERPC_POWER_SERVER_MASK;
+
+    if (!best) {
+        if (base == CPU_POWERPC_POWER8_BASE) {
+            return true;
+        }
+        if (base == CPU_POWERPC_POWER8E_BASE) {
+            return true;
+        }
+        if (base == CPU_POWERPC_POWER8NVL_BASE) {
+            return true;
+        }
     }
-    if ((pvr & CPU_POWERPC_POWER_SERVER_MASK) == CPU_POWERPC_POWER8E_BASE) {
-        return true;
+    if (base != pcc_base) {
+        return false;
     }
-    if ((pvr & CPU_POWERPC_POWER_SERVER_MASK) == CPU_POWERPC_POWER8_BASE) {
-        return true;
-    }
-    return false;
+
+    return true;
 }
 
 static bool cpu_has_work_POWER8(CPUState *cs)
@@ -6282,11 +6328,26 @@ static void init_proc_POWER9(CPUPPCState *env)
     ppcPOWER9_irq_init(env_archcpu(env));
 }
 
-static bool ppc_pvr_match_power9(PowerPCCPUClass *pcc, uint32_t pvr)
+static bool ppc_pvr_match_power9(PowerPCCPUClass *pcc, uint32_t pvr, bool best)
 {
-    if ((pvr & CPU_POWERPC_POWER_SERVER_MASK) == CPU_POWERPC_POWER9_BASE) {
+    uint32_t base = pvr & CPU_POWERPC_POWER_SERVER_MASK;
+    uint32_t pcc_base = pcc->pvr & CPU_POWERPC_POWER_SERVER_MASK;
+
+    if (!best) {
+        if (base == CPU_POWERPC_POWER9_BASE) {
+            return true;
+        }
+    }
+
+    if (base != pcc_base) {
+        return false;
+    }
+
+    if ((pvr & 0x0f00) == (pcc->pvr & 0x0f00)) {
+        /* Major DD version matches to power9_v1.0 and power9_v2.0 */
         return true;
     }
+
     return false;
 }
 
@@ -6484,6 +6545,7 @@ static void init_proc_POWER10(CPUPPCState *env)
     register_power8_book4_sprs(env);
     register_power8_rpr_sprs(env);
     register_power9_mmu_sprs(env);
+    register_power10_hash_sprs(env);
 
     /* FIXME: Filter fields properly based on privilege level */
     spr_register_kvm_hv(env, SPR_PSSCR, "PSSCR", NULL, NULL, NULL, NULL,
@@ -6499,11 +6561,26 @@ static void init_proc_POWER10(CPUPPCState *env)
     ppcPOWER9_irq_init(env_archcpu(env));
 }
 
-static bool ppc_pvr_match_power10(PowerPCCPUClass *pcc, uint32_t pvr)
+static bool ppc_pvr_match_power10(PowerPCCPUClass *pcc, uint32_t pvr, bool best)
 {
-    if ((pvr & CPU_POWERPC_POWER_SERVER_MASK) == CPU_POWERPC_POWER10_BASE) {
+    uint32_t base = pvr & CPU_POWERPC_POWER_SERVER_MASK;
+    uint32_t pcc_base = pcc->pvr & CPU_POWERPC_POWER_SERVER_MASK;
+
+    if (!best) {
+        if (base == CPU_POWERPC_POWER10_BASE) {
+            return true;
+        }
+    }
+
+    if (base != pcc_base) {
+        return false;
+    }
+
+    if ((pvr & 0x0f00) == (pcc->pvr & 0x0f00)) {
+        /* Major DD version matches to power10_v1.0 and power10_v2.0 */
         return true;
     }
+
     return false;
 }
 
@@ -6910,7 +6987,7 @@ static gint ppc_cpu_compare_class_pvr_mask(gconstpointer a, gconstpointer b)
         return -1;
     }
 
-    if (pcc->pvr_match(pcc, pvr)) {
+    if (pcc->pvr_match(pcc, pvr, true)) {
         return 0;
     }
 
@@ -7137,6 +7214,13 @@ static void ppc_cpu_set_pc(CPUState *cs, vaddr value)
     cpu->env.nip = value;
 }
 
+static vaddr ppc_cpu_get_pc(CPUState *cs)
+{
+    PowerPCCPU *cpu = POWERPC_CPU(cs);
+
+    return cpu->env.nip;
+}
+
 static bool ppc_cpu_has_work(CPUState *cs)
 {
     PowerPCCPU *cpu = POWERPC_CPU(cs);
@@ -7308,7 +7392,7 @@ static void ppc_cpu_instance_finalize(Object *obj)
     ppc_hash64_finalize(cpu);
 }
 
-static bool ppc_pvr_match_default(PowerPCCPUClass *pcc, uint32_t pvr)
+static bool ppc_pvr_match_default(PowerPCCPUClass *pcc, uint32_t pvr, bool best)
 {
     return pcc->pvr == pvr;
 }
@@ -7395,6 +7479,7 @@ static void ppc_cpu_class_init(ObjectClass *oc, void *data)
     cc->has_work = ppc_cpu_has_work;
     cc->dump_state = ppc_cpu_dump_state;
     cc->set_pc = ppc_cpu_set_pc;
+    cc->get_pc = ppc_cpu_get_pc;
     cc->gdb_read_register = ppc_cpu_gdb_read_register;
     cc->gdb_write_register = ppc_cpu_gdb_write_register;
 #ifndef CONFIG_USER_ONLY

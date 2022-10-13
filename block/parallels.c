@@ -165,8 +165,9 @@ static int64_t block_status(BDRVParallelsState *s, int64_t sector_num,
     return start_off;
 }
 
-static int64_t allocate_clusters(BlockDriverState *bs, int64_t sector_num,
-                                 int nb_sectors, int *pnum)
+static coroutine_fn int64_t allocate_clusters(BlockDriverState *bs,
+                                              int64_t sector_num,
+                                              int nb_sectors, int *pnum)
 {
     int ret = 0;
     BDRVParallelsState *s = bs->opaque;
@@ -241,8 +242,8 @@ static int64_t allocate_clusters(BlockDriverState *bs, int64_t sector_num,
             return ret;
         }
 
-        ret = bdrv_co_pwritev(bs->file, s->data_end * BDRV_SECTOR_SIZE,
-                              nb_cow_bytes, buf, 0);
+        ret = bdrv_co_pwrite(bs->file, s->data_end * BDRV_SECTOR_SIZE,
+                             nb_cow_bytes, buf, 0);
         qemu_vfree(buf);
         if (ret < 0) {
             return ret;

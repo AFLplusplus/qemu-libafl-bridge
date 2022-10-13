@@ -3632,7 +3632,7 @@ static const X86CPUDefinition builtin_x86_defs[] = {
             CPUID_7_0_EDX_CORE_CAPABILITY,
         .features[FEAT_CORE_CAPABILITY] =
             MSR_CORE_CAP_SPLIT_LOCK_DETECT,
-        /* XSAVES is is added in version 3 */
+        /* XSAVES is added in version 3 */
         .features[FEAT_XSAVE] =
             CPUID_XSAVE_XSAVEOPT | CPUID_XSAVE_XSAVEC |
             CPUID_XSAVE_XGETBV1,
@@ -4835,6 +4835,11 @@ static void x86_cpu_list_entry(gpointer data, gpointer user_data)
     }
     if (!desc) {
         desc = g_strdup_printf("%s", model_id);
+    }
+
+    if (cc->model && cc->model->cpudef->deprecation_note) {
+        g_autofree char *olddesc = desc;
+        desc = g_strdup_printf("%s (deprecated)", olddesc);
     }
 
     qemu_printf("x86 %-20s  %s\n", name, desc);
@@ -6819,6 +6824,14 @@ static void x86_cpu_set_pc(CPUState *cs, vaddr value)
     cpu->env.eip = value;
 }
 
+static vaddr x86_cpu_get_pc(CPUState *cs)
+{
+    X86CPU *cpu = X86_CPU(cs);
+
+    /* Match cpu_get_tb_cpu_state. */
+    return cpu->env.eip + cpu->env.segs[R_CS].base;
+}
+
 int x86_cpu_pending_interrupt(CPUState *cs, int interrupt_request)
 {
     X86CPU *cpu = X86_CPU(cs);
@@ -7101,6 +7114,7 @@ static void x86_cpu_common_class_init(ObjectClass *oc, void *data)
     cc->has_work = x86_cpu_has_work;
     cc->dump_state = x86_cpu_dump_state;
     cc->set_pc = x86_cpu_set_pc;
+    cc->get_pc = x86_cpu_get_pc;
     cc->gdb_read_register = x86_cpu_gdb_read_register;
     cc->gdb_write_register = x86_cpu_gdb_write_register;
     cc->get_arch_id = x86_cpu_get_arch_id;

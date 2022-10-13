@@ -2,6 +2,7 @@
 /qemu_libafl_bridge/target/
 /GNUmakefile
 /build/
+/.cache/
 *.pyc
 .sdk
 .stgit-*

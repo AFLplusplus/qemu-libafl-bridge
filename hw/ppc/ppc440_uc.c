@@ -904,14 +904,17 @@ static void dcr_write_dma(void *opaque, int dcrn, uint32_t val)
                     int width, i, sidx, didx;
                     uint8_t *rptr, *wptr;
                     hwaddr rlen, wlen;
+                    hwaddr xferlen;
 
                     sidx = didx = 0;
                     width = 1 << ((val & DMA0_CR_PW) >> 25);
+                    xferlen = count * width;
+                    wlen = rlen = xferlen;
                     rptr = cpu_physical_memory_map(dma->ch[chnl].sa, &rlen,
                                                    false);
                     wptr = cpu_physical_memory_map(dma->ch[chnl].da, &wlen,
                                                    true);
-                    if (rptr && wptr) {
+                    if (rptr && rlen == xferlen && wptr && wlen == xferlen) {
                         if (!(val & DMA0_CR_DEC) &&
                             val & DMA0_CR_SAI && val & DMA0_CR_DAI) {
                             /* optimise common case */
@@ -1025,7 +1028,8 @@ void ppc4xx_dma_init(CPUPPCState *env, int dcr_base)
 
 /*****************************************************************************/
 /* PCI Express controller */
-/* FIXME: This is not complete and does not work, only implemented partially
+/*
+ * FIXME: This is not complete and does not work, only implemented partially
  * to allow firmware and guests to find an empty bus. Cards should use PCI.
  */
 #include "hw/pci/pcie_host.h"

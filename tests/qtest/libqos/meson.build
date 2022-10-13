@@ -6,7 +6,7 @@ libqos_srcs = files(
         'qos_external.c',
         'pci.c',
         'fw_cfg.c',
-        'malloc.c',
+        'libqos-malloc.c',
         'libqos.c',
         'sdhci-cmd.c',
 
@@ -45,6 +45,7 @@ libqos_srcs = files(
         'virtio-scsi.c',
         'virtio-serial.c',
         'virtio-iommu.c',
+        'virtio-gpio.c',
         'generic-pcihost.c',
 
         # qgraph machines:

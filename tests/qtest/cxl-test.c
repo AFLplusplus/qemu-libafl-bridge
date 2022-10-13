@@ -89,13 +89,13 @@ static void cxl_2root_port(void)
     qtest_end();
 }
 
+#ifdef CONFIG_POSIX
 static void cxl_t3d(void)
 {
     g_autoptr(GString) cmdline = g_string_new(NULL);
-    char template[] = "/tmp/cxl-test-XXXXXX";
-    const char *tmpfs;
+    g_autofree const char *tmpfs = NULL;
 
-    tmpfs = mkdtemp(template);
+    tmpfs = g_dir_make_tmp("cxl-test-XXXXXX", NULL);
 
     g_string_printf(cmdline, QEMU_PXB_CMD QEMU_RP QEMU_T3D, tmpfs, tmpfs);
 
@@ -106,10 +106,9 @@ static void cxl_t3d(void)
 static void cxl_1pxb_2rp_2t3d(void)
 {
     g_autoptr(GString) cmdline = g_string_new(NULL);
-    char template[] = "/tmp/cxl-test-XXXXXX";
-    const char *tmpfs;
+    g_autofree const char *tmpfs = NULL;
 
-    tmpfs = mkdtemp(template);
+    tmpfs = g_dir_make_tmp("cxl-test-XXXXXX", NULL);
 
     g_string_printf(cmdline, QEMU_PXB_CMD QEMU_2RP QEMU_2T3D,
                     tmpfs, tmpfs, tmpfs, tmpfs);
@@ -121,10 +120,9 @@ static void cxl_1pxb_2rp_2t3d(void)
 static void cxl_2pxb_4rp_4t3d(void)
 {
     g_autoptr(GString) cmdline = g_string_new(NULL);
-    char template[] = "/tmp/cxl-test-XXXXXX";
-    const char *tmpfs;
+    g_autofree const char *tmpfs = NULL;
 
-    tmpfs = mkdtemp(template);
+    tmpfs = g_dir_make_tmp("cxl-test-XXXXXX", NULL);
 
     g_string_printf(cmdline, QEMU_2PXB_CMD QEMU_4RP QEMU_4T3D,
                     tmpfs, tmpfs, tmpfs, tmpfs, tmpfs, tmpfs,
@@ -133,6 +131,7 @@ static void cxl_2pxb_4rp_4t3d(void)
     qtest_start(cmdline->str);
     qtest_end();
 }
+#endif /* CONFIG_POSIX */
 
 int main(int argc, char **argv)
 {
@@ -144,8 +143,10 @@ int main(int argc, char **argv)
     qtest_add_func("/pci/cxl/pxb_x2_with_window", cxl_2pxb_with_window);
     qtest_add_func("/pci/cxl/rp", cxl_root_port);
     qtest_add_func("/pci/cxl/rp_x2", cxl_2root_port);
+#ifdef CONFIG_POSIX
     qtest_add_func("/pci/cxl/type3_device", cxl_t3d);
     qtest_add_func("/pci/cxl/rp_x2_type3_x2", cxl_1pxb_2rp_2t3d);
     qtest_add_func("/pci/cxl/pxb_x2_root_port_x4_type3_x4", cxl_2pxb_4rp_4t3d);
+#endif
     return g_test_run();
 }

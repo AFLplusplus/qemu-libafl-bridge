@@ -38,8 +38,6 @@ struct AspeedMachineState {
     /* Public */
 
     AspeedSoCState soc;
-    MemoryRegion ram_container;
-    MemoryRegion max_ram;
     bool mmio_exec;
     char *fmc_model;
     char *spi_model;
@@ -1432,6 +1430,7 @@ static void aspeed_minibmc_machine_init(MachineState *machine)
 
     armv7m_load_kernel(ARM_CPU(first_cpu),
                        machine->kernel_filename,
+                       0,
                        AST1030_INTERNAL_FLASH_SIZE);
 }
 

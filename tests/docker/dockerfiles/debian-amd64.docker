@@ -13,6 +13,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     eatmydata apt-get install --no-install-recommends -y \
             bash \
             bc \
+            bison \
             bsdextrautils \
             bzip2 \
             ca-certificates \
@@ -23,6 +24,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
             diffutils \
             exuberant-ctags \
             findutils \
+            flex \
             g++ \
             gcc \
             gcovr \
@@ -41,6 +43,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
             libcacard-dev \
             libcap-ng-dev \
             libcapstone-dev \
+            libcmocka-dev \
             libcurl4-gnutls-dev \
             libdaxctl-dev \
             libdrm-dev \
@@ -59,6 +62,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
             libiscsi-dev \
             libjemalloc-dev \
             libjpeg62-turbo-dev \
+            libjson-c-dev \
             liblttng-ust-dev \
             liblzo2-dev \
             libncursesw5-dev \

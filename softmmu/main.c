@@ -30,20 +30,22 @@
 #include <SDL.h>
 #endif
 
-int qemu_main(int argc, char **argv, char **envp)
+int qemu_default_main(void)
 {
-    qemu_init(argc, argv, envp);
-    qemu_main_loop();
+    int status;
+
+    status = qemu_main_loop();
     qemu_cleanup();
 
-    return 0;
+    return status;
 }
 
+int (*qemu_main)(void) = qemu_default_main;
+
 #ifndef AS_LIB
-#ifndef CONFIG_COCOA
 int main(int argc, char **argv)
 {
-    return qemu_main(argc, argv, NULL);
+    qemu_init(argc, argv);
+    return qemu_main();
 }
-#endif
 #endif

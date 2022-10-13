@@ -58,10 +58,6 @@
 #include <lwp.h>
 #endif
 
-#ifdef __APPLE__
-#include <mach-o/dyld.h>
-#endif
-
 #include "qemu/mmap-alloc.h"
 
 #ifdef CONFIG_DEBUG_STACK_USAGE
@@ -255,6 +251,25 @@ void qemu_set_cloexec(int fd)
     assert(f != -1);
     f = fcntl(fd, F_SETFD, f | FD_CLOEXEC);
     assert(f != -1);
+}
+
+int qemu_socketpair(int domain, int type, int protocol, int sv[2])
+{
+    int ret;
+
+#ifdef SOCK_CLOEXEC
+    ret = socketpair(domain, type | SOCK_CLOEXEC, protocol, sv);
+    if (ret != -1 || errno != EINVAL) {
+        return ret;
+    }
+#endif
+    ret = socketpair(domain, type, protocol, sv);;
+    if (ret == 0) {
+        qemu_set_cloexec(sv[0]);
+        qemu_set_cloexec(sv[1]);
+    }
+
+    return ret;
 }
 
 char *

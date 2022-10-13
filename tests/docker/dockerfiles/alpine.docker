@@ -1,10 +1,10 @@
 # THIS FILE WAS AUTO-GENERATED
 #
-#  $ lcitool dockerfile --layers all alpine-edge qemu
+#  $ lcitool dockerfile --layers all alpine-316 qemu
 #
 # https://gitlab.com/libvirt/libvirt-ci
 
-FROM docker.io/library/alpine:edge
+FROM docker.io/library/alpine:3.16
 
 RUN apk update && \
     apk upgrade && \
@@ -13,6 +13,7 @@ RUN apk update && \
         attr-dev \
         bash \
         bc \
+        bison \
         bzip2 \
         bzip2-dev \
         ca-certificates \
@@ -21,6 +22,7 @@ RUN apk update && \
         cdrkit \
         ceph-dev \
         clang \
+        cmocka-dev \
         ctags \
         curl-dev \
         cyrus-sasl-dev \
@@ -29,6 +31,7 @@ RUN apk update && \
         dtc-dev \
         eudev-dev \
         findutils \
+        flex \
         fuse3-dev \
         g++ \
         gcc \
@@ -39,6 +42,7 @@ RUN apk update && \
         glib-static \
         gnutls-dev \
         gtk+3.0-dev \
+        json-c-dev \
         libaio-dev \
         libbpf-dev \
         libcap-ng-dev \
@@ -64,6 +68,7 @@ RUN apk update && \
         mesa-dev \
         meson \
         multipath-tools \
+        musl-dev \
         ncurses-dev \
         ndctl-dev \
         net-tools \
@@ -81,7 +86,6 @@ RUN apk update && \
         py3-pip \
         py3-sphinx \
         py3-sphinx_rtd_theme \
-        py3-virtualenv \
         py3-yaml \
         python3 \
         rpm2cpio \

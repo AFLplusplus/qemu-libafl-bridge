@@ -111,14 +111,6 @@ static int get_a64_user_mem_index(DisasContext *s)
         case ARMMMUIdx_E20_2_PAN:
             useridx = ARMMMUIdx_E20_0;
             break;
-        case ARMMMUIdx_SE10_1:
-        case ARMMMUIdx_SE10_1_PAN:
-            useridx = ARMMMUIdx_SE10_0;
-            break;
-        case ARMMMUIdx_SE20_2:
-        case ARMMMUIdx_SE20_2_PAN:
-            useridx = ARMMMUIdx_SE20_0;
-            break;
         default:
             g_assert_not_reached();
         }
@@ -2219,17 +2211,7 @@ static void disas_exc(DisasContext *s, uint32_t insn)
          * it is required for halting debug disabled: it will UNDEF.
          * Secondly, "HLT 0xf000" is the A64 semihosting syscall instruction.
          */
-        if (semihosting_enabled() && imm16 == 0xf000) {
-#ifndef CONFIG_USER_ONLY
-            /* In system mode, don't allow userspace access to semihosting,
-             * to provide some semblance of security (and for consistency
-             * with our 32-bit semihosting).
-             */
-            if (s->current_el == 0) {
-                unallocated_encoding(s);
-                break;
-            }
-#endif
+        if (semihosting_enabled(s->current_el == 0) && imm16 == 0xf000) {
             gen_exception_internal_insn(s, s->pc_curr, EXCP_SEMIHOST);
         } else {
             unallocated_encoding(s);
@@ -14670,7 +14652,7 @@ static bool is_guarded_page(CPUARMState *env, DisasContext *s)
      * table entry even for that case.
      */
     return (tlb_hit(entry->addr_code, addr) &&
-            arm_tlb_bti_gp(&env_tlb(env)->d[mmu_idx].iotlb[index].attrs));
+            arm_tlb_bti_gp(&env_tlb(env)->d[mmu_idx].fulltlb[index].attrs));
 #endif
 }
 

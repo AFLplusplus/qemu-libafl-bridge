@@ -81,11 +81,6 @@ the process listing. This is replaced by the new ``password-secret``
 option which lets the password be securely provided on the command
 line using a ``secret`` object instance.
 
-``-watchdog`` (since 6.2)
-'''''''''''''''''''''''''
-
-Use ``-device`` instead.
-
 ``-smp`` ("parameter=0" SMP configurations) (since 6.2)
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
@@ -213,6 +208,19 @@ MIPS ``Trap-and-Emul`` KVM support (since 6.0)
 The MIPS ``Trap-and-Emul`` KVM host and guest support has been removed
 from Linux upstream kernel, declare it deprecated.
 
+Host Architectures
+------------------
+
+BE MIPS (since 7.2)
+'''''''''''''''''''
+
+As Debian 10 ("Buster") moved into LTS the big endian 32 bit version of
+MIPS moved out of support making it hard to maintain our
+cross-compilation CI tests of the architecture. As we no longer have
+CI coverage support may bitrot away before the deprecation process
+completes. The little endian variants of MIPS (both 32 and 64 bit) are
+still a supported host architecture.
+
 QEMU API (QAPI) events
 ----------------------
 
@@ -232,15 +240,6 @@ The ``dtb-kaslr-seed`` property on the ``virt`` board has been
 deprecated; use the new name ``dtb-randomness`` instead. The new name
 better reflects the way this property affects all random data within
 the device tree blob, not just the ``kaslr-seed`` node.
-
-PPC 405 ``taihu`` machine (since 7.0)
-'''''''''''''''''''''''''''''''''''''
-
-The PPC 405 CPU is a system-on-a-chip, so all 405 machines are very similar,
-except for some external periphery. However, the periphery of the ``taihu``
-machine is hardly emulated at all (e.g. neither the LCD nor the USB part had
-been implemented), so there is not much value added by this board. Use the
-``ref405ep`` machine instead.
 
 ``pc-i440fx-1.4`` up to ``pc-i440fx-1.7`` (since 7.0)
 '''''''''''''''''''''''''''''''''''''''''''''''''''''
@@ -297,7 +296,7 @@ by using ``-machine graphics=off``.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 In QEMU versions 6.1, 6.2 and 7.0, the ``nvme-ns`` generates an EUI-64
-identifer that is not globally unique. If an EUI-64 identifer is required, the
+identifier that is not globally unique. If an EUI-64 identifier is required, the
 user must set it explicitly using the ``nvme-ns`` device parameter ``eui64``.
 
 ``-device nvme,use-intel-id=on|off`` (since 7.1)
@@ -379,3 +378,22 @@ be deleted from this tree.
 New deployments should use the Rust version, and existing systems
 should consider moving to it.  The command line and feature set
 is very close and moving should be simple.
+
+
+QEMU guest agent
+----------------
+
+``--blacklist`` command line option (since 7.2)
+'''''''''''''''''''''''''''''''''''''''''''''''
+
+``--blacklist`` has been replaced by ``--block-rpcs`` (which is a better
+wording for what this option does). The short form ``-b`` still stays
+the same and thus is the preferred way for scripts that should run with
+both, older and future versions of QEMU.
+
+``blacklist`` config file option (since 7.2)
+''''''''''''''''''''''''''''''''''''''''''''
+
+The ``blacklist`` config file option has been renamed to ``block-rpcs``
+(to be in sync with the renaming of the corresponding command line
+option).

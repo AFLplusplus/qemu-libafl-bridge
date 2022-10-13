@@ -787,10 +787,10 @@ static int bitmap_list_store(BlockDriverState *bs, Qcow2BitmapList *bm_list,
         }
     }
 
-    /* Actually, even in in-place case ignoring QCOW2_OL_BITMAP_DIRECTORY is not
-     * necessary, because we drop QCOW2_AUTOCLEAR_BITMAPS when updating bitmap
-     * directory in-place (actually, turn-off the extension), which is checked
-     * in qcow2_check_metadata_overlap() */
+    /* Actually, even in the in-place case ignoring QCOW2_OL_BITMAP_DIRECTORY
+     * is not necessary, because we drop QCOW2_AUTOCLEAR_BITMAPS when updating
+     * bitmap directory in-place (actually, turn-off the extension), which is
+     * checked in qcow2_check_metadata_overlap() */
     ret = qcow2_pre_write_overlap_check(
             bs, in_place ? QCOW2_OL_BITMAP_DIRECTORY : 0, dir_offset, dir_size,
             false);
@@ -1208,7 +1208,7 @@ int qcow2_reopen_bitmaps_rw(BlockDriverState *bs, Error **errp)
         }
     }
 
-    g_slist_foreach(ro_dirty_bitmaps, set_readonly_helper, false);
+    g_slist_foreach(ro_dirty_bitmaps, set_readonly_helper, (gpointer)false);
     ret = 0;
 
 out:

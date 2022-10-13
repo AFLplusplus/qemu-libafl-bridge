@@ -13,6 +13,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     eatmydata apt-get install --no-install-recommends -y \
             bash \
             bc \
+            bison \
             bsdextrautils \
             bzip2 \
             ca-certificates \
@@ -22,11 +23,13 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
             diffutils \
             exuberant-ctags \
             findutils \
+            flex \
             gcovr \
             genisoimage \
             gettext \
             git \
             hostname \
+            libglib2.0-dev \
             libpcre2-dev \
             libspice-protocol-dev \
             llvm \
@@ -84,6 +87,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
             libcacard-dev:armel \
             libcap-ng-dev:armel \
             libcapstone-dev:armel \
+            libcmocka-dev:armel \
             libcurl4-gnutls-dev:armel \
             libdaxctl-dev:armel \
             libdrm-dev:armel \
@@ -102,6 +106,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
             libiscsi-dev:armel \
             libjemalloc-dev:armel \
             libjpeg62-turbo-dev:armel \
+            libjson-c-dev:armel \
             liblttng-ust-dev:armel \
             liblzo2-dev:armel \
             libncursesw5-dev:armel \

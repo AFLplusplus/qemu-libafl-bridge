@@ -2123,7 +2123,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     ti = profile_getclock();
 #endif
 
-    gen_code_size = tcg_gen_code(tcg_ctx, tb);
+    gen_code_size = tcg_gen_code(tcg_ctx, tb, pc);
     if (unlikely(gen_code_size < 0)) {
         goto buffer_overflow1;
     }

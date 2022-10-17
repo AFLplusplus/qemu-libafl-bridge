@@ -1054,9 +1054,10 @@ int cpu_exec(CPUState *cpu)
                 
                 //// --- Begin LibAFL code ---
 
+#if !TARGET_TB_PCREL
                 if (last_tb->jmp_reset_offset[1] != TB_JMP_RESET_OFFSET_INVALID) {
                     mmap_lock();
-                    TranslationBlock *edge = libafl_gen_edge(cpu, last_tb->pc, tb->pc,
+                    TranslationBlock *edge = libafl_gen_edge(cpu, tb_pc(last_tb), tb_pc(tb),
                                                              tb_exit, cs_base, flags, cflags);
                     mmap_unlock();
 
@@ -1069,6 +1070,10 @@ int cpu_exec(CPUState *cpu)
                 } else {
                     tb_add_jump(last_tb, tb_exit, tb);
                 }
+#else
+                // No party if TARGET_TB_PCREL is 1
+                tb_add_jump(last_tb, tb_exit, tb);
+#endif
 
                 //// --- End LibAFL code ---
             }

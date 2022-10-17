@@ -33,6 +33,8 @@
 
 #include "cpu-param.h"
 
+#define TARGET_TB_PCREL 1
+
 #ifndef TARGET_LONG_BITS
 # error TARGET_LONG_BITS must be defined in cpu-param.h
 #endif

@@ -205,6 +205,13 @@ void cpu_loop(CPUX86State *env)
     abi_ulong ret;
 
     for(;;) {
+
+//// --- Begin LibAFL code ---
+
+        if (libafl_qemu_break_asap) return;
+
+//// --- End LibAFL code ---
+
         cpu_exec_start(cs);
         trapnr = cpu_exec(cs);
         cpu_exec_end(cs);

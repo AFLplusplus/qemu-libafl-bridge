@@ -23,6 +23,12 @@
 #include "exec/log.h"
 #include "special-errno.h"
 
+//// --- Begin LibAFL code ---
+
+extern int libafl_qemu_break_asap;
+
+//// --- End LibAFL code ---
+
 #define EXCP_DUMP(env, fmt, ...)                                        \
 do {                                                                    \
     CPUState *cs = env_cpu(env);                                        \

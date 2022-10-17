@@ -87,12 +87,18 @@ void libafl_load_qemu_snapshot(char *name)
 
 #define EXCP_LIBAFL_BP 0xf4775747
 
+int libafl_qemu_break_asap = 0;
+
 void libafl_qemu_trigger_breakpoint(CPUState* cpu);
 
 void libafl_qemu_trigger_breakpoint(CPUState* cpu)
 {
-    cpu->exception_index = EXCP_LIBAFL_BP;
-    cpu_loop_exit(cpu);
+    if (cpu->running) {
+        cpu->exception_index = EXCP_LIBAFL_BP;
+        cpu_loop_exit(cpu);
+    } else {
+        libafl_qemu_break_asap = 1;
+    }
 }
 
 void HELPER(libafl_qemu_handle_breakpoint)(CPUArchState *env)

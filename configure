@@ -923,11 +923,6 @@ for opt do
       QEMU_CFLAGS="$QEMU_CFLAGS -fPIC -DAS_LIB=1"
       QEMU_CXXFLAGS="$QEMU_CXXFLAGS -fPIC -DAS_LIB=1"
   ;;
-  *)
-      echo "ERROR: unknown option $opt"
-      echo "Try '$0 --help' for more information"
-      exit 1
-  ;;
   # everything else has the same name in configure and meson
   --*) meson_option_parse "$opt" "$optarg"
   ;;

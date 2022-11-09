@@ -40,6 +40,8 @@
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
+#include <stdlib.h>
+#include <string.h>
 
 void libafl_save_qemu_snapshot(char *name);
 void libafl_load_qemu_snapshot(char *name);
@@ -52,11 +54,14 @@ static void save_snapshot_cb(void* opaque)
         error_report_err(err);
         error_report("Could not save snapshot");
     }
+    free(opaque);
 }
 
 void libafl_save_qemu_snapshot(char *name)
 {
-    aio_bh_schedule_oneshot_full(qemu_get_aio_context(), save_snapshot_cb, (void*)name, "save_snapshot");
+    char* name_buffer = malloc(strlen(name)+1);
+    strcpy(name_buffer, name);
+    aio_bh_schedule_oneshot_full(qemu_get_aio_context(), save_snapshot_cb, (void*)name_buffer, "save_snapshot");
 }
 
 static void load_snapshot_cb(void* opaque)
@@ -76,11 +81,14 @@ static void load_snapshot_cb(void* opaque)
     if (loaded && saved_vm_running) {
         vm_start();
     }
+    free(opaque);
 }
 
 void libafl_load_qemu_snapshot(char *name)
 {
-    aio_bh_schedule_oneshot_full(qemu_get_aio_context(), load_snapshot_cb, (void*)name, "load_snapshot");
+    char* name_buffer = malloc(strlen(name)+1);
+    strcpy(name_buffer, name);
+    aio_bh_schedule_oneshot_full(qemu_get_aio_context(), load_snapshot_cb, (void*)name_buffer, "load_snapshot");
 }
 
 #endif

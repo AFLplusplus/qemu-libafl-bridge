@@ -75,7 +75,12 @@ static void loongarch_tr_init_disas_context(DisasContextBase *dcbase,
     DisasContext *ctx = container_of(dcbase, DisasContext, base);
 
     ctx->page_start = ctx->base.pc_first & TARGET_PAGE_MASK;
-    ctx->mem_idx = ctx->base.tb->flags;
+    ctx->plv = ctx->base.tb->flags & HW_FLAGS_PLV_MASK;
+    if (ctx->base.tb->flags & HW_FLAGS_CRMD_PG) {
+        ctx->mem_idx = ctx->plv;
+    } else {
+        ctx->mem_idx = MMU_IDX_DA;
+    }
 
     /* Bound the number of insns to execute to those left on the page.  */
     bound = -(ctx->base.pc_first | TARGET_PAGE_MASK) / 4;
@@ -271,10 +276,4 @@ void loongarch_translate_init(void)
                     offsetof(CPULoongArchState, lladdr), "lladdr");
     cpu_llval = tcg_global_mem_new(cpu_env,
                     offsetof(CPULoongArchState, llval), "llval");
-}
-
-void restore_state_to_opc(CPULoongArchState *env, TranslationBlock *tb,
-                          target_ulong *data)
-{
-    env->pc = data[0];
 }

@@ -1760,6 +1760,27 @@ static void object_option_parse(const char *optarg)
 }
 
 /*
+ * Very early object creation, before the sandbox options have been activated.
+ */
+static bool object_create_pre_sandbox(const char *type)
+{
+    /*
+     * Objects should in general not get initialized "too early" without
+     * a reason. If you add one, state the reason in a comment!
+     */
+
+    /*
+     * Reason: -sandbox on,resourcecontrol=deny disallows setting CPU
+     * affinity of threads.
+     */
+    if (g_str_equal(type, "thread-context")) {
+        return true;
+    }
+
+    return false;
+}
+
+/*
  * Initial object creation happens before all other
  * QEMU data types are created. The majority of objects
  * can be created at this point. The rng-egd object
@@ -1772,6 +1793,11 @@ static bool object_create_early(const char *type)
      * Objects should not be made "delayed" without a reason.  If you
      * add one, state the reason in a comment!
      */
+
+    /* Reason: already created. */
+    if (object_create_pre_sandbox(type)) {
+        return false;
+    }
 
     /* Reason: property "chardev" */
     if (g_str_equal(type, "rng-egd") ||
@@ -1895,7 +1921,7 @@ static void qemu_create_early_backends(void)
  */
 static bool object_create_late(const char *type)
 {
-    return !object_create_early(type);
+    return !object_create_early(type) && !object_create_pre_sandbox(type);
 }
 
 static void qemu_create_late_backends(void)
@@ -1904,7 +1930,7 @@ static void qemu_create_late_backends(void)
         qtest_server_init(qtest_chrdev, qtest_log, &error_fatal);
     }
 
-    net_init_clients(&error_fatal);
+    net_init_clients();
 
     object_option_foreach_add(object_create_late);
 
@@ -2351,15 +2377,17 @@ static int process_runstate_actions(void *opaque, QemuOpts *opts, Error **errp)
 
 static void qemu_process_early_options(void)
 {
+    qemu_opts_foreach(qemu_find_opts("name"),
+                      parse_name, NULL, &error_fatal);
+
+    object_option_foreach_add(object_create_pre_sandbox);
+
 #ifdef CONFIG_SECCOMP
     QemuOptsList *olist = qemu_find_opts_err("sandbox", NULL);
     if (olist) {
         qemu_opts_foreach(olist, parse_sandbox, NULL, &error_fatal);
     }
 #endif
-
-    qemu_opts_foreach(qemu_find_opts("name"),
-                      parse_name, NULL, &error_fatal);
 
     if (qemu_opts_foreach(qemu_find_opts("action"),
                           process_runstate_actions, NULL, &error_fatal)) {
@@ -2801,21 +2829,19 @@ void qemu_init(int argc, char **argv)
                 break;
             case QEMU_OPTION_netdev:
                 default_net = 0;
-                if (net_client_parse(qemu_find_opts("netdev"), optarg) == -1) {
-                    exit(1);
+                if (netdev_is_modern(optarg)) {
+                    netdev_parse_modern(optarg);
+                } else {
+                    net_client_parse(qemu_find_opts("netdev"), optarg);
                 }
                 break;
             case QEMU_OPTION_nic:
                 default_net = 0;
-                if (net_client_parse(qemu_find_opts("nic"), optarg) == -1) {
-                    exit(1);
-                }
+                net_client_parse(qemu_find_opts("nic"), optarg);
                 break;
             case QEMU_OPTION_net:
                 default_net = 0;
-                if (net_client_parse(qemu_find_opts("net"), optarg) == -1) {
-                    exit(1);
-                }
+                net_client_parse(qemu_find_opts("net"), optarg);
                 break;
 #ifdef CONFIG_LIBISCSI
             case QEMU_OPTION_iscsi:

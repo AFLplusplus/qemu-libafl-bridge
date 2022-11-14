@@ -1011,7 +1011,7 @@ static void free_compare(DisasCompare *c)
 #define F6(N, X1, X2, X3, X4, X5, X6) F0(N)
 
 typedef enum {
-#include "insn-format.def"
+#include "insn-format.h.inc"
 } DisasFormat;
 
 #undef F0
@@ -1076,7 +1076,7 @@ typedef struct DisasFormatInfo {
 #define F6(N, X1, X2, X3, X4, X5, X6)       { { X1, X2, X3, X4, X5, X6 } },
 
 static const DisasFormatInfo format_info[] = {
-#include "insn-format.def"
+#include "insn-format.h.inc"
 };
 
 #undef F0
@@ -6143,7 +6143,7 @@ static void in2_insn(DisasContext *s, DisasOps *o)
 #define E(OPC, NM, FT, FC, I1, I2, P, W, OP, CC, D, FL) insn_ ## NM,
 
 enum DisasInsnEnum {
-#include "insn-data.def"
+#include "insn-data.h.inc"
 };
 
 #undef E
@@ -6223,7 +6223,7 @@ enum DisasInsnEnum {
 #define FAC_MIE3        S390_FEAT_MISC_INSTRUCTION_EXT3 /* miscellaneous-instruction-extensions facility 3 */
 
 static const DisasInsn insn_info[] = {
-#include "insn-data.def"
+#include "insn-data.h.inc"
 };
 
 #undef E
@@ -6233,7 +6233,7 @@ static const DisasInsn insn_info[] = {
 static const DisasInsn *lookup_opc(uint16_t opc)
 {
     switch (opc) {
-#include "insn-data.def"
+#include "insn-data.h.inc"
     default:
         return NULL;
     }
@@ -6317,12 +6317,18 @@ static const DisasInsn *extract_insn(CPUS390XState *env, DisasContext *s)
     if (unlikely(s->ex_value)) {
         /* Drop the EX data now, so that it's clear on exception paths.  */
         TCGv_i64 zero = tcg_const_i64(0);
+        int i;
         tcg_gen_st_i64(zero, cpu_env, offsetof(CPUS390XState, ex_value));
         tcg_temp_free_i64(zero);
 
         /* Extract the values saved by EXECUTE.  */
         insn = s->ex_value & 0xffffffffffff0000ull;
         ilen = s->ex_value & 0xf;
+        /* register insn bytes with translator so plugins work */
+        for (i = 0; i < ilen; i++) {
+            uint8_t byte = extract64(insn, 56 - (i * 8), 8);
+            translator_fake_ldb(byte, pc + i);
+        }
         op = insn >> 56;
     } else {
         insn = ld_code2(env, s, pc);
@@ -6612,7 +6618,7 @@ static void s390x_tr_insn_start(DisasContextBase *dcbase, CPUState *cs)
 static target_ulong get_next_pc(CPUS390XState *env, DisasContext *s,
                                 uint64_t pc)
 {
-    uint64_t insn = ld_code2(env, s, pc);
+    uint64_t insn = cpu_lduw_code(env, pc);
 
     return pc + get_ilen((insn >> 8) & 0xff);
 }
@@ -6624,9 +6630,9 @@ static void s390x_tr_translate_insn(DisasContextBase *dcbase, CPUState *cs)
 
     dc->base.is_jmp = translate_one(env, dc);
     if (dc->base.is_jmp == DISAS_NEXT) {
-        if (!is_same_page(dcbase, dc->base.pc_next) ||
-            !is_same_page(dcbase, get_next_pc(env, dc, dc->base.pc_next)) ||
-            dc->ex_value) {
+        if (dc->ex_value ||
+            !is_same_page(dcbase, dc->base.pc_next) ||
+            !is_same_page(dcbase, get_next_pc(env, dc, dc->base.pc_next))) {
             dc->base.is_jmp = DISAS_TOO_MANY;
         }
     }
@@ -6691,9 +6697,12 @@ void gen_intermediate_code(CPUState *cs, TranslationBlock *tb, int max_insns,
     translator_loop(cs, tb, max_insns, pc, host_pc, &s390x_tr_ops, &dc.base);
 }
 
-void restore_state_to_opc(CPUS390XState *env, TranslationBlock *tb,
-                          target_ulong *data)
+void s390x_restore_state_to_opc(CPUState *cs,
+                                const TranslationBlock *tb,
+                                const uint64_t *data)
 {
+    S390CPU *cpu = S390_CPU(cs);
+    CPUS390XState *env = &cpu->env;
     int cc_op = data[1];
 
     env->psw.addr = data[0];

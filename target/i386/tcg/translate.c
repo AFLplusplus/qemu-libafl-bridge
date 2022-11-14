@@ -26,6 +26,7 @@
 #include "tcg/tcg-op-gvec.h"
 #include "exec/cpu_ldst.h"
 #include "exec/translator.h"
+#include "fpu/softfloat.h"
 
 #include "exec/helper-proto.h"
 #include "exec/helper-gen.h"
@@ -2765,6 +2766,26 @@ static void gen_reset_hflag(DisasContext *s, uint32_t mask)
     }
 }
 
+static void gen_set_eflags(DisasContext *s, target_ulong mask)
+{
+    TCGv t = tcg_temp_new();
+
+    tcg_gen_ld_tl(t, cpu_env, offsetof(CPUX86State, eflags));
+    tcg_gen_ori_tl(t, t, mask);
+    tcg_gen_st_tl(t, cpu_env, offsetof(CPUX86State, eflags));
+    tcg_temp_free(t);
+}
+
+static void gen_reset_eflags(DisasContext *s, target_ulong mask)
+{
+    TCGv t = tcg_temp_new();
+
+    tcg_gen_ld_tl(t, cpu_env, offsetof(CPUX86State, eflags));
+    tcg_gen_andi_tl(t, t, ~mask);
+    tcg_gen_st_tl(t, cpu_env, offsetof(CPUX86State, eflags));
+    tcg_temp_free(t);
+}
+
 /* Clear BND registers during legacy branches.  */
 static void gen_bnd_jmp(DisasContext *s)
 {
@@ -2795,7 +2816,7 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
     }
 
     if (s->base.tb->flags & HF_RF_MASK) {
-        gen_helper_reset_rf(cpu_env);
+        gen_reset_eflags(s, RF_MASK);
     }
     if (recheck_tf) {
         gen_helper_rechecking_single_step(cpu_env);
@@ -3319,7 +3340,7 @@ static bool disas_insn(DisasContext *s, CPUState *cpu)
 
                 tcg_temp_free(t2);
                 tcg_temp_free(a0);
-                tcg_gen_mov_tl(s->T0, t0);
+                tcg_gen_neg_tl(s->T0, t0);
                 tcg_temp_free(t0);
             } else {
                 tcg_gen_neg_tl(s->T0, s->T0);
@@ -5521,12 +5542,12 @@ static bool disas_insn(DisasContext *s, CPUState *cpu)
 #endif
     case 0xfa: /* cli */
         if (check_iopl(s)) {
-            gen_helper_cli(cpu_env);
+            gen_reset_eflags(s, IF_MASK);
         }
         break;
     case 0xfb: /* sti */
         if (check_iopl(s)) {
-            gen_helper_sti(cpu_env);
+            gen_set_eflags(s, IF_MASK);
             /* interruptions are enabled only the first insn after sti */
             gen_update_eip_next(s);
             gen_eob_inhibit_irq(s, true);
@@ -5808,7 +5829,7 @@ static bool disas_insn(DisasContext *s, CPUState *cpu)
                 || CPL(s) != 0) {
                 goto illegal_op;
             }
-            gen_helper_clac(cpu_env);
+            gen_reset_eflags(s, AC_MASK);
             s->base.is_jmp = DISAS_EOB_NEXT;
             break;
 
@@ -5817,7 +5838,7 @@ static bool disas_insn(DisasContext *s, CPUState *cpu)
                 || CPL(s) != 0) {
                 goto illegal_op;
             }
-            gen_helper_stac(cpu_env);
+            gen_set_eflags(s, AC_MASK);
             s->base.is_jmp = DISAS_EOB_NEXT;
             break;
 
@@ -7041,19 +7062,4 @@ void gen_intermediate_code(CPUState *cpu, TranslationBlock *tb, int max_insns,
     DisasContext dc;
 
     translator_loop(cpu, tb, max_insns, pc, host_pc, &i386_tr_ops, &dc.base);
-}
-
-void restore_state_to_opc(CPUX86State *env, TranslationBlock *tb,
-                          target_ulong *data)
-{
-    int cc_op = data[1];
-
-    if (TARGET_TB_PCREL) {
-        env->eip = (env->eip & TARGET_PAGE_MASK) | data[0];
-    } else {
-        env->eip = data[0] - tb->cs_base;
-    }
-    if (cc_op != CC_OP_DYNAMIC) {
-        env->cc_op = cc_op;
-    }
 }

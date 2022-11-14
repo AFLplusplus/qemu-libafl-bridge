@@ -37,8 +37,7 @@ DEF("machine", HAS_ARG, QEMU_OPTION_machine, \
     "                memory-encryption=@var{} memory encryption object to use (default=none)\n"
     "                hmat=on|off controls ACPI HMAT support (default=off)\n"
     "                memory-backend='backend-id' specifies explicitly provided backend for main RAM (default=none)\n"
-    "                cxl-fmw.0.targets.0=firsttarget,cxl-fmw.0.targets.1=secondtarget,cxl-fmw.0.size=size[,cxl-fmw.0.interleave-granularity=granularity]\n"
-    "                zpcii-disable=on|off disables zPCI interpretation facilities (default=off)\n",
+    "                cxl-fmw.0.targets.0=firsttarget,cxl-fmw.0.targets.1=secondtarget,cxl-fmw.0.size=size[,cxl-fmw.0.interleave-granularity=granularity]\n",
     QEMU_ARCH_ALL)
 SRST
 ``-machine [type=]name[,prop=value[,...]]``
@@ -140,7 +139,7 @@ SRST
         interleave requirements before enabling the memory devices.
 
         ``targets.X=target`` provides the mapping to CXL host bridges
-        which may be identified by the id provied in the -device entry.
+        which may be identified by the id provided in the -device entry.
         Multiple entries are needed to specify all the targets when
         the fixed memory window represents interleaved memory. X is the
         target index from 0.
@@ -158,11 +157,6 @@ SRST
         ::
 
             -machine cxl-fmw.0.targets.0=cxl.0,cxl-fmw.0.targets.1=cxl.1,cxl-fmw.0.size=128G,cxl-fmw.0.interleave-granularity=512k
-
-    ``zpcii-disable=on|off``
-        Disables zPCI interpretation facilties on s390-ccw hosts.
-        This feature can be used to disable hardware virtual assists
-        related to zPCI devices. The default is off.
 ERST
 
 DEF("M", HAS_ARG, QEMU_OPTION_M,
@@ -368,7 +362,7 @@ SRST
   \ 
 ``-numa cpu,node-id=node[,socket-id=x][,core-id=y][,thread-id=z]``
   \ 
-``-numa hmat-lb,initiator=node,target=node,hierarchy=hierarchy,data-type=tpye[,latency=lat][,bandwidth=bw]``
+``-numa hmat-lb,initiator=node,target=node,hierarchy=hierarchy,data-type=type[,latency=lat][,bandwidth=bw]``
   \ 
 ``-numa hmat-cache,node-id=node,size=size,level=level[,associativity=str][,policy=str][,line=size]``
     Define a NUMA node and assign RAM and VCPUs to it. Set the NUMA
@@ -1051,7 +1045,7 @@ SRST
     details on the external interface.
 
 ``-device isa-ipmi-kcs,bmc=id[,ioport=val][,irq=val]``
-    Add a KCS IPMI interafce on the ISA bus. This also adds a
+    Add a KCS IPMI interface on the ISA bus. This also adds a
     corresponding ACPI and SMBIOS entries, if appropriate.
 
     ``bmc=id``
@@ -1071,7 +1065,7 @@ SRST
     is 0xe4 and the default interrupt is 5.
 
 ``-device pci-ipmi-kcs,bmc=id``
-    Add a KCS IPMI interafce on the PCI bus.
+    Add a KCS IPMI interface on the PCI bus.
 
     ``bmc=id``
         The BMC to connect to, one of ipmi-bmc-sim or ipmi-bmc-extern above.
@@ -1791,7 +1785,7 @@ SRST
     directory on host is made directly accessible by guest as a pass-through
     file system by using the 9P network protocol for communication between
     host and guests, if desired even accessible, shared by several guests
-    simultaniously.
+    simultaneously.
 
     Note that ``-virtfs`` is actually just a convenience shortcut for its
     generalized form ``-fsdev -device virtio-9p-pci``.
@@ -2772,6 +2766,20 @@ DEF("netdev", HAS_ARG, QEMU_OPTION_netdev,
     "-netdev socket,id=str[,fd=h][,udp=host:port][,localaddr=host:port]\n"
     "                configure a network backend to connect to another network\n"
     "                using an UDP tunnel\n"
+    "-netdev stream,id=str[,server=on|off],addr.type=inet,addr.host=host,addr.port=port[,to=maxport][,numeric=on|off][,keep-alive=on|off][,mptcp=on|off][,addr.ipv4=on|off][,addr.ipv6=on|off]\n"
+    "-netdev stream,id=str[,server=on|off],addr.type=unix,addr.path=path[,abstract=on|off][,tight=on|off]\n"
+    "-netdev stream,id=str[,server=on|off],addr.type=fd,addr.str=file-descriptor\n"
+    "                configure a network backend to connect to another network\n"
+    "                using a socket connection in stream mode.\n"
+    "-netdev dgram,id=str,remote.type=inet,remote.host=maddr,remote.port=port[,local.type=inet,local.host=addr]\n"
+    "-netdev dgram,id=str,remote.type=inet,remote.host=maddr,remote.port=port[,local.type=fd,local.str=file-descriptor]\n"
+    "                configure a network backend to connect to a multicast maddr and port\n"
+    "                use ``local.host=addr`` to specify the host address to send packets from\n"
+    "-netdev dgram,id=str,local.type=inet,local.host=addr,local.port=port[,remote.type=inet,remote.host=addr,remote.port=port]\n"
+    "-netdev dgram,id=str,local.type=unix,local.path=path[,remote.type=unix,remote.path=path]\n"
+    "-netdev dgram,id=str,local.type=fd,local.str=file-descriptor\n"
+    "                configure a network backend to connect to another network\n"
+    "                using an UDP tunnel\n"
 #ifdef CONFIG_VDE
     "-netdev vde,id=str[,sock=socketpath][,port=n][,group=groupname][,mode=octalmode]\n"
     "                configure a network backend to connect to port 'n' of a vde switch\n"
@@ -2790,8 +2798,10 @@ DEF("netdev", HAS_ARG, QEMU_OPTION_netdev,
     "                configure a vhost-user network, backed by a chardev 'dev'\n"
 #endif
 #ifdef __linux__
-    "-netdev vhost-vdpa,id=str,vhostdev=/path/to/dev\n"
+    "-netdev vhost-vdpa,id=str[,vhostdev=/path/to/dev][,vhostfd=h]\n"
     "                configure a vhost-vdpa network,Establish a vhost-vdpa netdev\n"
+    "                use 'vhostdev=/path/to/dev' to open a vhost vdpa device\n"
+    "                use 'vhostfd=h' to connect to an already opened vhost vdpa device\n"
 #endif
 #ifdef CONFIG_VMNET
     "-netdev vmnet-host,id=str[,isolated=on|off][,net-uuid=uuid]\n"
@@ -3296,7 +3306,7 @@ SRST
              -netdev type=vhost-user,id=net0,chardev=chr0 \
              -device virtio-net-pci,netdev=net0
 
-``-netdev vhost-vdpa,vhostdev=/path/to/dev``
+``-netdev vhost-vdpa[,vhostdev=/path/to/dev][,vhostfd=h]``
     Establish a vhost-vdpa netdev.
 
     vDPA device is a device that uses a datapath which complies with
@@ -4774,6 +4784,25 @@ HXCOMM Internal use
 DEF("qtest", HAS_ARG, QEMU_OPTION_qtest, "", QEMU_ARCH_ALL)
 DEF("qtest-log", HAS_ARG, QEMU_OPTION_qtest_log, "", QEMU_ARCH_ALL)
 
+#ifdef __linux__
+DEF("async-teardown", 0, QEMU_OPTION_asyncteardown,
+    "-async-teardown enable asynchronous teardown\n",
+    QEMU_ARCH_ALL)
+#endif
+SRST
+``-async-teardown``
+    Enable asynchronous teardown. A new process called "cleanup/<QEMU_PID>"
+    will be created at startup sharing the address space with the main qemu
+    process, using clone. It will wait for the main qemu process to
+    terminate completely, and then exit.
+    This allows qemu to terminate very quickly even if the guest was
+    huge, leaving the teardown of the address space to the cleanup
+    process. Since the cleanup process shares the same cgroups as the
+    main qemu process, accounting is performed correctly. This only
+    works if the cleanup process is not forcefully killed with SIGKILL
+    before the main qemu process has terminated completely.
+ERST
+
 DEF("msg", HAS_ARG, QEMU_OPTION_msg,
     "-msg [timestamp[=on|off]][,guest-name=[on|off]]\n"
     "                control error message format\n"
@@ -5248,8 +5277,8 @@ SRST
         read the colo-compare git log.
 
     ``-object cryptodev-backend-builtin,id=id[,queues=queues]``
-        Creates a cryptodev backend which executes crypto opreation from
-        the QEMU cipher APIS. The id parameter is a unique ID that will
+        Creates a cryptodev backend which executes crypto operations from
+        the QEMU cipher APIs. The id parameter is a unique ID that will
         be used to reference this cryptodev backend from the
         ``virtio-crypto`` device. The queues parameter is optional,
         which specify the queue number of cryptodev backend, the default
@@ -5516,7 +5545,7 @@ SRST
                        file=/etc/qemu/vnc.allow
 
         Finally the ``/etc/qemu/vnc.allow`` file would contain the list
-        of x509 distingished names that are permitted access
+        of x509 distinguished names that are permitted access
 
         ::
 

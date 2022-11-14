@@ -48,6 +48,7 @@ static const char * const excp_names[] = {
     [EXCCODE_BRK] = "Break",
     [EXCCODE_INE] = "Instruction Non-Existent",
     [EXCCODE_IPE] = "Instruction privilege error",
+    [EXCCODE_FPD] = "Floating Point Disabled",
     [EXCCODE_FPE] = "Floating Point Exception",
     [EXCCODE_DBP] = "Debug breakpoint",
     [EXCCODE_BCE] = "Bound Check Exception",
@@ -177,6 +178,7 @@ static void loongarch_cpu_do_interrupt(CPUState *cs)
         }
         QEMU_FALLTHROUGH;
     case EXCCODE_PIF:
+    case EXCCODE_ADEF:
         cause = cs->exception_index;
         update_badinstr = 0;
         break;
@@ -184,6 +186,7 @@ static void loongarch_cpu_do_interrupt(CPUState *cs)
     case EXCCODE_BRK:
     case EXCCODE_INE:
     case EXCCODE_IPE:
+    case EXCCODE_FPD:
     case EXCCODE_FPE:
     case EXCCODE_BCE:
         env->CSR_BADV = env->pc;
@@ -220,7 +223,10 @@ static void loongarch_cpu_do_interrupt(CPUState *cs)
         env->CSR_TLBRERA = FIELD_DP64(env->CSR_TLBRERA, CSR_TLBRERA,
                                       PC, (env->pc >> 2));
     } else {
-        env->CSR_ESTAT = FIELD_DP64(env->CSR_ESTAT, CSR_ESTAT, ECODE, cause);
+        env->CSR_ESTAT = FIELD_DP64(env->CSR_ESTAT, CSR_ESTAT, ECODE,
+                                    EXCODE_MCODE(cause));
+        env->CSR_ESTAT = FIELD_DP64(env->CSR_ESTAT, CSR_ESTAT, ESUBCODE,
+                                    EXCODE_SUBCODE(cause));
         env->CSR_PRMD = FIELD_DP64(env->CSR_PRMD, CSR_PRMD, PPLV,
                                    FIELD_EX64(env->CSR_CRMD, CSR_CRMD, PLV));
         env->CSR_PRMD = FIELD_DP64(env->CSR_PRMD, CSR_PRMD, PIE,
@@ -257,7 +263,7 @@ static void loongarch_cpu_do_interrupt(CPUState *cs)
             env->pc = env->CSR_TLBRENTRY;
         } else {
             env->pc = env->CSR_EENTRY;
-            env->pc += cause * vec_size;
+            env->pc += EXCODE_MCODE(cause) * vec_size;
         }
         qemu_log_mask(CPU_LOG_INT,
                       "%s: PC " TARGET_FMT_lx " ERA " TARGET_FMT_lx
@@ -318,6 +324,16 @@ static void loongarch_cpu_synchronize_from_tb(CPUState *cs,
     CPULoongArchState *env = &cpu->env;
 
     env->pc = tb_pc(tb);
+}
+
+static void loongarch_restore_state_to_opc(CPUState *cs,
+                                           const TranslationBlock *tb,
+                                           const uint64_t *data)
+{
+    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
+    CPULoongArchState *env = &cpu->env;
+
+    env->pc = data[0];
 }
 #endif /* CONFIG_TCG */
 
@@ -651,6 +667,7 @@ void loongarch_cpu_dump_state(CPUState *cs, FILE *f, int flags)
 static struct TCGCPUOps loongarch_tcg_ops = {
     .initialize = loongarch_translate_init,
     .synchronize_from_tb = loongarch_cpu_synchronize_from_tb,
+    .restore_state_to_opc = loongarch_restore_state_to_opc,
 
 #ifndef CONFIG_USER_ONLY
     .tlb_fill = loongarch_cpu_tlb_fill,

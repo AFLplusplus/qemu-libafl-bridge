@@ -47,7 +47,6 @@
 #include "multiboot.h"
 #include "hw/rtc/mc146818rtc.h"
 #include "hw/intc/i8259.h"
-#include "hw/dma/i8257.h"
 #include "hw/timer/i8254.h"
 #include "hw/input/i8042.h"
 #include "hw/irq.h"
@@ -1062,7 +1061,6 @@ void pc_memory_init(PCMachineState *pcms,
         hwaddr cxl_size = MiB;
 
         cxl_base = pc_get_cxl_range_start(pcms);
-        e820_add_entry(cxl_base, cxl_size, E820_RESERVED);
         memory_region_init(mr, OBJECT(machine), "cxl_host_reg", cxl_size);
         memory_region_add_subregion(system_memory, cxl_base, mr);
         cxl_resv_end = cxl_base + cxl_size;
@@ -1078,7 +1076,6 @@ void pc_memory_init(PCMachineState *pcms,
                 memory_region_init_io(&fw->mr, OBJECT(machine), &cfmws_ops, fw,
                                       "cxl-fixed-memory-region", fw->size);
                 memory_region_add_subregion(system_memory, fw->base, &fw->mr);
-                e820_add_entry(fw->base, fw->size, E820_RESERVED);
                 cxl_fmw_base += fw->size;
                 cxl_resv_end = cxl_fmw_base;
             }
@@ -1319,8 +1316,6 @@ void pc_basic_device_init(struct PCMachineState *pcms,
         }
         pcspk_init(pcms->pcspk, isa_bus, pit);
     }
-
-    i8257_dma_init(isa_bus, 0);
 
     /* Super I/O */
     pc_superio_init(isa_bus, create_fdctrl, pcms->i8042_enabled,
@@ -1847,12 +1842,12 @@ static void pc_machine_initfn(Object *obj)
     cxl_machine_init(obj, &pcms->cxl_devices_state);
 }
 
-static void pc_machine_reset(MachineState *machine)
+static void pc_machine_reset(MachineState *machine, ShutdownCause reason)
 {
     CPUState *cs;
     X86CPU *cpu;
 
-    qemu_devices_reset();
+    qemu_devices_reset(reason);
 
     /* Reset APIC after devices have been reset to cancel
      * any changes that qemu_devices_reset() might have done.
@@ -1867,7 +1862,7 @@ static void pc_machine_reset(MachineState *machine)
 static void pc_machine_wakeup(MachineState *machine)
 {
     cpu_synchronize_all_states();
-    pc_machine_reset(machine);
+    pc_machine_reset(machine, SHUTDOWN_CAUSE_NONE);
     cpu_synchronize_all_post_reset();
 }
 

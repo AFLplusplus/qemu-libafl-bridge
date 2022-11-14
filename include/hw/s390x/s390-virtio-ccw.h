@@ -27,7 +27,6 @@ struct S390CcwMachineState {
     bool aes_key_wrap;
     bool dea_key_wrap;
     bool pv;
-    bool zpcii_disable;
     uint8_t loadparm[8];
 };
 
@@ -40,6 +39,7 @@ struct S390CcwMachineClass {
     bool cpu_model_allowed;
     bool css_migration_enabled;
     bool hpage_1m_allowed;
+    int max_threads;
 };
 
 /* runtime-instrumentation allowed by the machine */

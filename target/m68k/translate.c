@@ -39,7 +39,7 @@
 
 #define DEFO32(name, offset) static TCGv QREG_##name;
 #define DEFO64(name, offset) static TCGv_i64 QREG_##name;
-#include "qregs.def"
+#include "qregs.h.inc"
 #undef DEFO32
 #undef DEFO64
 
@@ -75,7 +75,7 @@ void m68k_tcg_init(void)
 #define DEFO64(name, offset) \
     QREG_##name = tcg_global_mem_new_i64(cpu_env, \
         offsetof(CPUM68KState, offset), #name);
-#include "qregs.def"
+#include "qregs.h.inc"
 #undef DEFO32
 #undef DEFO64
 
@@ -6478,14 +6478,4 @@ void m68k_cpu_dump_state(CPUState *cs, FILE *f, int flags)
     qemu_fprintf(f, "MMUSR %08x, fault at %08x\n",
                  env->mmu.mmusr, env->mmu.ar);
 #endif
-}
-
-void restore_state_to_opc(CPUM68KState *env, TranslationBlock *tb,
-                          target_ulong *data)
-{
-    int cc_op = data[1];
-    env->pc = data[0];
-    if (cc_op != CC_OP_DYNAMIC) {
-        env->cc_op = cc_op;
-    }
 }

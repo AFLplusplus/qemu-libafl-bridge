@@ -670,6 +670,9 @@ static bool main_loop_should_exit(int *status)
 
     if (qemu_debug_requested()) {
         vm_stop(RUN_STATE_DEBUG);
+//// --- Begin LibAFL code ---
+        return true;    // exit back to fuzzing harness
+//// --- End LibAFL code ---
     }
     if (qemu_suspend_requested()) {
         qemu_system_suspend();

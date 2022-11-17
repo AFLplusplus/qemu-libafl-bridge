@@ -29,4 +29,11 @@
 # define TARGET_TB_PCREL 1
 #endif
 
+//// --- Begin LibAFL code ---
+
+#undef TARGET_TB_PCREL
+# define TARGET_TB_PCREL 0
+
+//// --- End LibAFL code ---
+
 #endif

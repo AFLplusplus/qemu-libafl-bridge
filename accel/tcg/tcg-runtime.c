@@ -134,6 +134,7 @@ void libafl_qemu_trigger_breakpoint(CPUState* cpu)
 {
 #ifndef CONFIG_USER_ONLY
     qemu_system_debug_request();
+    cpu->stopped = true;
 #else
     if (cpu->running) {
         cpu->exception_index = EXCP_LIBAFL_BP;

@@ -49,4 +49,11 @@
 
 #define NB_MMU_MODES 12
 
+//// --- Begin LibAFL code ---
+
+#undef TARGET_TB_PCREL
+# define TARGET_TB_PCREL 0
+
+//// --- End LibAFL code ---
+
 #endif

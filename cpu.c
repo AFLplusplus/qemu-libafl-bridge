@@ -47,6 +47,7 @@
 #include "tcg/tcg-op.h"
 #include "tcg/tcg-internal.h"
 #include "exec/helper-head.h"
+#include "hw/boards.h"
 
 #define LIBAFL_TABLES_SIZE 16384
 #define LIBAFL_TABLES_HASH(p) (((13*((size_t)(p))) ^ (((size_t)(p)) >> 15)) % LIBAFL_TABLES_SIZE)
@@ -76,6 +77,10 @@ void libafl_helper_table_add(TCGHelperInfo* info);
 
 static __thread GByteArray *libafl_qemu_mem_buf = NULL;
 
+CPUArchState* libafl_qemu_cpu_arch_state(CPUState* cpu);
+CPUState* libafl_qemu_arch_state_cpu(CPUArchState* env);
+
+size_t libafl_qemu_arch_state_size(void);
 CPUState* libafl_qemu_get_cpu(int cpu_index);
 int libafl_qemu_num_cpus(void);
 CPUState* libafl_qemu_current_cpu(void);
@@ -108,6 +113,20 @@ target_ulong libafl_qemu_h2g(CPUState *cpu, void* x)
     return h2g(cpu, x);
 }
 */
+
+CPUArchState* libafl_qemu_cpu_arch_state(CPUState* cpu)
+{
+    return cpu->env_ptr;
+}
+
+CPUState* libafl_qemu_arch_state_cpu(CPUArchState* env)
+{
+    return env_cpu(env);
+}
+
+size_t libafl_qemu_arch_state_size(void) {
+    return sizeof(CPUArchState);
+}
 
 CPUState* libafl_qemu_get_cpu(int cpu_index)
 {

@@ -47,7 +47,6 @@
 #include "tcg/tcg-op.h"
 #include "tcg/tcg-internal.h"
 #include "exec/helper-head.h"
-#include "hw/boards.h"
 
 #define LIBAFL_TABLES_SIZE 16384
 #define LIBAFL_TABLES_HASH(p) (((13*((size_t)(p))) ^ (((size_t)(p)) >> 15)) % LIBAFL_TABLES_SIZE)

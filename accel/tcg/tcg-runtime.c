@@ -128,13 +128,16 @@ void libafl_load_qemu_snapshot(char *name, bool sync)
 
 int libafl_qemu_break_asap = 0;
 
+CPUState* libafl_breakpoint_cpu;
+
 void libafl_qemu_trigger_breakpoint(CPUState* cpu);
 
 void libafl_qemu_trigger_breakpoint(CPUState* cpu)
 {
 #ifndef CONFIG_USER_ONLY
-    qemu_system_debug_request();
+    libafl_breakpoint_cpu = cpu;
     cpu->stopped = true;
+    qemu_system_debug_request();
 #else
     if (cpu->running) {
         cpu->exception_index = EXCP_LIBAFL_BP;

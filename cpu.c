@@ -98,6 +98,8 @@ int libafl_qemu_remove_hook(size_t num, int invalidate);
 struct libafl_hook* libafl_search_hook(target_ulong addr);
 void libafl_flush_jit(void);
 
+extern CPUState* libafl_breakpoint_cpu;
+
 /*
 void* libafl_qemu_g2h(CPUState *cpu, target_ulong x);
 target_ulong libafl_qemu_h2g(CPUState *cpu, void* x);
@@ -149,6 +151,11 @@ int libafl_qemu_num_cpus(void)
 
 CPUState* libafl_qemu_current_cpu(void)
 {
+#ifndef CONFIG_USER_ONLY
+    if (current_cpu == NULL) {
+        return libafl_breakpoint_cpu;
+    }
+#endif
     return current_cpu;
 }
 

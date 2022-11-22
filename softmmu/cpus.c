@@ -717,8 +717,21 @@ int vm_prepare_start(bool step_pending)
     return 0;
 }
 
+//// --- Begin LibAFL code ---
+
+extern CPUState* libafl_breakpoint_cpu;
+
+//// --- End LibAFL code ---
+
 void vm_start(void)
 {
+
+//// --- Begin LibAFL code ---
+
+    libafl_breakpoint_cpu = NULL; // Rely on current_cpu in the hooks
+
+//// --- End LibAFL code ---
+
     if (!vm_prepare_start(false)) {
         resume_all_vcpus();
     }

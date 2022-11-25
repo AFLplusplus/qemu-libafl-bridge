@@ -228,7 +228,7 @@ typedef struct SaveState {
     QemuUUID uuid;
 } SaveState;
 
-static SaveState savevm_state = {
+/* static */ SaveState savevm_state = {
     .handlers = QTAILQ_HEAD_INITIALIZER(savevm_state.handlers),
     .handler_pri_head = { [MIG_PRI_DEFAULT ... MIG_PRI_MAX] = NULL },
     .global_section_id = 0,
@@ -897,7 +897,15 @@ static void vmstate_save_old_style(QEMUFile *f, SaveStateEntry *se,
     }
 }
 
-static int vmstate_save(QEMUFile *f, SaveStateEntry *se,
+//// --- Begin LibAFL code ---
+
+void save_section_header(QEMUFile *f, SaveStateEntry *se, uint8_t section_type);
+void save_section_footer(QEMUFile *f, SaveStateEntry *se);
+int vmstate_save(QEMUFile *f, SaveStateEntry *se, JSONWriter *vmdesc);
+
+//// --- End LibAFL code ---
+
+/* static */ int vmstate_save(QEMUFile *f, SaveStateEntry *se,
                         JSONWriter *vmdesc)
 {
     trace_vmstate_save(se->idstr, se->vmsd ? se->vmsd->name : "(old)");
@@ -908,21 +916,10 @@ static int vmstate_save(QEMUFile *f, SaveStateEntry *se,
     return vmstate_save_state(f, se->vmsd, se->opaque, vmdesc);
 }
 
-//// --- Begin LibAFL code ---
-
-int libafl_vmstate_save(QEMUFile *f, SaveStateEntry *se,
-                        JSONWriter *vmdesc);
-int libafl_vmstate_save(QEMUFile *f, SaveStateEntry *se,
-                        JSONWriter *vmdesc) {
-    return vmstate_save(f, se, vmdesc);
-}
-
-//// --- End LibAFL code ---
-
 /*
  * Write the header for device section (QEMU_VM_SECTION START/END/PART/FULL)
  */
-static void save_section_header(QEMUFile *f, SaveStateEntry *se,
+/* static */ void save_section_header(QEMUFile *f, SaveStateEntry *se,
                                 uint8_t section_type)
 {
     qemu_put_byte(f, section_type);
@@ -944,7 +941,7 @@ static void save_section_header(QEMUFile *f, SaveStateEntry *se,
  * Write a footer onto device sections that catches cases misformatted device
  * sections.
  */
-static void save_section_footer(QEMUFile *f, SaveStateEntry *se)
+/* static */ void save_section_footer(QEMUFile *f, SaveStateEntry *se)
 {
     if (migrate_get_current()->send_section_footer) {
         qemu_put_byte(f, QEMU_VM_SECTION_FOOTER);

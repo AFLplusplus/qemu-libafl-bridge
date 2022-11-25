@@ -19,7 +19,6 @@
 #include "target/i386/cpu.h"
 
 #include "syx-snapshot.h"
-#include "qemu-file-ram.h"
 #include "device-save.h"
 
 ///// From migration/savevm.c
@@ -63,9 +62,6 @@ typedef struct SaveState {
     MigrationCapability *capabilities;
     QemuUUID uuid;
 } SaveState;
-
-int libafl_vmstate_save(QEMUFile *f, SaveStateEntry *se,
-                        JSONWriter *vmdesc);
 
 ///// End migration/savevm.c
 

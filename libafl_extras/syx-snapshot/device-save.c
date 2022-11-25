@@ -1,12 +1,13 @@
 #include "qemu/osdep.h"
 #include "device-save.h"
 #include "migration/qemu-file.h"
-#include "qemu-file-ram.h"
 #include "migration/vmstate.h"
 #include "qemu/main-loop.h"
 #include "libafl_extras/syx-misc.h"
 
 #include "migration/savevm.h"
+
+#define QEMU_FILE_RAM_LIMIT (32 * 1024 * 1024)
 
 ///// From migration/savevm.c
 
@@ -50,15 +51,13 @@ typedef struct SaveState {
     QemuUUID uuid;
 } SaveState;
 
-int libafl_vmstate_save(QEMUFile *f, SaveStateEntry *se,
-                        JSONWriter *vmdesc);
-
 ///// End migration/savevm.c
 
 extern SaveState savevm_state;
 
-extern void save_section_header(QEMUFile *f, SaveStateEntry *se, uint8_t section_type);
-extern void save_section_footer(QEMUFile *f, SaveStateEntry *se);
+void save_section_header(QEMUFile *f, SaveStateEntry *se, uint8_t section_type);
+void save_section_footer(QEMUFile *f, SaveStateEntry *se);
+int vmstate_save(QEMUFile *f, SaveStateEntry *se, JSONWriter *vmdesc);
 
 // iothread must be locked
 device_save_state_t* device_save_all(void) {
@@ -66,9 +65,9 @@ device_save_state_t* device_save_all(void) {
     SaveStateEntry *se;
 
     dss->kind = DEVICE_SAVE_KIND_FULL;
-    dss->save_buffer = g_new0(uint8_t, QEMU_FILE_RAM_LIMIT);
+    dss->save_buffer = qio_channel_buffer_new(QEMU_FILE_RAM_LIMIT);
 
-    QEMUFile* f = qemu_file_ram_write_new(dss->save_buffer, QEMU_FILE_RAM_LIMIT);
+    QEMUFile* f = qemu_file_new_output(QIO_CHANNEL(dss->save_buffer));
     
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         int ret;
@@ -90,7 +89,7 @@ device_save_state_t* device_save_all(void) {
 
         save_section_header(f, se, QEMU_VM_SECTION_FULL);
 
-        ret = libafl_vmstate_save(f, se, NULL);
+        ret = vmstate_save(f, se, NULL);
 
         if (ret) {
             SYX_PRINTF("Device save all error: %d\n", ret);
@@ -111,7 +110,7 @@ device_save_state_t* device_save_all(void) {
 
 void device_restore_all(device_save_state_t* device_save_state) {
 	bool must_unlock_iothread = false;
-    QEMUFile* f = qemu_file_ram_read_new(device_save_state->save_buffer, QEMU_FILE_RAM_LIMIT);
+    QEMUFile* f = qemu_file_new_input(QIO_CHANNEL(device_save_state->save_buffer));
     
 	if (!qemu_mutex_iothread_locked()) {
 		qemu_mutex_lock_iothread();
@@ -128,5 +127,8 @@ void device_restore_all(device_save_state_t* device_save_state) {
 }
 
 void device_free_all(device_save_state_t* dss) {
-    g_free(dss->save_buffer);
+    // g_free(dss->save_buffer);
+    Error* errp = NULL;
+    qio_channel_close(QIO_CHANNEL(dss->save_buffer), &errp);
+    object_unref(OBJECT(dss->save_buffer));
 }

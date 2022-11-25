@@ -2883,6 +2883,10 @@ target_arch = {}
 target_softmmu_arch = {}
 target_user_arch = {}
 
+### LibAFL extras
+
+subdir('libafl_extras')
+
 ###############
 # Trace files #
 ###############

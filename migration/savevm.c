@@ -908,6 +908,17 @@ static int vmstate_save(QEMUFile *f, SaveStateEntry *se,
     return vmstate_save_state(f, se->vmsd, se->opaque, vmdesc);
 }
 
+//// --- Begin LibAFL code ---
+
+int libafl_vmstate_save(QEMUFile *f, SaveStateEntry *se,
+                        JSONWriter *vmdesc);
+int libafl_vmstate_save(QEMUFile *f, SaveStateEntry *se,
+                        JSONWriter *vmdesc) {
+    return vmstate_save(f, se, vmdesc);
+}
+
+//// --- End LibAFL code ---
+
 /*
  * Write the header for device section (QEMU_VM_SECTION START/END/PART/FULL)
  */

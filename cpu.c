@@ -76,10 +76,8 @@ void libafl_helper_table_add(TCGHelperInfo* info);
 
 static __thread GByteArray *libafl_qemu_mem_buf = NULL;
 
-CPUArchState* libafl_qemu_cpu_arch_state(CPUState* cpu);
-CPUState* libafl_qemu_arch_state_cpu(CPUArchState* env);
+target_ulong libafl_page_from_addr(target_ulong addr);
 
-size_t libafl_qemu_arch_state_size(void);
 CPUState* libafl_qemu_get_cpu(int cpu_index);
 int libafl_qemu_num_cpus(void);
 CPUState* libafl_qemu_current_cpu(void);
@@ -115,18 +113,10 @@ target_ulong libafl_qemu_h2g(CPUState *cpu, void* x)
 }
 */
 
-CPUArchState* libafl_qemu_cpu_arch_state(CPUState* cpu)
-{
-    return cpu->env_ptr;
-}
+target_ulong libafl_page_size = TARGET_PAGE_SIZE;
 
-CPUState* libafl_qemu_arch_state_cpu(CPUArchState* env)
-{
-    return env_cpu(env);
-}
-
-size_t libafl_qemu_arch_state_size(void) {
-    return sizeof(CPUArchState);
+target_ulong libafl_page_from_addr(target_ulong addr) {
+    return addr & TARGET_PAGE_MASK;
 }
 
 CPUState* libafl_qemu_get_cpu(int cpu_index)

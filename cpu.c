@@ -113,8 +113,6 @@ target_ulong libafl_qemu_h2g(CPUState *cpu, void* x)
 }
 */
 
-target_ulong libafl_page_size = TARGET_PAGE_SIZE;
-
 target_ulong libafl_page_from_addr(target_ulong addr) {
     return addr & TARGET_PAGE_MASK;
 }

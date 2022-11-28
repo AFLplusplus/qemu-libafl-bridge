@@ -2900,8 +2900,8 @@ static void plugin_gen_mem_callbacks(TCGv vaddr, MemOpIdx oi,
 
 //// --- Begin LibAFL code ---
 
-void libafl_gen_read(TCGv addr, MemOp ot);
-void libafl_gen_write(TCGv addr, MemOp ot);
+void libafl_gen_read(TCGv addr, MemOpIdx oi);
+void libafl_gen_write(TCGv addr, MemOpIdx oi);
 
 //// --- End LibAFL code ---
 
@@ -2927,7 +2927,7 @@ void tcg_gen_qemu_ld_i32(TCGv_i32 val, TCGv addr, TCGArg idx, MemOp memop)
 
 //// --- Begin LibAFL code ---
 
-    libafl_gen_read(addr, memop);
+    libafl_gen_read(addr, oi);
 
 //// --- End LibAFL code ---
 
@@ -2979,7 +2979,7 @@ void tcg_gen_qemu_st_i32(TCGv_i32 val, TCGv addr, TCGArg idx, MemOp memop)
 
 //// --- Begin LibAFL code ---
 
-    libafl_gen_write(addr, memop);
+    libafl_gen_write(addr, oi);
 
 //// --- End LibAFL code ---
 
@@ -3027,7 +3027,7 @@ void tcg_gen_qemu_ld_i64(TCGv_i64 val, TCGv addr, TCGArg idx, MemOp memop)
 
 //// --- Begin LibAFL code ---
 
-    libafl_gen_read(addr, memop);
+    libafl_gen_read(addr, oi);
 
 //// --- End LibAFL code ---
 
@@ -3091,7 +3091,7 @@ void tcg_gen_qemu_st_i64(TCGv_i64 val, TCGv addr, TCGArg idx, MemOp memop)
 
 //// --- Begin LibAFL code ---
 
-    libafl_gen_write(addr, memop);
+    libafl_gen_write(addr, oi);
 
 //// --- End LibAFL code ---
 

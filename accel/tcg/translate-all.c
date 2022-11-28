@@ -76,10 +76,8 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
                                   target_ulong dst_block, int exit_n,
                                   target_ulong cs_base, uint32_t flags,
                                   int cflags);
-void libafl_gen_read(TCGv addr, MemOp ot);
-void libafl_gen_read_N(TCGv addr, size_t size);
-void libafl_gen_write(TCGv addr, MemOp ot);
-void libafl_gen_write_N(TCGv addr, size_t size);
+void libafl_gen_read(TCGv addr, MemOpIdx oi);
+void libafl_gen_write(TCGv addr, MemOpIdx oi);
 void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot);
 void libafl_gen_backdoor(target_ulong pc);
 
@@ -222,7 +220,7 @@ static TCGHelperInfo libafl_exec_write_hookN_info = {
 };
 
 struct libafl_rw_hook {
-    uint64_t (*gen)(target_ulong pc, size_t size, uint64_t data);
+    uint64_t (*gen)(target_ulong pc, MemOpIdx oi, uint64_t data);
     void (*exec1)(uint64_t id, target_ulong addr, uint64_t data);
     void (*exec2)(uint64_t id, target_ulong addr, uint64_t data);
     void (*exec4)(uint64_t id, target_ulong addr, uint64_t data);
@@ -239,14 +237,14 @@ struct libafl_rw_hook {
 
 struct libafl_rw_hook* libafl_read_hooks;
 
-void libafl_add_read_hook(uint64_t (*gen)(target_ulong pc, size_t size, uint64_t data),
+void libafl_add_read_hook(uint64_t (*gen)(target_ulong pc, MemOpIdx oi, uint64_t data),
                          void (*exec1)(uint64_t id, target_ulong addr, uint64_t data),
                          void (*exec2)(uint64_t id, target_ulong addr, uint64_t data),
                          void (*exec4)(uint64_t id, target_ulong addr, uint64_t data),
                          void (*exec8)(uint64_t id, target_ulong addr, uint64_t data),
                          void (*execN)(uint64_t id, target_ulong addr, size_t size, uint64_t data),
                          uint64_t data);
-void libafl_add_read_hook(uint64_t (*gen)(target_ulong pc, size_t size, uint64_t data),
+void libafl_add_read_hook(uint64_t (*gen)(target_ulong pc, MemOpIdx oi, uint64_t data),
                          void (*exec1)(uint64_t id, target_ulong addr, uint64_t data),
                          void (*exec2)(uint64_t id, target_ulong addr, uint64_t data),
                          void (*exec4)(uint64_t id, target_ulong addr, uint64_t data),
@@ -297,10 +295,10 @@ void libafl_add_read_hook(uint64_t (*gen)(target_ulong pc, size_t size, uint64_t
     }
 }
 
-void libafl_gen_read(TCGv addr, MemOp ot)
+void libafl_gen_read(TCGv addr, MemOpIdx oi)
 {
     size_t size = 0;
-    switch (ot & MO_SIZE) {
+    switch (oi & MO_SIZE) {
       case MO_64:
         size = 8;
         break;
@@ -314,65 +312,55 @@ void libafl_gen_read(TCGv addr, MemOp ot)
         size = 1;
         break;
       default:
-        return;
+        break;
     }
 
     struct libafl_rw_hook* hook = libafl_read_hooks;
     while (hook) {
         uint64_t cur_id = 0;
         if (hook->gen)
-            cur_id = hook->gen(libafl_gen_cur_pc, size, hook->data);
+            cur_id = hook->gen(libafl_gen_cur_pc, oi, hook->data);
         void* func = NULL;
         if (size == 1) func = hook->exec1;
         else if (size == 2) func = hook->exec2;
         else if (size == 4) func = hook->exec4;
         else if (size == 8) func = hook->exec8;
-        if (cur_id != (uint64_t)-1 && func) {
-            TCGv_i64 tmp0 = tcg_const_i64(cur_id);
-            TCGv_i64 tmp1 = tcg_const_i64(hook->data);
-            TCGTemp *tmp2[3] = { tcgv_i64_temp(tmp0), 
+        if (cur_id != (uint64_t)-1) {
+            if (func) {
+                TCGv_i64 tmp0 = tcg_const_i64(cur_id);
+                TCGv_i64 tmp1 = tcg_const_i64(hook->data);
+                TCGTemp *tmp2[3] = { tcgv_i64_temp(tmp0), 
 #if TARGET_LONG_BITS == 32
-                                 tcgv_i32_temp(addr),
+                                     tcgv_i32_temp(addr),
 #else
-                                 tcgv_i64_temp(addr),
+                                     tcgv_i64_temp(addr),
 #endif
-                                 tcgv_i64_temp(tmp1) };
-            tcg_gen_callN(func, NULL, 3, tmp2);
-            tcg_temp_free_i64(tmp0);
-            tcg_temp_free_i64(tmp1);
-        }
-        hook = hook->next;
-    }
-}
-
-void libafl_gen_read_N(TCGv addr, size_t size)
-{
-    struct libafl_rw_hook* hook = libafl_read_hooks;
-    while (hook) {
-        uint64_t cur_id = 0;
-        if (hook->gen)
-            cur_id = hook->gen(libafl_gen_cur_pc, size, hook->data);
-        if (cur_id != (uint64_t)-1 && hook->execN) {
-            TCGv_i64 tmp0 = tcg_const_i64(cur_id);
-            TCGv tmp1 = tcg_const_tl(size);
-            TCGv_i64 tmp2 = tcg_const_i64(hook->data);
-            TCGTemp *tmp3[4] = { tcgv_i64_temp(tmp0), 
+                                     tcgv_i64_temp(tmp1) };
+                tcg_gen_callN(func, NULL, 3, tmp2);
+                tcg_temp_free_i64(tmp0);
+                tcg_temp_free_i64(tmp1);
+            } else if (hook->execN) {
+                TCGv_i64 tmp0 = tcg_const_i64(cur_id);
+                TCGv tmp1 = tcg_const_tl(size);
+                TCGv_i64 tmp2 = tcg_const_i64(hook->data);
+                TCGTemp *tmp3[4] = { tcgv_i64_temp(tmp0), 
 #if TARGET_LONG_BITS == 32
-                                 tcgv_i32_temp(addr),
-                                 tcgv_i32_temp(tmp1),
+                                     tcgv_i32_temp(addr),
+                                     tcgv_i32_temp(tmp1),
 #else
-                                 tcgv_i64_temp(addr),
-                                 tcgv_i64_temp(tmp1),
+                                     tcgv_i64_temp(addr),
+                                     tcgv_i64_temp(tmp1),
 #endif
-                                 tcgv_i64_temp(tmp2) };
-            tcg_gen_callN(hook->execN, NULL, 4, tmp3);
-            tcg_temp_free_i64(tmp0);
+                                     tcgv_i64_temp(tmp2) };
+                tcg_gen_callN(hook->execN, NULL, 4, tmp3);
+                tcg_temp_free_i64(tmp0);
 #if TARGET_LONG_BITS == 32
-            tcg_temp_free_i32(tmp1);
+                tcg_temp_free_i32(tmp1);
 #else
-            tcg_temp_free_i64(tmp1);
+                tcg_temp_free_i64(tmp1);
 #endif
-            tcg_temp_free_i64(tmp2);
+                tcg_temp_free_i64(tmp2);
+            }
         }
         hook = hook->next;
     }
@@ -380,14 +368,14 @@ void libafl_gen_read_N(TCGv addr, size_t size)
 
 struct libafl_rw_hook* libafl_write_hooks;
 
-void libafl_add_write_hook(uint64_t (*gen)(target_ulong pc, size_t size, uint64_t data),
+void libafl_add_write_hook(uint64_t (*gen)(target_ulong pc, MemOpIdx oi, uint64_t data),
                          void (*exec1)(uint64_t id, target_ulong addr, uint64_t data),
                          void (*exec2)(uint64_t id, target_ulong addr, uint64_t data),
                          void (*exec4)(uint64_t id, target_ulong addr, uint64_t data),
                          void (*exec8)(uint64_t id, target_ulong addr, uint64_t data),
                          void (*execN)(uint64_t id, target_ulong addr, size_t size, uint64_t data),
                          uint64_t data);
-void libafl_add_write_hook(uint64_t (*gen)(target_ulong pc, size_t size, uint64_t data),
+void libafl_add_write_hook(uint64_t (*gen)(target_ulong pc, MemOpIdx oi, uint64_t data),
                          void (*exec1)(uint64_t id, target_ulong addr, uint64_t data),
                          void (*exec2)(uint64_t id, target_ulong addr, uint64_t data),
                          void (*exec4)(uint64_t id, target_ulong addr, uint64_t data),
@@ -438,10 +426,10 @@ void libafl_add_write_hook(uint64_t (*gen)(target_ulong pc, size_t size, uint64_
     }
 }
 
-void libafl_gen_write(TCGv addr, MemOp ot)
+void libafl_gen_write(TCGv addr, MemOpIdx oi)
 {
     size_t size = 0;
-    switch (ot & MO_SIZE) {
+    switch (oi & MO_SIZE) {
       case MO_64:
         size = 8;
         break;
@@ -455,65 +443,55 @@ void libafl_gen_write(TCGv addr, MemOp ot)
         size = 1;
         break;
       default:
-        return;
+        break;
     }
 
     struct libafl_rw_hook* hook = libafl_write_hooks;
     while (hook) {
         uint64_t cur_id = 0;
         if (hook->gen)
-            cur_id = hook->gen(libafl_gen_cur_pc, size, hook->data);
+            cur_id = hook->gen(libafl_gen_cur_pc, oi, hook->data);
         void* func = NULL;
         if (size == 1) func = hook->exec1;
         else if (size == 2) func = hook->exec2;
         else if (size == 4) func = hook->exec4;
         else if (size == 8) func = hook->exec8;
-        if (cur_id != (uint64_t)-1 && func) {
-            TCGv_i64 tmp0 = tcg_const_i64(cur_id);
-            TCGv_i64 tmp1 = tcg_const_i64(hook->data);
-            TCGTemp *tmp2[3] = { tcgv_i64_temp(tmp0), 
+        if (cur_id != (uint64_t)-1) {
+            if (func) {
+                TCGv_i64 tmp0 = tcg_const_i64(cur_id);
+                TCGv_i64 tmp1 = tcg_const_i64(hook->data);
+                TCGTemp *tmp2[3] = { tcgv_i64_temp(tmp0), 
 #if TARGET_LONG_BITS == 32
-                                 tcgv_i32_temp(addr),
+                                     tcgv_i32_temp(addr),
 #else
-                                 tcgv_i64_temp(addr),
+                                     tcgv_i64_temp(addr),
 #endif
-                                 tcgv_i64_temp(tmp1) };
-            tcg_gen_callN(func, NULL, 3, tmp2);
-            tcg_temp_free_i64(tmp0);
-            tcg_temp_free_i64(tmp1);
-        }
-        hook = hook->next;
-    }
-}
-
-void libafl_gen_write_N(TCGv addr, size_t size)
-{
-    struct libafl_rw_hook* hook = libafl_write_hooks;
-    while (hook) {
-        uint64_t cur_id = 0;
-        if (hook->gen)
-            cur_id = hook->gen(libafl_gen_cur_pc, size, hook->data);
-        if (cur_id != (uint64_t)-1 && hook->execN) {
-            TCGv_i64 tmp0 = tcg_const_i64(cur_id);
-            TCGv tmp1 = tcg_const_tl(size);
-            TCGv_i64 tmp2 = tcg_const_i64(hook->data);
-            TCGTemp *tmp3[4] = { tcgv_i64_temp(tmp0), 
+                                     tcgv_i64_temp(tmp1) };
+                tcg_gen_callN(func, NULL, 3, tmp2);
+                tcg_temp_free_i64(tmp0);
+                tcg_temp_free_i64(tmp1);
+            } else if (hook->execN) {
+                TCGv_i64 tmp0 = tcg_const_i64(cur_id);
+                TCGv tmp1 = tcg_const_tl(size);
+                TCGv_i64 tmp2 = tcg_const_i64(hook->data);
+                TCGTemp *tmp3[4] = { tcgv_i64_temp(tmp0), 
 #if TARGET_LONG_BITS == 32
-                                 tcgv_i32_temp(addr),
-                                 tcgv_i32_temp(tmp1),
+                                     tcgv_i32_temp(addr),
+                                     tcgv_i32_temp(tmp1),
 #else
-                                 tcgv_i64_temp(addr),
-                                 tcgv_i64_temp(tmp1),
+                                     tcgv_i64_temp(addr),
+                                     tcgv_i64_temp(tmp1),
 #endif
-                                 tcgv_i64_temp(tmp2) };
-            tcg_gen_callN(hook->execN, NULL, 4, tmp3);
-            tcg_temp_free_i64(tmp0);
+                                     tcgv_i64_temp(tmp2) };
+                tcg_gen_callN(hook->execN, NULL, 4, tmp3);
+                tcg_temp_free_i64(tmp0);
 #if TARGET_LONG_BITS == 32
-            tcg_temp_free_i32(tmp1);
+                tcg_temp_free_i32(tmp1);
 #else
-            tcg_temp_free_i64(tmp1);
+                tcg_temp_free_i64(tmp1);
 #endif
-            tcg_temp_free_i64(tmp2);
+                tcg_temp_free_i64(tmp2);
+            }
         }
         hook = hook->next;
     }

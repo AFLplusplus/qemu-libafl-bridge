@@ -16,7 +16,7 @@
 #include "sysemu/block-backend.h"
 #include "migration/register.h"
 
-#include "target/i386/cpu.h"
+#include "cpu.h"
 
 #include "syx-snapshot.h"
 #include "device-save.h"

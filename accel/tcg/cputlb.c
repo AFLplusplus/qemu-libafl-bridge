@@ -2312,6 +2312,12 @@ store_helper_unaligned(CPUArchState *env, target_ulong addr, uint64_t val,
     }
 }
 
+//// --- Begin LibAFL code ---
+
+void syx_snapshot_dirty_list_add_hostaddr(void* host_addr);
+
+//// --- End LibAFL code ---
+
 static inline void QEMU_ALWAYS_INLINE
 store_helper(CPUArchState *env, target_ulong addr, uint64_t val,
              MemOpIdx oi, uintptr_t retaddr, MemOp op)
@@ -2389,6 +2395,12 @@ store_helper(CPUArchState *env, target_ulong addr, uint64_t val,
 
         haddr = (void *)((uintptr_t)addr + entry->addend);
 
+//// --- Begin LibAFL code ---
+
+        syx_snapshot_dirty_list_add_hostaddr(haddr);
+
+//// --- End LibAFL code ---
+
         /*
          * Keep these two store_memop separate to ensure that the compiler
          * is able to fold the entire function to a single instruction.
@@ -2413,6 +2425,13 @@ store_helper(CPUArchState *env, target_ulong addr, uint64_t val,
     }
 
     haddr = (void *)((uintptr_t)addr + entry->addend);
+
+//// --- Begin LibAFL code ---
+
+    syx_snapshot_dirty_list_add_hostaddr(haddr);
+
+//// --- End LibAFL code ---
+
     store_memop(haddr, val, op);
 }
 

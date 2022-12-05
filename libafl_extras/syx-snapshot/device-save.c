@@ -53,6 +53,8 @@ typedef struct SaveState {
 
 ///// End migration/savevm.c
 
+int libafl_restoring_devices;
+
 extern SaveState savevm_state;
 
 void save_section_header(QEMUFile *f, SaveStateEntry *se, uint8_t section_type);
@@ -85,8 +87,7 @@ device_save_state_t* device_save_all(void) {
             continue;
         }
 
-        // SYX_PRINTF("Saving section %s...\n", se->idstr);
-        printf("Saving section %p %s...\n", se, se->idstr);
+        // printf("Saving section %p %s...\n", se, se->idstr);
 
         save_section_header(f, se, QEMU_VM_SECTION_FULL);
 
@@ -123,13 +124,18 @@ void device_restore_all(device_save_state_t* device_save_state) {
 		  qemu_mutex_lock_iothread();
 		  must_unlock_iothread = true;
 	  }
+	  
+	  int save_libafl_restoring_devices = libafl_restoring_devices;
+	  libafl_restoring_devices = 1;
 
     qemu_load_device_state(f);
+ 
+    libafl_restoring_devices = save_libafl_restoring_devices;
  
 	  if (must_unlock_iothread) {
 		  qemu_mutex_unlock_iothread();
 	  }
-
+	  
     // qemu_fclose(f);
 }
 

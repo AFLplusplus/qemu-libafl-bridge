@@ -16,8 +16,6 @@
 #include "sysemu/block-backend.h"
 #include "migration/register.h"
 
-#include "cpu.h"
-
 #include "syx-snapshot.h"
 #include "device-save.h"
 
@@ -70,9 +68,8 @@ typedef struct SaveState {
 
 syx_snapshot_state_t syx_snapshot_state = {0};
 
-void syx_snapshot_init(void* opaque) {
-    syx_snapshot_init_params_t* params = (syx_snapshot_init_params_t*) opaque;
-    uint64_t page_size = params->page_size;
+void syx_snapshot_init(void) {
+    uint64_t page_size = TARGET_PAGE_SIZE;
 
     syx_snapshot_state.page_size = page_size;
     syx_snapshot_state.page_mask = ((uint64_t)-1) << __builtin_ctz(page_size);
@@ -82,14 +79,10 @@ void syx_snapshot_init(void* opaque) {
     syx_snapshot_state.is_enabled = false;
 }
 
-/*uint64_t syx_snapshot_handler(CPUState* cpu, uint32_t cmd, target_ulong target_opaque) {
-    return 0;
-}*/
-
-syx_snapshot_t* syx_snapshot_create(CPUState* cpu, bool track) {
+syx_snapshot_t* syx_snapshot_create(bool track) {
     syx_snapshot_t* snapshot = g_new0(syx_snapshot_t, 1);
 
-    snapshot->root_snapshot = syx_snapshot_root_create(cpu);
+    snapshot->root_snapshot = syx_snapshot_root_create();
     snapshot->last_incremental_snapshot = NULL;
     snapshot->dirty_list = syx_snapshot_dirty_list_create();
 
@@ -115,7 +108,7 @@ void syx_snapshot_free(syx_snapshot_t* snapshot) {
     g_free(snapshot);
 }
 
-syx_snapshot_root_t syx_snapshot_root_create(CPUState* cpu) {
+syx_snapshot_root_t syx_snapshot_root_create(void) {
     syx_snapshot_root_t root = {0};
 
     RAMBlock* block;
@@ -191,7 +184,7 @@ void syx_snapshot_stop_track(syx_snapshot_tracker_t* tracker, syx_snapshot_t* sn
     abort();
 }
 
-void syx_snapshot_increment_push(syx_snapshot_t* snapshot, CPUState* cpu) {
+void syx_snapshot_increment_push(syx_snapshot_t* snapshot) {
     syx_snapshot_increment_t* increment = g_new0(syx_snapshot_increment_t, 1);
     increment->parent = snapshot->last_incremental_snapshot;
     snapshot->last_incremental_snapshot = increment;
@@ -227,7 +220,7 @@ static syx_snapshot_ramblock_t* find_ramblock(syx_snapshot_root_t* root, char* i
 }
 
 static void restore_page_from_root(syx_snapshot_root_t* root, MemoryRegion* mr, hwaddr addr) {
-    MemoryRegionSection mr_section = memory_region_find(mr, addr, syx_snapshot_state.page_size);
+    MemoryRegionSection mr_section = memory_region_find(mr, addr, syx_snapshot_state.page_size); // memory_region_find is quite slow
 
     if (mr_section.size == 0) {
         assert(mr_section.mr == NULL);
@@ -389,10 +382,7 @@ bool syx_snapshot_is_enabled(void) {
     return syx_snapshot_state.is_enabled;
 }
 
-// The implementation is pretty bad, it would be nice to store host addr directly for
-// the memcopy happening later on.
-/*__attribute__((target("no-3dnow,no-sse,no-mmx"),no_caller_saved_registers))*/
-void syx_snapshot_dirty_list_add_tcg_target(uint64_t dummy, void* host_addr) {
+void syx_snapshot_dirty_list_add_hostaddr(void* host_addr) {
     // early check to know whether we should log the page access or not
     if (!syx_snapshot_is_enabled()) {
         return;
@@ -412,6 +402,7 @@ void syx_snapshot_dirty_list_add_tcg_target(uint64_t dummy, void* host_addr) {
     syx_snapshot_dirty_list_add_internal(paddr);
 }
 
+
 void syx_snapshot_dirty_list_add(hwaddr paddr) {
     if (!syx_snapshot_is_enabled()) {
         return;
@@ -430,7 +421,7 @@ static void syx_snapshot_restore_root_from_dirty_list(syx_snapshot_root_t* root,
     }
 }
 
-void syx_snapshot_root_restore(syx_snapshot_t* snapshot, CPUState* cpu) {
+void syx_snapshot_root_restore(syx_snapshot_t* snapshot) {
     MemoryRegion* system_mr = get_system_memory();
     syx_snapshot_restore_root_from_dirty_list(&snapshot->root_snapshot, system_mr, &snapshot->dirty_list);
     device_restore_all(snapshot->root_snapshot.dss);

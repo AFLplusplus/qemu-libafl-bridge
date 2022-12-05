@@ -16,6 +16,7 @@
 
 static const int feature_bits[] = {
     VIRTIO_I2C_F_ZERO_LENGTH_REQUEST,
+    VIRTIO_F_RING_RESET,
     VHOST_INVALID_FEATURE_BIT
 };
 
@@ -45,7 +46,7 @@ static void vu_i2c_start(VirtIODevice *vdev)
 
     i2c->vhost_dev.acked_features = vdev->guest_features;
 
-    ret = vhost_dev_start(&i2c->vhost_dev, vdev);
+    ret = vhost_dev_start(&i2c->vhost_dev, vdev, true);
     if (ret < 0) {
         error_report("Error starting vhost-user-i2c: %d", -ret);
         goto err_guest_notifiers;
@@ -79,7 +80,7 @@ static void vu_i2c_stop(VirtIODevice *vdev)
         return;
     }
 
-    vhost_dev_stop(&i2c->vhost_dev, vdev);
+    vhost_dev_stop(&i2c->vhost_dev, vdev, true);
 
     ret = k->set_guest_notifiers(qbus->parent, i2c->vhost_dev.nvqs, false);
     if (ret < 0) {

@@ -82,9 +82,9 @@ void syx_snapshot_init(void* opaque) {
     syx_snapshot_state.is_enabled = false;
 }
 
-uint64_t syx_snapshot_handler(CPUState* cpu, uint32_t cmd, target_ulong target_opaque) {
+/*uint64_t syx_snapshot_handler(CPUState* cpu, uint32_t cmd, target_ulong target_opaque) {
     return 0;
-}
+}*/
 
 syx_snapshot_t* syx_snapshot_create(CPUState* cpu, bool track) {
     syx_snapshot_t* snapshot = g_new0(syx_snapshot_t, 1);

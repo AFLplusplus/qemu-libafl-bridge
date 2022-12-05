@@ -86,6 +86,7 @@ device_save_state_t* device_save_all(void) {
         }
 
         // SYX_PRINTF("Saving section %s...\n", se->idstr);
+        printf("Saving section %p %s...\n", se, se->idstr);
 
         save_section_header(f, se, QEMU_VM_SECTION_FULL);
 
@@ -103,27 +104,33 @@ device_save_state_t* device_save_all(void) {
 
     qemu_put_byte(f, QEMU_VM_EOF);
 
-    qemu_fclose(f);
+    qemu_fflush(f);
+
+    // fclose will call io_close and free device_save_state->save_buffer, don't do that
+    //qemu_fclose(f);
 
     return dss;
 }
 
 void device_restore_all(device_save_state_t* device_save_state) {
-	bool must_unlock_iothread = false;
+	  bool must_unlock_iothread = false;
+	  
+	  Error* errp = NULL;
+	  qio_channel_io_seek(QIO_CHANNEL(device_save_state->save_buffer), 0, SEEK_SET, &errp);
     QEMUFile* f = qemu_file_new_input(QIO_CHANNEL(device_save_state->save_buffer));
     
-	if (!qemu_mutex_iothread_locked()) {
-		qemu_mutex_lock_iothread();
-		must_unlock_iothread = true;
-	}
+	  if (!qemu_mutex_iothread_locked()) {
+		  qemu_mutex_lock_iothread();
+		  must_unlock_iothread = true;
+	  }
 
     qemu_load_device_state(f);
  
-	if (must_unlock_iothread) {
-		qemu_mutex_unlock_iothread();
-	}
+	  if (must_unlock_iothread) {
+		  qemu_mutex_unlock_iothread();
+	  }
 
-    qemu_fclose(f);
+    // qemu_fclose(f);
 }
 
 void device_free_all(device_save_state_t* dss) {

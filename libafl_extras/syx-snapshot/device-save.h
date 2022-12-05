@@ -8,6 +8,7 @@
 typedef struct device_save_state_s {
     uint8_t kind;
     QIOChannelBuffer* save_buffer;
+    QEMUFile* save_file;
 } device_save_state_t;
 
 device_save_state_t* device_save_all(void);

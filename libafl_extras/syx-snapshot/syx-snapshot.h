@@ -107,7 +107,7 @@ typedef struct syx_snapshot_state_s {
 //
 
 void syx_snapshot_init(void* opaque);
-uint64_t syx_snapshot_handler(CPUState* cpu, uint32_t cmd, target_ulong target_opaque);
+//uint64_t syx_snapshot_handler(CPUState* cpu, uint32_t cmd, target_ulong target_opaque);
 
 
 //

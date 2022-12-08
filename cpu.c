@@ -98,6 +98,8 @@ void libafl_flush_jit(void);
 
 extern CPUState* libafl_breakpoint_cpu;
 
+extern int libafl_restoring_devices;
+
 /*
 void* libafl_qemu_g2h(CPUState *cpu, target_ulong x);
 target_ulong libafl_qemu_h2g(CPUState *cpu, void* x);
@@ -348,7 +350,15 @@ static int cpu_common_post_load(void *opaque, int version_id)
      * memory we've translated code from. So we must flush all TBs,
      * which will now be stale.
      */
-    tb_flush(cpu);
+    //tb_flush(cpu);
+
+//// --- Begin LibAFL code ---
+
+    // flushing the TBs every restore makes it really slow
+    // TODO handle writes to X code with specific calls to tb_invalidate_phys_addr
+    if (!libafl_restoring_devices) tb_flush(cpu);
+
+//// --- End LibAFL code ---
 
     return 0;
 }
@@ -610,6 +620,7 @@ void tb_invalidate_phys_addr(AddressSpace *as, hwaddr addr, MemTxAttrs attrs)
 
 void libafl_breakpoint_invalidate(CPUState *cpu, target_ulong pc)
 {
+    // TODO invalidate only the virtual pages related to the TB
     tb_flush(cpu);
 }
 

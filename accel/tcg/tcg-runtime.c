@@ -40,6 +40,8 @@
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
+#include "hw/core/cpu.h"
+#include "sysemu/hw_accel.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -129,28 +131,47 @@ void libafl_load_qemu_snapshot(char *name, bool sync)
 int libafl_qemu_break_asap = 0;
 
 CPUState* libafl_breakpoint_cpu;
+vaddr libafl_breakpoint_pc;
+
+#ifdef TARGET_ARM
+#define THUMB_MASK(value) (value | libafl_breakpoint_cpu->env_ptr->thumb)
+#else
+#define THUMB_MASK(value) value
+#endif
 
 void libafl_qemu_trigger_breakpoint(CPUState* cpu);
 
+void libafl_sync_breakpoint_cpu(void);
+
+void libafl_sync_breakpoint_cpu(void)
+{
+    if (libafl_breakpoint_pc) {
+        CPUClass* cc = CPU_GET_CLASS(libafl_breakpoint_cpu);
+        cc->set_pc(libafl_breakpoint_cpu, THUMB_MASK(libafl_breakpoint_pc));
+    }
+    libafl_breakpoint_pc = 0;
+}
+
 void libafl_qemu_trigger_breakpoint(CPUState* cpu)
 {
+  libafl_breakpoint_cpu = cpu;
 #ifndef CONFIG_USER_ONLY
-    libafl_breakpoint_cpu = cpu;
-    cpu->stopped = true;
     qemu_system_debug_request();
-#else
+    cpu->stopped = true;
+#endif
     if (cpu->running) {
         cpu->exception_index = EXCP_LIBAFL_BP;
         cpu_loop_exit(cpu);
     } else {
         libafl_qemu_break_asap = 1;
     }
-#endif
 }
 
-void HELPER(libafl_qemu_handle_breakpoint)(CPUArchState *env)
+void HELPER(libafl_qemu_handle_breakpoint)(CPUArchState *env, target_ulong pc)
 {
-    libafl_qemu_trigger_breakpoint(env_cpu(env));
+    CPUState* cpu = env_cpu(env);
+    libafl_breakpoint_pc = pc;
+    libafl_qemu_trigger_breakpoint(cpu);
 }
 
 //// --- End LibAFL code ---

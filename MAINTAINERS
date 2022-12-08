@@ -23,7 +23,7 @@ Descriptions of section entries:
 	W: Web-page with status/info
 	Q: Patchwork web based patch tracking system site
 	T: SCM tree type and location.  Type is one of: git, hg, quilt, stgit.
-	S: Status, one of the following:
+	S: Status, one of the following (keep in sync with docs/devel/maintainers.rst):
 	   Supported:	Someone is actually paid to look after this.
 	   Maintained:	Someone actually looks after it.
 	   Odd Fixes:	It has a maintainer but they don't have time to do
@@ -1865,6 +1865,7 @@ F: hw/acpi/viot.h
 
 ACPI/AVOCADO/BIOSBITS
 M: Ani Sinha <ani@anisinha.ca>
+M: Michael S. Tsirkin <mst@redhat.com>
 S: Supported
 F: tests/avocado/acpi-bits/*
 F: tests/avocado/acpi-bits.py
@@ -2004,6 +2005,7 @@ F: docs/interop/vhost-user.rst
 F: contrib/vhost-user-*/
 F: backends/vhost-user.c
 F: include/sysemu/vhost-user-backend.h
+F: subprojects/libvhost-user/
 
 virtio
 M: Michael S. Tsirkin <mst@redhat.com>

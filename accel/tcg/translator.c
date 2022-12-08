@@ -145,7 +145,13 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int max_insns,
         struct libafl_breakpoint* bp = libafl_qemu_breakpoints;
         while (bp) {
             if (bp->addr == db->pc_next) {
-                gen_helper_libafl_qemu_handle_breakpoint(cpu_env);
+                TCGv tmp0 = tcg_const_tl(db->pc_next);
+                gen_helper_libafl_qemu_handle_breakpoint(cpu_env, tmp0);
+#if TARGET_LONG_BITS == 32
+                tcg_temp_free_i32(tmp0);
+#else
+                tcg_temp_free_i64(tmp0);
+#endif
             }
             bp = bp->next;
         }

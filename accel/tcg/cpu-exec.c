@@ -661,6 +661,12 @@ static inline void cpu_handle_debug_exception(CPUState *cpu)
     }
 }
 
+//// --- Begin LibAFL code ---
+
+void libafl_sync_breakpoint_cpu(void);
+
+//// --- End LibAFL code ---
+
 static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
 {
     //// --- Begin LibAFL code ---
@@ -670,6 +676,8 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
     if (cpu->exception_index == EXCP_LIBAFL_BP) {
         *ret = cpu->exception_index;
         cpu->exception_index = -1;
+        
+        libafl_sync_breakpoint_cpu();
         return true; 
     }
 

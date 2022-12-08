@@ -2925,14 +2925,14 @@ void tcg_gen_qemu_ld_i32(TCGv_i32 val, TCGv addr, TCGArg idx, MemOp memop)
 
     addr = plugin_prep_mem_callbacks(addr);
 
+    gen_ldst_i32(INDEX_op_qemu_ld_i32, val, addr, memop, idx);
+    plugin_gen_mem_callbacks(addr, oi, QEMU_PLUGIN_MEM_R);
+
 //// --- Begin LibAFL code ---
 
     libafl_gen_read(addr, oi);
 
 //// --- End LibAFL code ---
-
-    gen_ldst_i32(INDEX_op_qemu_ld_i32, val, addr, memop, idx);
-    plugin_gen_mem_callbacks(addr, oi, QEMU_PLUGIN_MEM_R);
 
     if ((orig_memop ^ memop) & MO_BSWAP) {
         switch (orig_memop & MO_SIZE) {
@@ -2977,18 +2977,18 @@ void tcg_gen_qemu_st_i32(TCGv_i32 val, TCGv addr, TCGArg idx, MemOp memop)
 
     addr = plugin_prep_mem_callbacks(addr);
 
-//// --- Begin LibAFL code ---
-
-    libafl_gen_write(addr, oi);
-
-//// --- End LibAFL code ---
-
     if (TCG_TARGET_HAS_qemu_st8_i32 && (memop & MO_SIZE) == MO_8) {
         gen_ldst_i32(INDEX_op_qemu_st8_i32, val, addr, memop, idx);
     } else {
         gen_ldst_i32(INDEX_op_qemu_st_i32, val, addr, memop, idx);
     }
     plugin_gen_mem_callbacks(addr, oi, QEMU_PLUGIN_MEM_W);
+
+//// --- Begin LibAFL code ---
+
+    libafl_gen_write(addr, oi);
+
+//// --- End LibAFL code ---
 
     if (swap) {
         tcg_temp_free_i32(swap);
@@ -3025,14 +3025,14 @@ void tcg_gen_qemu_ld_i64(TCGv_i64 val, TCGv addr, TCGArg idx, MemOp memop)
 
     addr = plugin_prep_mem_callbacks(addr);
 
+    gen_ldst_i64(INDEX_op_qemu_ld_i64, val, addr, memop, idx);
+    plugin_gen_mem_callbacks(addr, oi, QEMU_PLUGIN_MEM_R);
+
 //// --- Begin LibAFL code ---
 
     libafl_gen_read(addr, oi);
 
 //// --- End LibAFL code ---
-
-    gen_ldst_i64(INDEX_op_qemu_ld_i64, val, addr, memop, idx);
-    plugin_gen_mem_callbacks(addr, oi, QEMU_PLUGIN_MEM_R);
 
     if ((orig_memop ^ memop) & MO_BSWAP) {
         int flags = (orig_memop & MO_SIGN
@@ -3089,14 +3089,14 @@ void tcg_gen_qemu_st_i64(TCGv_i64 val, TCGv addr, TCGArg idx, MemOp memop)
 
     addr = plugin_prep_mem_callbacks(addr);
 
+    gen_ldst_i64(INDEX_op_qemu_st_i64, val, addr, memop, idx);
+    plugin_gen_mem_callbacks(addr, oi, QEMU_PLUGIN_MEM_W);
+
 //// --- Begin LibAFL code ---
 
     libafl_gen_write(addr, oi);
 
 //// --- End LibAFL code ---
-
-    gen_ldst_i64(INDEX_op_qemu_st_i64, val, addr, memop, idx);
-    plugin_gen_mem_callbacks(addr, oi, QEMU_PLUGIN_MEM_W);
 
     if (swap) {
         tcg_temp_free_i64(swap);

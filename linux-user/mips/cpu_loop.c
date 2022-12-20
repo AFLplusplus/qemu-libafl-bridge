@@ -71,12 +71,29 @@ void cpu_loop(CPUMIPSState *env)
 # endif
 
     for(;;) {
+        
+//// --- Begin LibAFL code ---
+
+        if (libafl_qemu_break_asap) return;
+
+//// --- End LibAFL code ---
+
         cpu_exec_start(cs);
         trapnr = cpu_exec(cs);
         cpu_exec_end(cs);
         process_queued_cpu_work(cs);
 
         switch(trapnr) {
+
+//// --- Begin LibAFL code ---
+
+#define EXCP_LIBAFL_BP 0xf4775747
+
+        case EXCP_LIBAFL_BP:
+            return;
+
+//// --- End LibAFL code ---
+
         case EXCP_SYSCALL:
             env->active_tc.PC += 4;
 # ifdef TARGET_ABI_MIPSO32

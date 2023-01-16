@@ -84,7 +84,7 @@ void libafl_gen_backdoor(target_ulong pc);
 static TCGHelperInfo libafl_exec_edge_hook_info = {
     .func = NULL, .name = "libafl_exec_edge_hook", \
     .flags = dh_callflag(void), \
-    .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1)
+    .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(i64, 2)
 };
 
 struct libafl_edge_hook {
@@ -127,7 +127,7 @@ void libafl_add_edge_hook(uint64_t (*gen)(target_ulong src, target_ulong dst, ui
 static TCGHelperInfo libafl_exec_block_hook_info = {
     .func = NULL, .name = "libafl_exec_block_hook", \
     .flags = dh_callflag(void), \
-    .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1)
+    .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(i64, 2)
 };
 
 struct libafl_block_hook {

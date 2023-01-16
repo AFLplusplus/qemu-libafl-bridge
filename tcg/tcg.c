@@ -773,6 +773,7 @@ static TCGTemp *tcg_global_reg_new_internal(TCGContext *s, TCGType type,
 
 void libafl_helper_table_add(TCGHelperInfo* info);
 void libafl_helper_table_add(TCGHelperInfo* info) {
+    init_call_layout(info);
     g_hash_table_insert(helper_table, (gpointer)info->func,
                         (gpointer)info);
 }

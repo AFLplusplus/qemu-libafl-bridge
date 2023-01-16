@@ -107,6 +107,11 @@
     { "qemu64-" TYPE_X86_CPU, "model-id", "QEMU Virtual CPU version " v, },\
     { "athlon-" TYPE_X86_CPU, "model-id", "QEMU Virtual CPU version " v, },
 
+GlobalProperty pc_compat_7_2[] = {
+    { "ICH9-LPC", "noreboot", "true" },
+};
+const size_t pc_compat_7_2_len = G_N_ELEMENTS(pc_compat_7_2);
+
 GlobalProperty pc_compat_7_1[] = {};
 const size_t pc_compat_7_1_len = G_N_ELEMENTS(pc_compat_7_1);
 
@@ -1782,12 +1787,9 @@ static void pc_machine_set_max_fw_size(Object *obj, Visitor *v,
                                        Error **errp)
 {
     PCMachineState *pcms = PC_MACHINE(obj);
-    Error *error = NULL;
     uint64_t value;
 
-    visit_type_size(v, name, &value, &error);
-    if (error) {
-        error_propagate(errp, error);
+    if (!visit_type_size(v, name, &value, errp)) {
         return;
     }
 

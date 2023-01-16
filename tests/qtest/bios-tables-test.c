@@ -78,6 +78,7 @@
 typedef struct {
     bool tcg_only;
     const char *machine;
+    const char *machine_param;
     const char *variant;
     const char *uefi_fl1;
     const char *uefi_fl2;
@@ -776,26 +777,29 @@ static char *test_acpi_create_args(test_data *data, const char *params,
          * when arm/virt boad starts to support it.
          */
         if (data->cd) {
-            args = g_strdup_printf("-machine %s %s -accel tcg "
+            args = g_strdup_printf("-machine %s%s %s -accel tcg "
                 "-nodefaults -nographic "
                 "-drive if=pflash,format=raw,file=%s,readonly=on "
                 "-drive if=pflash,format=raw,file=%s,snapshot=on -cdrom %s %s",
-                data->machine, data->tcg_only ? "" : "-accel kvm",
+                data->machine, data->machine_param ?: "",
+                data->tcg_only ? "" : "-accel kvm",
                 data->uefi_fl1, data->uefi_fl2, data->cd, params ? params : "");
         } else {
-            args = g_strdup_printf("-machine %s %s -accel tcg "
+            args = g_strdup_printf("-machine %s%s %s -accel tcg "
                 "-nodefaults -nographic "
                 "-drive if=pflash,format=raw,file=%s,readonly=on "
                 "-drive if=pflash,format=raw,file=%s,snapshot=on %s",
-                data->machine, data->tcg_only ? "" : "-accel kvm",
+                data->machine, data->machine_param ?: "",
+                data->tcg_only ? "" : "-accel kvm",
                 data->uefi_fl1, data->uefi_fl2, params ? params : "");
         }
     } else {
-        args = g_strdup_printf("-machine %s %s -accel tcg "
+        args = g_strdup_printf("-machine %s%s %s -accel tcg "
             "-net none %s "
             "-drive id=hd0,if=none,file=%s,format=raw "
             "-device %s,drive=hd0 ",
-             data->machine, data->tcg_only ? "" : "-accel kvm",
+             data->machine, data->machine_param ?: "",
+             data->tcg_only ? "" : "-accel kvm",
              params ? params : "", disk,
              data->blkdev ?: "ide-hd");
     }
@@ -1141,8 +1145,9 @@ static void test_acpi_piix4_tcg_nohpet(void)
 
     memset(&data, 0, sizeof(data));
     data.machine = MACHINE_PC;
+    data.machine_param = ",hpet=off";
     data.variant = ".nohpet";
-    test_acpi_one("-no-hpet", &data);
+    test_acpi_one(NULL, &data);
     free_test_data(&data);
 }
 
@@ -1210,8 +1215,9 @@ static void test_acpi_q35_tcg_nohpet(void)
 
     memset(&data, 0, sizeof(data));
     data.machine = MACHINE_Q35;
+    data.machine_param = ",hpet=off";
     data.variant = ".nohpet";
-    test_acpi_one("-no-hpet", &data);
+    test_acpi_one(NULL, &data);
     free_test_data(&data);
 }
 
@@ -1720,6 +1726,24 @@ static void test_acpi_virt_tcg(void)
     free_test_data(&data);
 }
 
+static void test_acpi_virt_tcg_topology(void)
+{
+    test_data data = {
+        .machine = "virt",
+        .variant = ".topology",
+        .tcg_only = true,
+        .uefi_fl1 = "pc-bios/edk2-aarch64-code.fd",
+        .uefi_fl2 = "pc-bios/edk2-arm-vars.fd",
+        .cd = "tests/data/uefi-boot-images/bios-tables-test.aarch64.iso.qcow2",
+        .ram_start = 0x40000000ULL,
+        .scan_len = 128ULL * 1024 * 1024,
+    };
+
+    test_acpi_one("-cpu cortex-a57 "
+                  "-smp sockets=1,clusters=2,cores=2,threads=2", &data);
+    free_test_data(&data);
+}
+
 static void test_acpi_q35_viot(void)
 {
     test_data data = {
@@ -2057,6 +2081,7 @@ int main(int argc, char *argv[])
             qtest_add_func("acpi/virt", test_acpi_virt_tcg);
             qtest_add_func("acpi/virt/acpihmatvirt",
                             test_acpi_virt_tcg_acpi_hmat);
+            qtest_add_func("acpi/virt/topology", test_acpi_virt_tcg_topology);
             qtest_add_func("acpi/virt/numamem", test_acpi_virt_tcg_numamem);
             qtest_add_func("acpi/virt/memhp", test_acpi_virt_tcg_memhp);
             qtest_add_func("acpi/virt/pxb", test_acpi_virt_tcg_pxb);

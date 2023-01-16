@@ -357,7 +357,6 @@ static void write_elf32_notes(WriteCoreDumpFunction f, DumpState *s,
 
 static void write_elf_phdr_note(DumpState *s, Error **errp)
 {
-    ERRP_GUARD();
     Elf32_Phdr phdr32;
     Elf64_Phdr phdr64;
     void *phdr;
@@ -773,7 +772,6 @@ static void dump_iterate(DumpState *s, Error **errp)
 static void dump_end(DumpState *s, Error **errp)
 {
     int rc;
-    ERRP_GUARD();
 
     if (s->elf_section_data_size) {
         s->elf_section_data = g_malloc0(s->elf_section_data_size);
@@ -2044,8 +2042,8 @@ static void dump_process(DumpState *s, Error **errp)
     result = qmp_query_dump(NULL);
     /* should never fail */
     assert(result);
-    qapi_event_send_dump_completed(result, !!*errp, (*errp ?
-                                                     error_get_pretty(*errp) : NULL));
+    qapi_event_send_dump_completed(result,
+                                   *errp ? error_get_pretty(*errp) : NULL);
     qapi_free_DumpQueryResult(result);
 
     dump_cleanup(s);

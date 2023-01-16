@@ -26,7 +26,7 @@
 #ifndef QEMU_PCI_BRIDGE_H
 #define QEMU_PCI_BRIDGE_H
 
-#include "hw/pci/pci.h"
+#include "hw/pci/pci_device.h"
 #include "hw/pci/pci_bus.h"
 #include "hw/cxl/cxl.h"
 #include "qom/object.h"
@@ -53,6 +53,7 @@ struct PCIBridgeWindows {
 
 #define TYPE_PCI_BRIDGE "base-pci-bridge"
 OBJECT_DECLARE_SIMPLE_TYPE(PCIBridge, PCI_BRIDGE)
+#define IS_PCI_BRIDGE(dev) object_dynamic_cast(OBJECT(dev), TYPE_PCI_BRIDGE)
 
 struct PCIBridge {
     /*< private >*/
@@ -96,7 +97,6 @@ struct PXBDev {
     } cxl;
 };
 
-typedef struct PXBDev PXBDev;
 #define TYPE_PXB_CXL_DEVICE "pxb-cxl"
 DECLARE_INSTANCE_CHECKER(PXBDev, PXB_CXL_DEV,
                          TYPE_PXB_CXL_DEVICE)

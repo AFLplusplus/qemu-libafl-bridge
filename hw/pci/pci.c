@@ -34,7 +34,6 @@
 #include "hw/qdev-properties-system.h"
 #include "migration/qemu-file-types.h"
 #include "migration/vmstate.h"
-#include "monitor/monitor.h"
 #include "net/net.h"
 #include "sysemu/numa.h"
 #include "sysemu/sysemu.h"
@@ -47,8 +46,8 @@
 #include "hw/hotplug.h"
 #include "hw/boards.h"
 #include "qapi/error.h"
-#include "qapi/qapi-commands-pci.h"
 #include "qemu/cutils.h"
+#include "pci-internal.h"
 
 //#define DEBUG_PCI
 #ifdef DEBUG_PCI
@@ -59,7 +58,6 @@
 
 bool pci_available = true;
 
-static void pcibus_dev_print(Monitor *mon, DeviceState *dev, int indent);
 static char *pcibus_get_dev_path(DeviceState *dev);
 static char *pcibus_get_fw_dev_path(DeviceState *dev);
 static void pcibus_reset(BusState *qbus);
@@ -234,7 +232,6 @@ static const TypeInfo cxl_bus_info = {
     .class_init = pcie_bus_class_init,
 };
 
-static PCIBus *pci_find_bus_nr(PCIBus *bus, int bus_num);
 static void pci_update_mappings(PCIDevice *d);
 static void pci_irq_handler(void *opaque, int irq_num, int level);
 static void pci_add_option_rom(PCIDevice *pdev, bool is_default_rom, Error **);
@@ -243,7 +240,7 @@ static void pci_del_option_rom(PCIDevice *pdev);
 static uint16_t pci_default_sub_vendor_id = PCI_SUBVENDOR_ID_REDHAT_QUMRANET;
 static uint16_t pci_default_sub_device_id = PCI_SUBDEVICE_ID_QEMU;
 
-static QLIST_HEAD(, PCIHostState) pci_host_bridges;
+PCIHostStateList pci_host_bridges;
 
 int pci_bar(PCIDevice *d, int reg)
 {
@@ -378,14 +375,14 @@ static void pci_do_device_reset(PCIDevice *dev)
  */
 void pci_device_reset(PCIDevice *dev)
 {
-    qdev_reset_all(&dev->qdev);
+    device_cold_reset(&dev->qdev);
     pci_do_device_reset(dev);
 }
 
 /*
  * Trigger pci bus reset under a given bus.
- * Called via qbus_reset_all on RST# assert, after the devices
- * have been reset qdev_reset_all-ed already.
+ * Called via bus_cold_reset on RST# assert, after the devices
+ * have been reset device_cold_reset-ed already.
  */
 static void pcibus_reset(BusState *qbus)
 {
@@ -576,7 +573,7 @@ void pci_bus_range(PCIBus *bus, int *min_bus, int *max_bus)
     for (i = 0; i < ARRAY_SIZE(bus->devices); ++i) {
         PCIDevice *dev = bus->devices[i];
 
-        if (dev && PCI_DEVICE_GET_CLASS(dev)->is_bridge) {
+        if (dev && IS_PCI_BRIDGE(dev)) {
             *min_bus = MIN(*min_bus, dev->config[PCI_SECONDARY_BUS]);
             *max_bus = MAX(*max_bus, dev->config[PCI_SUBORDINATE_BUS]);
         }
@@ -592,7 +589,6 @@ static int get_pci_config_device(QEMUFile *f, void *pv, size_t size,
                                  const VMStateField *field)
 {
     PCIDevice *s = container_of(pv, PCIDevice, config);
-    PCIDeviceClass *pc = PCI_DEVICE_GET_CLASS(s);
     uint8_t *config;
     int i;
 
@@ -614,9 +610,8 @@ static int get_pci_config_device(QEMUFile *f, void *pv, size_t size,
     memcpy(s->config, config, size);
 
     pci_update_mappings(s);
-    if (pc->is_bridge) {
-        PCIBridge *b = PCI_BRIDGE(s);
-        pci_bridge_update_mappings(b);
+    if (IS_PCI_BRIDGE(s)) {
+        pci_bridge_update_mappings(PCI_BRIDGE(s));
     }
 
     memory_region_set_enabled(&s->bus_master_enable_region,
@@ -1090,9 +1085,10 @@ static PCIDevice *do_pci_register_device(PCIDevice *pci_dev,
     Error *local_err = NULL;
     DeviceState *dev = DEVICE(pci_dev);
     PCIBus *bus = pci_get_bus(pci_dev);
+    bool is_bridge = IS_PCI_BRIDGE(pci_dev);
 
     /* Only pci bridges can be attached to extra PCI root buses */
-    if (pci_bus_is_root(bus) && bus->parent_dev && !pc->is_bridge) {
+    if (pci_bus_is_root(bus) && bus->parent_dev && !is_bridge) {
         error_setg(errp,
                    "PCI: Only PCI/PCIe bridges can be plugged into %s",
                     bus->parent_dev->name);
@@ -1154,7 +1150,7 @@ static PCIDevice *do_pci_register_device(PCIDevice *pci_dev,
     pci_config_set_revision(pci_dev->config, pc->revision);
     pci_config_set_class(pci_dev->config, pc->class_id);
 
-    if (!pc->is_bridge) {
+    if (!is_bridge) {
         if (pc->subsystem_vendor_id || pc->subsystem_id) {
             pci_set_word(pci_dev->config + PCI_SUBSYSTEM_VENDOR_ID,
                          pc->subsystem_vendor_id);
@@ -1171,7 +1167,7 @@ static PCIDevice *do_pci_register_device(PCIDevice *pci_dev,
     pci_init_cmask(pci_dev);
     pci_init_wmask(pci_dev);
     pci_init_w1cmask(pci_dev);
-    if (pc->is_bridge) {
+    if (is_bridge) {
         pci_init_mask_bridge(pci_dev);
     }
     pci_init_multifunction(bus, pci_dev, &local_err);
@@ -1662,13 +1658,6 @@ int pci_swizzle_map_irq_fn(PCIDevice *pci_dev, int pin)
 /***********************************************************/
 /* monitor info on PCI */
 
-typedef struct {
-    uint16_t class;
-    const char *desc;
-    const char *fw_name;
-    uint16_t fw_ign_bits;
-} pci_class_desc;
-
 static const pci_class_desc pci_class_descriptions[] =
 {
     { 0x0001, "VGA controller", "display"},
@@ -1776,7 +1765,7 @@ void pci_for_each_device(PCIBus *bus, int bus_num,
     }
 }
 
-static const pci_class_desc *get_class_desc(int class)
+const pci_class_desc *get_class_desc(int class)
 {
     const pci_class_desc *desc;
 
@@ -1786,176 +1775,6 @@ static const pci_class_desc *get_class_desc(int class)
     }
 
     return desc;
-}
-
-static PciDeviceInfoList *qmp_query_pci_devices(PCIBus *bus, int bus_num);
-
-static PciMemoryRegionList *qmp_query_pci_regions(const PCIDevice *dev)
-{
-    PciMemoryRegionList *head = NULL, **tail = &head;
-    int i;
-
-    for (i = 0; i < PCI_NUM_REGIONS; i++) {
-        const PCIIORegion *r = &dev->io_regions[i];
-        PciMemoryRegion *region;
-
-        if (!r->size) {
-            continue;
-        }
-
-        region = g_malloc0(sizeof(*region));
-
-        if (r->type & PCI_BASE_ADDRESS_SPACE_IO) {
-            region->type = g_strdup("io");
-        } else {
-            region->type = g_strdup("memory");
-            region->has_prefetch = true;
-            region->prefetch = !!(r->type & PCI_BASE_ADDRESS_MEM_PREFETCH);
-            region->has_mem_type_64 = true;
-            region->mem_type_64 = !!(r->type & PCI_BASE_ADDRESS_MEM_TYPE_64);
-        }
-
-        region->bar = i;
-        region->address = r->addr;
-        region->size = r->size;
-
-        QAPI_LIST_APPEND(tail, region);
-    }
-
-    return head;
-}
-
-static PciBridgeInfo *qmp_query_pci_bridge(PCIDevice *dev, PCIBus *bus,
-                                           int bus_num)
-{
-    PciBridgeInfo *info;
-    PciMemoryRange *range;
-
-    info = g_new0(PciBridgeInfo, 1);
-
-    info->bus = g_new0(PciBusInfo, 1);
-    info->bus->number = dev->config[PCI_PRIMARY_BUS];
-    info->bus->secondary = dev->config[PCI_SECONDARY_BUS];
-    info->bus->subordinate = dev->config[PCI_SUBORDINATE_BUS];
-
-    range = info->bus->io_range = g_new0(PciMemoryRange, 1);
-    range->base = pci_bridge_get_base(dev, PCI_BASE_ADDRESS_SPACE_IO);
-    range->limit = pci_bridge_get_limit(dev, PCI_BASE_ADDRESS_SPACE_IO);
-
-    range = info->bus->memory_range = g_new0(PciMemoryRange, 1);
-    range->base = pci_bridge_get_base(dev, PCI_BASE_ADDRESS_SPACE_MEMORY);
-    range->limit = pci_bridge_get_limit(dev, PCI_BASE_ADDRESS_SPACE_MEMORY);
-
-    range = info->bus->prefetchable_range = g_new0(PciMemoryRange, 1);
-    range->base = pci_bridge_get_base(dev, PCI_BASE_ADDRESS_MEM_PREFETCH);
-    range->limit = pci_bridge_get_limit(dev, PCI_BASE_ADDRESS_MEM_PREFETCH);
-
-    if (dev->config[PCI_SECONDARY_BUS] != 0) {
-        PCIBus *child_bus = pci_find_bus_nr(bus, dev->config[PCI_SECONDARY_BUS]);
-        if (child_bus) {
-            info->has_devices = true;
-            info->devices = qmp_query_pci_devices(child_bus, dev->config[PCI_SECONDARY_BUS]);
-        }
-    }
-
-    return info;
-}
-
-static PciDeviceInfo *qmp_query_pci_device(PCIDevice *dev, PCIBus *bus,
-                                           int bus_num)
-{
-    const pci_class_desc *desc;
-    PciDeviceInfo *info;
-    uint8_t type;
-    int class;
-
-    info = g_new0(PciDeviceInfo, 1);
-    info->bus = bus_num;
-    info->slot = PCI_SLOT(dev->devfn);
-    info->function = PCI_FUNC(dev->devfn);
-
-    info->class_info = g_new0(PciDeviceClass, 1);
-    class = pci_get_word(dev->config + PCI_CLASS_DEVICE);
-    info->class_info->q_class = class;
-    desc = get_class_desc(class);
-    if (desc->desc) {
-        info->class_info->has_desc = true;
-        info->class_info->desc = g_strdup(desc->desc);
-    }
-
-    info->id = g_new0(PciDeviceId, 1);
-    info->id->vendor = pci_get_word(dev->config + PCI_VENDOR_ID);
-    info->id->device = pci_get_word(dev->config + PCI_DEVICE_ID);
-    info->regions = qmp_query_pci_regions(dev);
-    info->qdev_id = g_strdup(dev->qdev.id ? dev->qdev.id : "");
-
-    info->irq_pin = dev->config[PCI_INTERRUPT_PIN];
-    if (dev->config[PCI_INTERRUPT_PIN] != 0) {
-        info->has_irq = true;
-        info->irq = dev->config[PCI_INTERRUPT_LINE];
-    }
-
-    type = dev->config[PCI_HEADER_TYPE] & ~PCI_HEADER_TYPE_MULTI_FUNCTION;
-    if (type == PCI_HEADER_TYPE_BRIDGE) {
-        info->has_pci_bridge = true;
-        info->pci_bridge = qmp_query_pci_bridge(dev, bus, bus_num);
-    } else if (type == PCI_HEADER_TYPE_NORMAL) {
-        info->id->has_subsystem = info->id->has_subsystem_vendor = true;
-        info->id->subsystem = pci_get_word(dev->config + PCI_SUBSYSTEM_ID);
-        info->id->subsystem_vendor =
-            pci_get_word(dev->config + PCI_SUBSYSTEM_VENDOR_ID);
-    } else if (type == PCI_HEADER_TYPE_CARDBUS) {
-        info->id->has_subsystem = info->id->has_subsystem_vendor = true;
-        info->id->subsystem = pci_get_word(dev->config + PCI_CB_SUBSYSTEM_ID);
-        info->id->subsystem_vendor =
-            pci_get_word(dev->config + PCI_CB_SUBSYSTEM_VENDOR_ID);
-    }
-
-    return info;
-}
-
-static PciDeviceInfoList *qmp_query_pci_devices(PCIBus *bus, int bus_num)
-{
-    PciDeviceInfoList *head = NULL, **tail = &head;
-    PCIDevice *dev;
-    int devfn;
-
-    for (devfn = 0; devfn < ARRAY_SIZE(bus->devices); devfn++) {
-        dev = bus->devices[devfn];
-        if (dev) {
-            QAPI_LIST_APPEND(tail, qmp_query_pci_device(dev, bus, bus_num));
-        }
-    }
-
-    return head;
-}
-
-static PciInfo *qmp_query_pci_bus(PCIBus *bus, int bus_num)
-{
-    PciInfo *info = NULL;
-
-    bus = pci_find_bus_nr(bus, bus_num);
-    if (bus) {
-        info = g_malloc0(sizeof(*info));
-        info->bus = bus_num;
-        info->devices = qmp_query_pci_devices(bus, bus_num);
-    }
-
-    return info;
-}
-
-PciInfoList *qmp_query_pci(Error **errp)
-{
-    PciInfoList *head = NULL, **tail = &head;
-    PCIHostState *host_bridge;
-
-    QLIST_FOREACH(host_bridge, &pci_host_bridges, next) {
-        QAPI_LIST_APPEND(tail,
-                         qmp_query_pci_bus(host_bridge->bus,
-                                           pci_bus_num(host_bridge->bus)));
-    }
-
-    return head;
 }
 
 /* Initialize a PCI NIC.  */
@@ -2096,7 +1915,7 @@ static bool pci_root_bus_in_range(PCIBus *bus, int bus_num)
     for (i = 0; i < ARRAY_SIZE(bus->devices); ++i) {
         PCIDevice *dev = bus->devices[i];
 
-        if (dev && PCI_DEVICE_GET_CLASS(dev)->is_bridge) {
+        if (dev && IS_PCI_BRIDGE(dev)) {
             if (pci_secondary_bus_in_range(dev, bus_num)) {
                 return true;
             }
@@ -2106,7 +1925,7 @@ static bool pci_root_bus_in_range(PCIBus *bus, int bus_num)
     return false;
 }
 
-static PCIBus *pci_find_bus_nr(PCIBus *bus, int bus_num)
+PCIBus *pci_find_bus_nr(PCIBus *bus, int bus_num)
 {
     PCIBus *sec;
 
@@ -2584,44 +2403,6 @@ uint8_t pci_find_capability(PCIDevice *pdev, uint8_t cap_id)
     return pci_find_capability_list(pdev, cap_id, NULL);
 }
 
-static void pcibus_dev_print(Monitor *mon, DeviceState *dev, int indent)
-{
-    PCIDevice *d = (PCIDevice *)dev;
-    const pci_class_desc *desc;
-    char ctxt[64];
-    PCIIORegion *r;
-    int i, class;
-
-    class = pci_get_word(d->config + PCI_CLASS_DEVICE);
-    desc = pci_class_descriptions;
-    while (desc->desc && class != desc->class)
-        desc++;
-    if (desc->desc) {
-        snprintf(ctxt, sizeof(ctxt), "%s", desc->desc);
-    } else {
-        snprintf(ctxt, sizeof(ctxt), "Class %04x", class);
-    }
-
-    monitor_printf(mon, "%*sclass %s, addr %02x:%02x.%x, "
-                   "pci id %04x:%04x (sub %04x:%04x)\n",
-                   indent, "", ctxt, pci_dev_bus_num(d),
-                   PCI_SLOT(d->devfn), PCI_FUNC(d->devfn),
-                   pci_get_word(d->config + PCI_VENDOR_ID),
-                   pci_get_word(d->config + PCI_DEVICE_ID),
-                   pci_get_word(d->config + PCI_SUBSYSTEM_VENDOR_ID),
-                   pci_get_word(d->config + PCI_SUBSYSTEM_ID));
-    for (i = 0; i < PCI_NUM_REGIONS; i++) {
-        r = &d->io_regions[i];
-        if (!r->size)
-            continue;
-        monitor_printf(mon, "%*sbar %d: %s at 0x%"FMT_PCIBUS
-                       " [0x%"FMT_PCIBUS"]\n",
-                       indent, "",
-                       i, r->type & PCI_BASE_ADDRESS_SPACE_IO ? "i/o" : "mem",
-                       r->addr, r->addr + r->size - 1);
-    }
-}
-
 static char *pci_dev_fw_name(DeviceState *dev, char *buf, int len)
 {
     PCIDevice *d = (PCIDevice *)dev;
@@ -2841,7 +2622,6 @@ void pci_setup_iommu(PCIBus *bus, PCIIOMMUFunc fn, void *opaque)
 static void pci_dev_get_w64(PCIBus *b, PCIDevice *dev, void *opaque)
 {
     Range *range = opaque;
-    PCIDeviceClass *pc = PCI_DEVICE_GET_CLASS(dev);
     uint16_t cmd = pci_get_word(dev->config + PCI_COMMAND);
     int i;
 
@@ -2849,7 +2629,7 @@ static void pci_dev_get_w64(PCIBus *b, PCIDevice *dev, void *opaque)
         return;
     }
 
-    if (pc->is_bridge) {
+    if (IS_PCI_BRIDGE(dev)) {
         pcibus_t base = pci_bridge_get_base(dev, PCI_BASE_ADDRESS_MEM_PREFETCH);
         pcibus_t limit = pci_bridge_get_limit(dev, PCI_BASE_ADDRESS_MEM_PREFETCH);
 

@@ -45,7 +45,12 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <net/if.h>
+#if defined(__NetBSD__) || defined(__OpenBSD__)
+#include <net/if_arp.h>
+#include <netinet/if_ether.h>
+#else
 #include <net/ethernet.h>
+#endif
 #include <sys/types.h>
 #ifdef CONFIG_SOLARIS
 #include <sys/sockio.h>
@@ -58,9 +63,7 @@ static void ga_wait_child(pid_t pid, int *status, Error **errp)
 
     *status = 0;
 
-    do {
-        rpid = waitpid(pid, status, 0);
-    } while (rpid == -1 && errno == EINTR);
+    rpid = RETRY_ON_EINTR(waitpid(pid, status, 0));
 
     if (rpid == -1) {
         error_setg_errno(errp, errno, "failed to wait for child (pid: %d)",
@@ -71,7 +74,7 @@ static void ga_wait_child(pid_t pid, int *status, Error **errp)
     g_assert(rpid == pid);
 }
 
-void qmp_guest_shutdown(bool has_mode, const char *mode, Error **errp)
+void qmp_guest_shutdown(const char *mode, Error **errp)
 {
     const char *shutdown_flag;
     Error *local_err = NULL;
@@ -93,7 +96,7 @@ void qmp_guest_shutdown(bool has_mode, const char *mode, Error **errp)
 #endif
 
     slog("guest-shutdown called, mode: %s", mode);
-    if (!has_mode || strcmp(mode, "powerdown") == 0) {
+    if (!mode || strcmp(mode, "powerdown") == 0) {
         shutdown_flag = powerdown_flag;
     } else if (strcmp(mode, "halt") == 0) {
         shutdown_flag = halt_flag;
@@ -404,14 +407,14 @@ end:
     return f;
 }
 
-int64_t qmp_guest_file_open(const char *path, bool has_mode, const char *mode,
+int64_t qmp_guest_file_open(const char *path, const char *mode,
                             Error **errp)
 {
     FILE *fh;
     Error *local_err = NULL;
     int64_t handle;
 
-    if (!has_mode) {
+    if (!mode) {
         mode = "r";
     }
     slog("guest-file-open called, filepath: %s, mode: %s", path, mode);
@@ -1037,7 +1040,6 @@ static bool build_guest_fsinfo_for_ccw_dev(char const *syspath,
         return false;
     }
 
-    disk->has_ccw_address = true;
     disk->ccw_address = g_new0(GuestCCWAddress, 1);
     disk->ccw_address->cssid = cssid;
     disk->ccw_address->ssid = ssid;
@@ -1084,12 +1086,10 @@ static void build_guest_fsinfo_for_real_device(char const *syspath,
         devnode = udev_device_get_devnode(udevice);
         if (devnode != NULL) {
             disk->dev = g_strdup(devnode);
-            disk->has_dev = true;
         }
         serial = udev_device_get_property_value(udevice, "ID_SERIAL");
         if (serial != NULL && *serial != 0) {
             disk->serial = g_strdup(serial);
-            disk->has_serial = true;
         }
     }
 
@@ -1108,7 +1108,7 @@ static void build_guest_fsinfo_for_real_device(char const *syspath,
         has_hwinf = false;
     }
 
-    if (has_hwinf || disk->has_dev || disk->has_serial) {
+    if (has_hwinf || disk->dev || disk->serial) {
         QAPI_LIST_PREPEND(fs->disk, disk);
     } else {
         qapi_free_GuestDiskAddress(disk);
@@ -1411,7 +1411,6 @@ static void get_nvme_smart(GuestDiskInfo *disk)
         return;
     }
 
-    disk->has_smart = true;
     disk->smart = g_new0(GuestDiskSmart, 1);
     disk->smart->type = GUEST_DISK_BUS_TYPE_NVME;
 
@@ -1449,7 +1448,7 @@ static void get_nvme_smart(GuestDiskInfo *disk)
 
 static void get_disk_smart(GuestDiskInfo *disk)
 {
-    if (disk->has_address
+    if (disk->address
         && (disk->address->bus_type == GUEST_DISK_BUS_TYPE_NVME)) {
         get_nvme_smart(disk);
     }
@@ -1502,7 +1501,6 @@ GuestDiskInfoList *qmp_guest_get_disks(Error **errp)
         disk->name = dev_name;
         disk->partition = false;
         disk->alias = get_alias_for_syspath(disk_dir);
-        disk->has_alias = (disk->alias != NULL);
         QAPI_LIST_PREPEND(ret, disk);
 
         /* Get address for non-virtual devices */
@@ -1522,8 +1520,6 @@ GuestDiskInfoList *qmp_guest_get_disks(Error **errp)
                     error_get_pretty(local_err));
                 error_free(local_err);
                 local_err = NULL;
-            } else if (disk->address != NULL) {
-                disk->has_address = true;
             }
         }
 
@@ -1641,7 +1637,6 @@ qmp_guest_fstrim(bool has_minimum, int64_t minimum, Error **errp)
         if (fd == -1) {
             result->error = g_strdup_printf("failed to open: %s",
                                             strerror(errno));
-            result->has_error = true;
             continue;
         }
 
@@ -1656,7 +1651,6 @@ qmp_guest_fstrim(bool has_minimum, int64_t minimum, Error **errp)
         r.minlen = has_minimum ? minimum : 0;
         ret = ioctl(fd, FITRIM, &r);
         if (ret == -1) {
-            result->has_error = true;
             if (errno == ENOTTY || errno == EOPNOTSUPP) {
                 result->error = g_strdup("trim not supported");
             } else {
@@ -2881,7 +2875,7 @@ static int guest_get_network_stats(const char *name,
     return -1;
 }
 
-#ifndef __FreeBSD__
+#ifndef CONFIG_BSD
 /*
  * Fill "buf" with MAC address by ifaddrs. Pointer buf must point to a
  * buffer with ETHER_ADDR_LEN length at least.
@@ -2930,7 +2924,7 @@ bool guest_get_hw_addr(struct ifaddrs *ifa, unsigned char *buf,
     close(sock);
     return true;
 }
-#endif /* __FreeBSD__ */
+#endif /* CONFIG_BSD */
 
 /*
  * Build information about guest interfaces
@@ -2967,7 +2961,7 @@ GuestNetworkInterfaceList *qmp_guest_network_get_interfaces(Error **errp)
             QAPI_LIST_APPEND(tail, info);
         }
 
-        if (!info->has_hardware_address) {
+        if (!info->hardware_address) {
             if (!guest_get_hw_addr(ifa, mac_addr, &obtained, errp)) {
                 goto error;
             }
@@ -2977,7 +2971,6 @@ GuestNetworkInterfaceList *qmp_guest_network_get_interfaces(Error **errp)
                                     (int) mac_addr[0], (int) mac_addr[1],
                                     (int) mac_addr[2], (int) mac_addr[3],
                                     (int) mac_addr[4], (int) mac_addr[5]);
-                info->has_hardware_address = true;
             }
         }
 
@@ -3037,14 +3030,12 @@ GuestNetworkInterfaceList *qmp_guest_network_get_interfaces(Error **errp)
 
         info->has_ip_addresses = true;
 
-        if (!info->has_statistics) {
+        if (!info->statistics) {
             interface_stat = g_malloc0(sizeof(*interface_stat));
             if (guest_get_network_stats(info->name, interface_stat) == -1) {
-                info->has_statistics = false;
                 g_free(interface_stat);
             } else {
                 info->statistics = interface_stat;
-                info->has_statistics = true;
             }
         }
     }
@@ -3351,11 +3342,8 @@ GuestOSInfo *qmp_guest_get_osinfo(Error **errp)
     if (uname(&kinfo) != 0) {
         error_setg_errno(errp, errno, "uname failed");
     } else {
-        info->has_kernel_version = true;
         info->kernel_version = g_strdup(kinfo.version);
-        info->has_kernel_release = true;
         info->kernel_release = g_strdup(kinfo.release);
-        info->has_machine = true;
         info->machine = g_strdup(kinfo.machine);
     }
 
@@ -3375,7 +3363,6 @@ GuestOSInfo *qmp_guest_get_osinfo(Error **errp)
     value = g_key_file_get_value(osrelease, "os-release", osfield, NULL); \
     if (value != NULL) { \
         ga_osrelease_replace_special(value); \
-        info->has_ ## field = true; \
         info->field = value; \
     } \
 } while (0)

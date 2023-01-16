@@ -117,15 +117,13 @@ static ssize_t net_socket_receive_dgram(NetClientState *nc, const uint8_t *buf, 
     NetSocketState *s = DO_UPCAST(NetSocketState, nc, nc);
     ssize_t ret;
 
-    do {
-        if (s->dgram_dst.sin_family != AF_UNIX) {
-            ret = sendto(s->fd, buf, size, 0,
-                         (struct sockaddr *)&s->dgram_dst,
-                         sizeof(s->dgram_dst));
-        } else {
-            ret = send(s->fd, buf, size, 0);
-        }
-    } while (ret == -1 && errno == EINTR);
+    ret = RETRY_ON_EINTR(
+        s->dgram_dst.sin_family != AF_UNIX ?
+            sendto(s->fd, buf, size, 0,
+                     (struct sockaddr *)&s->dgram_dst,
+                     sizeof(s->dgram_dst)) :
+            send(s->fd, buf, size, 0)
+    );
 
     if (ret == -1 && errno == EAGAIN) {
         net_socket_write_poll(s, true);
@@ -705,19 +703,19 @@ int net_init_socket(const Netdev *netdev, const char *name,
     assert(netdev->type == NET_CLIENT_DRIVER_SOCKET);
     sock = &netdev->u.socket;
 
-    if (sock->has_fd + sock->has_listen + sock->has_connect + sock->has_mcast +
-        sock->has_udp != 1) {
+    if (!!sock->fd + !!sock->listen + !!sock->connect + !!sock->mcast +
+        !!sock->udp != 1) {
         error_setg(errp, "exactly one of listen=, connect=, mcast= or udp="
                    " is required");
         return -1;
     }
 
-    if (sock->has_localaddr && !sock->has_mcast && !sock->has_udp) {
+    if (sock->localaddr && !sock->mcast && !sock->udp) {
         error_setg(errp, "localaddr= is only valid with mcast= or udp=");
         return -1;
     }
 
-    if (sock->has_fd) {
+    if (sock->fd) {
         int fd, ret;
 
         fd = monitor_fd_param(monitor_cur(), sock->fd, errp);
@@ -737,7 +735,7 @@ int net_init_socket(const Netdev *netdev, const char *name,
         return 0;
     }
 
-    if (sock->has_listen) {
+    if (sock->listen) {
         if (net_socket_listen_init(peer, "socket", name, sock->listen, errp)
             < 0) {
             return -1;
@@ -745,7 +743,7 @@ int net_init_socket(const Netdev *netdev, const char *name,
         return 0;
     }
 
-    if (sock->has_connect) {
+    if (sock->connect) {
         if (net_socket_connect_init(peer, "socket", name, sock->connect, errp)
             < 0) {
             return -1;
@@ -753,7 +751,7 @@ int net_init_socket(const Netdev *netdev, const char *name,
         return 0;
     }
 
-    if (sock->has_mcast) {
+    if (sock->mcast) {
         /* if sock->localaddr is missing, it has been initialized to "all bits
          * zero" */
         if (net_socket_mcast_init(peer, "socket", name, sock->mcast,
@@ -763,8 +761,8 @@ int net_init_socket(const Netdev *netdev, const char *name,
         return 0;
     }
 
-    assert(sock->has_udp);
-    if (!sock->has_localaddr) {
+    assert(sock->udp);
+    if (!sock->localaddr) {
         error_setg(errp, "localaddr= is mandatory with udp=");
         return -1;
     }

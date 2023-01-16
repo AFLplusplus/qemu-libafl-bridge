@@ -32,6 +32,7 @@
 #include "sysemu/blockdev.h"
 #include "net/net.h"
 #include "hw/pci/pci.h"
+#include "hw/pci/pcie.h"
 #include "util/block-helpers.h"
 
 static bool check_prop_still_unset(Object *obj, const char *name,
@@ -679,14 +680,11 @@ static void set_reserved_region(Object *obj, Visitor *v, const char *name,
 {
     Property *prop = opaque;
     ReservedRegion *rr = object_field_prop_ptr(obj, prop);
-    Error *local_err = NULL;
     const char *endptr;
     char *str;
     int ret;
 
-    visit_type_str(v, name, &str, &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
+    if (!visit_type_str(v, name, &str, errp)) {
         return;
     }
 

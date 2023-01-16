@@ -113,12 +113,15 @@ device_save_state_t* device_save_all(void) {
     return dss;
 }
 
-void device_restore_all(device_save_state_t* device_save_state) {
+void device_restore_all(device_save_state_t* dss) {
 	  bool must_unlock_iothread = false;
 	  
 	  Error* errp = NULL;
-	  qio_channel_io_seek(QIO_CHANNEL(device_save_state->save_buffer), 0, SEEK_SET, &errp);
-    QEMUFile* f = qemu_file_new_input(QIO_CHANNEL(device_save_state->save_buffer));
+	  qio_channel_io_seek(QIO_CHANNEL(dss->save_buffer), 0, SEEK_SET, &errp);
+	  
+    if(!dss->save_file) {
+      dss->save_file = qemu_file_new_input(QIO_CHANNEL(dss->save_buffer));
+    }
     
 	  if (!qemu_mutex_iothread_locked()) {
 		  qemu_mutex_lock_iothread();
@@ -128,7 +131,7 @@ void device_restore_all(device_save_state_t* device_save_state) {
 	  int save_libafl_restoring_devices = libafl_restoring_devices;
 	  libafl_restoring_devices = 1;
 
-    qemu_load_device_state(f);
+    qemu_load_device_state(dss->save_file);
  
     libafl_restoring_devices = save_libafl_restoring_devices;
  
@@ -144,4 +147,6 @@ void device_free_all(device_save_state_t* dss) {
     Error* errp = NULL;
     qio_channel_close(QIO_CHANNEL(dss->save_buffer), &errp);
     object_unref(OBJECT(dss->save_buffer));
+    if (dss->save_file)
+      qemu_fclose(dss->save_file);
 }

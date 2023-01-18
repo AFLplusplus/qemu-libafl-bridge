@@ -1108,7 +1108,9 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
         tb_reset_jump(tb, 1);
     }
 
+#ifndef CONFIG_USER_ONLY
     tb->page_addr[0] = tb->page_addr[1] = -1;
+#endif
     return tb;
 }
 

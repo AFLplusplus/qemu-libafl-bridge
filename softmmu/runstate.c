@@ -669,9 +669,9 @@ static bool main_loop_should_exit(int *status)
         vm_stop(RUN_STATE_DEBUG);
 
 //// --- Begin LibAFL code ---
-
+#ifdef AS_LIB
         return true;    // exit back to fuzzing harness
-
+#endif
 //// --- End LibAFL code ---
 
     }

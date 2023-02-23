@@ -1045,7 +1045,7 @@ cat << EOF
   debug-tcg       TCG debugging (default is disabled)
   debug-info      debugging information
   safe-stack      SafeStack Stack Smash Protection. Depends on
-                  clang/llvm >= 3.7 and requires coroutine backend ucontext.
+                  clang/llvm and requires coroutine backend ucontext.
 
 NOTE: The object files are built at the place where configure is launched
 EOF
@@ -1165,12 +1165,12 @@ fi
 cat > $TMPC << EOF
 #if defined(__clang_major__) && defined(__clang_minor__)
 # ifdef __apple_build_version__
-#  if __clang_major__ < 10 || (__clang_major__ == 10 && __clang_minor__ < 0)
-#   error You need at least XCode Clang v10.0 to compile QEMU
+#  if __clang_major__ < 12 || (__clang_major__ == 12 && __clang_minor__ < 0)
+#   error You need at least XCode Clang v12.0 to compile QEMU
 #  endif
 # else
-#  if __clang_major__ < 6 || (__clang_major__ == 6 && __clang_minor__ < 0)
-#   error You need at least Clang v6.0 to compile QEMU
+#  if __clang_major__ < 10 || (__clang_major__ == 10 && __clang_minor__ < 0)
+#   error You need at least Clang v10.0 to compile QEMU
 #  endif
 # endif
 #elif defined(__GNUC__) && defined(__GNUC_MINOR__)
@@ -1183,7 +1183,7 @@ cat > $TMPC << EOF
 int main (void) { return 0; }
 EOF
 if ! compile_prog "" "" ; then
-    error_exit "You need at least GCC v7.4 or Clang v6.0 (or XCode Clang v10.0)"
+    error_exit "You need at least GCC v7.4 or Clang v10.0 (or XCode Clang v12.0)"
 fi
 
 # Accumulate -Wfoo and -Wno-bar separately.
@@ -1211,6 +1211,7 @@ add_to warn_flags -Wendif-labels
 add_to warn_flags -Wexpansion-to-defined
 add_to warn_flags -Wimplicit-fallthrough=2
 add_to warn_flags -Wmissing-format-attribute
+add_to warn_flags -Wthread-safety
 
 nowarn_flags=
 add_to nowarn_flags -Wno-initializer-overrides
@@ -1286,19 +1287,6 @@ EOF
       error_exit "Stack protector not supported"
     fi
   fi
-fi
-
-# Disable -Wmissing-braces on older compilers that warn even for
-# the "universal" C zero initializer {0}.
-cat > $TMPC << EOF
-struct {
-  int a[2];
-} x = {0};
-EOF
-if compile_object "-Werror" "" ; then
-  :
-else
-  QEMU_CFLAGS="$QEMU_CFLAGS -Wno-missing-braces"
 fi
 
 # Our module code doesn't support Windows
@@ -2518,7 +2506,11 @@ for target in $target_list; do
       tcg_tests_targets="$tcg_tests_targets $target"
   fi
 done
-echo "TCG_TESTS_TARGETS=$tcg_tests_targets" >> config-host.mak)
+
+if test "$tcg" = "enabled"; then
+    echo "TCG_TESTS_TARGETS=$tcg_tests_targets" >> config-host.mak
+fi
+)
 
 if test "$skip_meson" = no; then
   cross="config-meson.cross.new"

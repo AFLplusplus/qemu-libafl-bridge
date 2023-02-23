@@ -115,6 +115,8 @@ struct NetClientState {
     QTAILQ_HEAD(, NetFilterState) filters;
 };
 
+typedef QTAILQ_HEAD(NetClientStateList, NetClientState) NetClientStateList;
+
 typedef struct NICState {
     NetClientState *ncs;
     NICConf *conf;
@@ -196,11 +198,24 @@ int qemu_find_nic_model(NICInfo *nd, const char * const *models,
                         const char *default_model);
 
 void print_net_client(Monitor *mon, NetClientState *nc);
-void hmp_info_network(Monitor *mon, const QDict *qdict);
 void net_socket_rs_init(SocketReadState *rs,
                         SocketReadStateFinalize *finalize,
                         bool vnet_hdr);
 NetClientState *qemu_get_peer(NetClientState *nc, int queue_index);
+
+/**
+ * qemu_get_nic_models:
+ * @device_type: Defines which devices should be taken into consideration
+ *               (e.g. TYPE_DEVICE for all devices, or TYPE_PCI_DEVICE for PCI)
+ *
+ * Get an array of pointers to names of NIC devices that are available in
+ * the QEMU binary. The array is terminated with a NULL pointer entry.
+ * The caller is responsible for freeing the memory when it is not required
+ * anymore, e.g. with g_ptr_array_free(..., true).
+ *
+ * Returns: Pointer to the array that contains the pointers to the names.
+ */
+GPtrArray *qemu_get_nic_models(const char *device_type);
 
 /* NIC info */
 
@@ -222,6 +237,7 @@ extern NICInfo nd_table[MAX_NICS];
 extern const char *host_net_devices[];
 
 /* from net.c */
+extern NetClientStateList net_clients;
 bool netdev_is_modern(const char *optarg);
 void netdev_parse_modern(const char *optarg);
 void net_client_parse(QemuOptsList *opts_list, const char *str);

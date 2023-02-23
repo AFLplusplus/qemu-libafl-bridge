@@ -130,6 +130,12 @@ typedef struct DisasContext {
     bool is_nonstreaming;
     /* True if MVE insns are definitely not predicated by VPR or LTPSIZE */
     bool mve_no_pred;
+    /* True if fine-grained traps are active */
+    bool fgt_active;
+    /* True if fine-grained trap on ERET is enabled */
+    bool fgt_eret;
+    /* True if fine-grained trap on SVC is enabled */
+    bool fgt_svc;
     /*
      * >= 0, a copy of PSTATE.BTYPE, which will be 0 without v8.5-BTI.
      *  < 0, set by the current instruction.
@@ -608,6 +614,13 @@ static inline void set_disas_label(DisasContext *s, DisasLabel l)
 {
     gen_set_label(l.label);
     s->pc_save = l.pc_save;
+}
+
+static inline TCGv_ptr gen_lookup_cp_reg(uint32_t key)
+{
+    TCGv_ptr ret = tcg_temp_new_ptr();
+    gen_helper_lookup_cp_reg(ret, cpu_env, tcg_constant_i32(key));
+    return ret;
 }
 
 /*

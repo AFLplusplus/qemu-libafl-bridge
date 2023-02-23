@@ -22,6 +22,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "block/block-io.h"
 #include "block/block_int.h"
 #include "qemu/module.h"
 #include "qapi/error.h"
@@ -54,9 +55,9 @@ static int compress_open(BlockDriverState *bs, QDict *options, int flags,
 }
 
 
-static int64_t compress_getlength(BlockDriverState *bs)
+static int64_t coroutine_fn compress_co_getlength(BlockDriverState *bs)
 {
-    return bdrv_getlength(bs->file->bs);
+    return bdrv_co_getlength(bs->file->bs);
 }
 
 
@@ -116,15 +117,17 @@ static void compress_refresh_limits(BlockDriverState *bs, Error **errp)
 }
 
 
-static void compress_eject(BlockDriverState *bs, bool eject_flag)
+static void coroutine_fn
+compress_co_eject(BlockDriverState *bs, bool eject_flag)
 {
-    bdrv_eject(bs->file->bs, eject_flag);
+    bdrv_co_eject(bs->file->bs, eject_flag);
 }
 
 
-static void compress_lock_medium(BlockDriverState *bs, bool locked)
+static void coroutine_fn
+compress_co_lock_medium(BlockDriverState *bs, bool locked)
 {
-    bdrv_lock_medium(bs->file->bs, locked);
+    bdrv_co_lock_medium(bs->file->bs, locked);
 }
 
 
@@ -134,7 +137,7 @@ static BlockDriver bdrv_compress = {
     .bdrv_open                          = compress_open,
     .bdrv_child_perm                    = bdrv_default_perms,
 
-    .bdrv_getlength                     = compress_getlength,
+    .bdrv_co_getlength                  = compress_co_getlength,
 
     .bdrv_co_preadv_part                = compress_co_preadv_part,
     .bdrv_co_pwritev_part               = compress_co_pwritev_part,
@@ -142,8 +145,8 @@ static BlockDriver bdrv_compress = {
     .bdrv_co_pdiscard                   = compress_co_pdiscard,
     .bdrv_refresh_limits                = compress_refresh_limits,
 
-    .bdrv_eject                         = compress_eject,
-    .bdrv_lock_medium                   = compress_lock_medium,
+    .bdrv_co_eject                      = compress_co_eject,
+    .bdrv_co_lock_medium                = compress_co_lock_medium,
 
     .has_variable_length                = true,
     .is_filter                          = true,

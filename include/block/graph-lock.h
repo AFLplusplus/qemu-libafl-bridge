@@ -20,10 +20,7 @@
 #ifndef GRAPH_LOCK_H
 #define GRAPH_LOCK_H
 
-#include "qemu/osdep.h"
 #include "qemu/clang-tsa.h"
-
-#include "qemu/coroutine.h"
 
 /**
  * Graph Lock API

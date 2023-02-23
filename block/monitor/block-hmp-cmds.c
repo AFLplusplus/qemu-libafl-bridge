@@ -725,7 +725,7 @@ static void print_block_info(Monitor *mon, BlockInfo *info,
         monitor_printf(mon, "\nImages:\n");
         image_info = inserted->image;
         while (1) {
-                bdrv_image_info_dump(image_info);
+            bdrv_node_info_dump(qapi_ImageInfo_base(image_info), 0, false);
             if (image_info->backing_image) {
                 image_info = image_info->backing_image;
             } else {
@@ -1004,4 +1004,25 @@ void hmp_info_snapshots(Monitor *mon, const QDict *qdict)
     }
     g_free(sn_tab);
     g_free(global_snapshots);
+}
+
+void hmp_change_medium(Monitor *mon, const char *device, const char *target,
+                       const char *arg, const char *read_only, bool force,
+                       Error **errp)
+{
+    ERRP_GUARD();
+    BlockdevChangeReadOnlyMode read_only_mode = 0;
+
+    if (read_only) {
+        read_only_mode =
+            qapi_enum_parse(&BlockdevChangeReadOnlyMode_lookup,
+                            read_only,
+                            BLOCKDEV_CHANGE_READ_ONLY_MODE_RETAIN, errp);
+        if (*errp) {
+            return;
+        }
+    }
+
+    qmp_blockdev_change_medium(device, NULL, target, arg, true, force,
+                               !!read_only, read_only_mode, errp);
 }

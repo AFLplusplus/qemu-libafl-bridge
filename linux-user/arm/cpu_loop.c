@@ -373,7 +373,7 @@ void cpu_loop(CPUARMState *env)
             break;
         case EXCP_SWI:
             {
-                env->eabi = 1;
+                env->eabi = true;
                 /* system call */
                 if (env->thumb) {
                     /* Thumb is always EABI style with syscall number in r7 */
@@ -399,7 +399,7 @@ void cpu_loop(CPUARMState *env)
                          * > 0xfffff and are handled below as out-of-range.
                          */
                         n ^= ARM_SYSCALL_BASE;
-                        env->eabi = 0;
+                        env->eabi = false;
                     }
                 }
 

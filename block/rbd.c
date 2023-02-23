@@ -18,6 +18,7 @@
 #include "qemu/error-report.h"
 #include "qemu/module.h"
 #include "qemu/option.h"
+#include "block/block-io.h"
 #include "block/block_int.h"
 #include "block/qdict.h"
 #include "crypto/secret.h"
@@ -1239,7 +1240,8 @@ coroutine_fn qemu_rbd_co_pwrite_zeroes(BlockDriverState *bs, int64_t offset,
 }
 #endif
 
-static int qemu_rbd_getinfo(BlockDriverState *bs, BlockDriverInfo *bdi)
+static int coroutine_fn
+qemu_rbd_co_get_info(BlockDriverState *bs, BlockDriverInfo *bdi)
 {
     BDRVRBDState *s = bs->opaque;
     bdi->cluster_size = s->object_size;
@@ -1429,7 +1431,7 @@ static int coroutine_fn qemu_rbd_co_block_status(BlockDriverState *bs,
     return status;
 }
 
-static int64_t qemu_rbd_getlength(BlockDriverState *bs)
+static int64_t coroutine_fn qemu_rbd_co_getlength(BlockDriverState *bs)
 {
     BDRVRBDState *s = bs->opaque;
     int r;
@@ -1650,10 +1652,10 @@ static BlockDriver bdrv_rbd = {
     .bdrv_co_create         = qemu_rbd_co_create,
     .bdrv_co_create_opts    = qemu_rbd_co_create_opts,
     .bdrv_has_zero_init     = bdrv_has_zero_init_1,
-    .bdrv_get_info          = qemu_rbd_getinfo,
+    .bdrv_co_get_info       = qemu_rbd_co_get_info,
     .bdrv_get_specific_info = qemu_rbd_get_specific_info,
     .create_opts            = &qemu_rbd_create_opts,
-    .bdrv_getlength         = qemu_rbd_getlength,
+    .bdrv_co_getlength      = qemu_rbd_co_getlength,
     .bdrv_co_truncate       = qemu_rbd_co_truncate,
     .protocol_name          = "rbd",
 

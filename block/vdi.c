@@ -327,9 +327,10 @@ static int coroutine_fn vdi_co_check(BlockDriverState *bs, BdrvCheckResult *res,
     return 0;
 }
 
-static int vdi_get_info(BlockDriverState *bs, BlockDriverInfo *bdi)
+static int coroutine_fn
+vdi_co_get_info(BlockDriverState *bs, BlockDriverInfo *bdi)
 {
-    /* TODO: vdi_get_info would be needed for machine snapshots.
+    /* TODO: vdi_co_get_info would be needed for machine snapshots.
        vm_state_offset is still missing. */
     BDRVVdiState *s = (BDRVVdiState *)bs->opaque;
     logout("\n");
@@ -799,14 +800,14 @@ static int coroutine_fn vdi_co_do_create(BlockdevCreateOptions *create_options,
     }
 
     /* Create BlockBackend to write to the image */
-    bs_file = bdrv_open_blockdev_ref(vdi_opts->file, errp);
+    bs_file = bdrv_co_open_blockdev_ref(vdi_opts->file, errp);
     if (!bs_file) {
         ret = -EIO;
         goto exit;
     }
 
-    blk = blk_new_with_bs(bs_file, BLK_PERM_WRITE | BLK_PERM_RESIZE,
-                          BLK_PERM_ALL, errp);
+    blk = blk_co_new_with_bs(bs_file, BLK_PERM_WRITE | BLK_PERM_RESIZE,
+                             BLK_PERM_ALL, errp);
     if (!blk) {
         ret = -EPERM;
         goto exit;
@@ -939,8 +940,8 @@ static int coroutine_fn vdi_co_create_opts(BlockDriver *drv,
         goto done;
     }
 
-    bs_file = bdrv_open(filename, NULL, NULL,
-                        BDRV_O_RDWR | BDRV_O_RESIZE | BDRV_O_PROTOCOL, errp);
+    bs_file = bdrv_co_open(filename, NULL, NULL,
+                           BDRV_O_RDWR | BDRV_O_RESIZE | BDRV_O_PROTOCOL, errp);
     if (!bs_file) {
         ret = -EIO;
         goto done;
@@ -1049,7 +1050,7 @@ static BlockDriver bdrv_vdi = {
     .bdrv_co_pwritev    = vdi_co_pwritev,
 #endif
 
-    .bdrv_get_info = vdi_get_info,
+    .bdrv_co_get_info = vdi_co_get_info,
 
     .is_format = true,
     .create_opts = &vdi_create_opts,

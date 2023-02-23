@@ -23,6 +23,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "block/block-io.h"
 #include "qapi/error.h"
 #include "qcow2.h"
 #include "qemu/range.h"
@@ -3719,7 +3720,7 @@ int coroutine_fn qcow2_detect_metadata_preallocation(BlockDriverState *bs)
         return file_length;
     }
 
-    real_allocation = bdrv_get_allocated_file_size(bs->file->bs);
+    real_allocation = bdrv_co_get_allocated_file_size(bs->file->bs);
     if (real_allocation < 0) {
         return real_allocation;
     }

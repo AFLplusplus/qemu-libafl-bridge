@@ -12,6 +12,7 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/sockets.h" /* for EINPROGRESS on Windows */
+#include "block/block-io.h"
 #include "block/block_int.h"
 #include "qapi/qmp/qdict.h"
 #include "qapi/qmp/qstring.h"
@@ -266,9 +267,9 @@ static void blk_log_writes_close(BlockDriverState *bs)
     s->log_file = NULL;
 }
 
-static int64_t blk_log_writes_getlength(BlockDriverState *bs)
+static int64_t coroutine_fn blk_log_writes_co_getlength(BlockDriverState *bs)
 {
-    return bdrv_getlength(bs->file->bs);
+    return bdrv_co_getlength(bs->file->bs);
 }
 
 static void blk_log_writes_child_perm(BlockDriverState *bs, BdrvChild *c,
@@ -497,7 +498,7 @@ static BlockDriver bdrv_blk_log_writes = {
 
     .bdrv_open              = blk_log_writes_open,
     .bdrv_close             = blk_log_writes_close,
-    .bdrv_getlength         = blk_log_writes_getlength,
+    .bdrv_co_getlength      = blk_log_writes_co_getlength,
     .bdrv_child_perm        = blk_log_writes_child_perm,
     .bdrv_refresh_limits    = blk_log_writes_refresh_limits,
 

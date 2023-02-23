@@ -35,7 +35,6 @@
 #include "sysemu/runstate.h"
 #include "sysemu/tpm_backend.h"
 #include "sysemu/tpm_util.h"
-#include "sysemu/runstate.h"
 #include "tpm_int.h"
 #include "tpm_ioctl.h"
 #include "migration/blocker.h"
@@ -553,7 +552,7 @@ static int tpm_emulator_prepare_data_fd(TPMEmulator *tpm_emu)
     Error *err = NULL;
     int fds[2] = { -1, -1 };
 
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) < 0) {
+    if (qemu_socketpair(AF_UNIX, SOCK_STREAM, 0, fds) < 0) {
         error_report("tpm-emulator: Failed to create socketpair");
         return -1;
     }

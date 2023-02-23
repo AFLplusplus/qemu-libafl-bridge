@@ -62,6 +62,7 @@
 #include "tb-hash.h"
 #include "tb-context.h"
 #include "internal.h"
+#include "perf.h"
 
 //// --- Begin LibAFL code ---
 
@@ -1170,7 +1171,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tb->trace_vcpu_dstate = *cpu->trace_dstate;
     tb_set_page_addr0(tb, phys_pc);
     tb_set_page_addr1(tb, -1);
-    tcg_ctx->tb_cflags = cflags;
+    tcg_ctx->gen_tb = tb;
  tb_overflow:
 
 #ifdef CONFIG_PROFILER
@@ -1226,6 +1227,12 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
         goto buffer_overflow;
     }
     tb->tc.size = gen_code_size;
+
+    /*
+     * For TARGET_TB_PCREL, attribute all executions of the generated
+     * code to its first mapping.
+     */
+    perf_report_code(pc, tb, tcg_splitwx_to_rx(gen_code_buf));
 
 #ifdef CONFIG_PROFILER
     qatomic_set(&prof->code_time, prof->code_time + profile_getclock() - ti);
@@ -1322,10 +1329,10 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tb->jmp_dest[1] = (uintptr_t)NULL;
 
     /* init original jump addresses which have been set during tcg_gen_code() */
-    if (tb->jmp_reset_offset[0] != TB_JMP_RESET_OFFSET_INVALID) {
+    if (tb->jmp_reset_offset[0] != TB_JMP_OFFSET_INVALID) {
         tb_reset_jump(tb, 0);
     }
-    if (tb->jmp_reset_offset[1] != TB_JMP_RESET_OFFSET_INVALID) {
+    if (tb->jmp_reset_offset[1] != TB_JMP_OFFSET_INVALID) {
         tb_reset_jump(tb, 1);
     }
 
@@ -1507,9 +1514,9 @@ static gboolean tb_tree_stats_iter(gpointer key, gpointer value, gpointer data)
     if (tb_page_addr1(tb) != -1) {
         tst->cross_page++;
     }
-    if (tb->jmp_reset_offset[0] != TB_JMP_RESET_OFFSET_INVALID) {
+    if (tb->jmp_reset_offset[0] != TB_JMP_OFFSET_INVALID) {
         tst->direct_jmp_count++;
-        if (tb->jmp_reset_offset[1] != TB_JMP_RESET_OFFSET_INVALID) {
+        if (tb->jmp_reset_offset[1] != TB_JMP_OFFSET_INVALID) {
             tst->direct_jmp2_count++;
         }
     }

@@ -1010,7 +1010,7 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 //// --- Begin LibAFL code ---
 
 #if !TARGET_TB_PCREL
-                if (last_tb->jmp_reset_offset[1] != TB_JMP_RESET_OFFSET_INVALID) {
+                if (last_tb->jmp_reset_offset[1] != TB_JMP_OFFSET_INVALID) {
                     mmap_lock();
                     TranslationBlock *edge = libafl_gen_edge(cpu, tb_pc(last_tb), tb_pc(tb),
                                                              tb_exit, cs_base, flags, cflags);

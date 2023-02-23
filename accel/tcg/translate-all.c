@@ -1016,7 +1016,9 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     tb->flags = flags;
     tb->cflags = cflags;
     tb->trace_vcpu_dstate = *cpu->trace_dstate;
-    tcg_ctx->tb_cflags = cflags;
+    //tb_set_page_addr0(tb, phys_pc);
+    //tb_set_page_addr1(tb, -1);
+    tcg_ctx->gen_tb = tb;
 
 #ifdef CONFIG_PROFILER
     /* includes aborted translations because of exceptions */
@@ -1052,18 +1054,6 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     max_insns = tb->icount;
 
     trace_translate_block(tb, pc, tb->tc.ptr);
-
-    /* generate machine code */
-    tb->jmp_reset_offset[0] = TB_JMP_RESET_OFFSET_INVALID;
-    tb->jmp_reset_offset[1] = TB_JMP_RESET_OFFSET_INVALID;
-    tcg_ctx->tb_jmp_reset_offset = tb->jmp_reset_offset;
-    if (TCG_TARGET_HAS_direct_jump) {
-        tcg_ctx->tb_jmp_insn_offset = tb->jmp_target_arg;
-        tcg_ctx->tb_jmp_target_addr = NULL;
-    } else {
-        tcg_ctx->tb_jmp_insn_offset = NULL;
-        tcg_ctx->tb_jmp_target_addr = tb->jmp_target_arg;
-    }
 
 #ifdef CONFIG_PROFILER
     qatomic_set(&prof->tb_count, prof->tb_count + 1);
@@ -1102,10 +1092,10 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     tb->jmp_dest[1] = (uintptr_t)NULL;
 
     /* init original jump addresses which have been set during tcg_gen_code() */
-    if (tb->jmp_reset_offset[0] != TB_JMP_RESET_OFFSET_INVALID) {
+    if (tb->jmp_reset_offset[0] != TB_JMP_OFFSET_INVALID) {
         tb_reset_jump(tb, 0);
     }
-    if (tb->jmp_reset_offset[1] != TB_JMP_RESET_OFFSET_INVALID) {
+    if (tb->jmp_reset_offset[1] != TB_JMP_OFFSET_INVALID) {
         tb_reset_jump(tb, 1);
     }
 

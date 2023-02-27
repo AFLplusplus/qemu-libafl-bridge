@@ -298,23 +298,7 @@ void libafl_add_read_hook(uint64_t (*gen)(target_ulong pc, MemOpIdx oi, uint64_t
 
 void libafl_gen_read(TCGv addr, MemOpIdx oi)
 {
-    size_t size = 0;
-    switch (oi & MO_SIZE) {
-      case MO_64:
-        size = 8;
-        break;
-      case MO_32:
-        size = 4;
-        break;
-      case MO_16:
-        size = 2;
-        break;
-      case MO_8:
-        size = 1;
-        break;
-      default:
-        break;
-    }
+    size_t size = 1 << (oi & MO_SIZE);
 
     struct libafl_rw_hook* hook = libafl_read_hooks;
     while (hook) {
@@ -429,23 +413,7 @@ void libafl_add_write_hook(uint64_t (*gen)(target_ulong pc, MemOpIdx oi, uint64_
 
 void libafl_gen_write(TCGv addr, MemOpIdx oi)
 {
-    size_t size = 0;
-    switch (oi & MO_SIZE) {
-      case MO_64:
-        size = 8;
-        break;
-      case MO_32:
-        size = 4;
-        break;
-      case MO_16:
-        size = 2;
-        break;
-      case MO_8:
-        size = 1;
-        break;
-      default:
-        break;
-    }
+    size_t size = 1 << (oi & MO_SIZE);
 
     struct libafl_rw_hook* hook = libafl_write_hooks;
     while (hook) {

@@ -133,6 +133,7 @@ static TCGHelperInfo libafl_exec_block_hook_info = {
 
 struct libafl_block_hook {
     uint64_t (*gen)(target_ulong pc, uint64_t data);
+    void (*post_gen)(target_ulong pc, target_ulong block_length, uint64_t data);
     void (*exec)(uint64_t id, uint64_t data);
     uint64_t data;
     TCGHelperInfo helper_info;
@@ -142,11 +143,11 @@ struct libafl_block_hook {
 struct libafl_block_hook* libafl_block_hooks;
 
 void libafl_add_block_hook(uint64_t (*gen)(target_ulong pc, uint64_t data),
-                           void (*exec)(uint64_t id, uint64_t data),
-                           uint64_t data);
+                           void (*post_gen)(target_ulong pc, target_ulong block_length, uint64_t data),
+                           void (*exec)(uint64_t id, uint64_t data), uint64_t data);
 void libafl_add_block_hook(uint64_t (*gen)(target_ulong pc, uint64_t data),
-                           void (*exec)(uint64_t id, uint64_t data),
-                           uint64_t data)
+                           void (*post_gen)(target_ulong pc, target_ulong block_length, uint64_t data),
+                           void (*exec)(uint64_t id, uint64_t data), uint64_t data)
 {
     CPUState *cpu;
     CPU_FOREACH(cpu) {
@@ -155,6 +156,7 @@ void libafl_add_block_hook(uint64_t (*gen)(target_ulong pc, uint64_t data),
 
     struct libafl_block_hook* hook = malloc(sizeof(struct libafl_block_hook));
     hook->gen = gen;
+    hook->post_gen = post_gen;
     hook->exec = exec;
     hook->data = data;
     hook->next = libafl_block_hooks;
@@ -1185,6 +1187,14 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
         goto buffer_overflow;
     }
     tb->tc.size = gen_code_size;
+
+    struct libafl_block_hook *hook = libafl_block_hooks;
+    while (hook)
+    {
+        if (hook->post_gen)
+            hook->post_gen(pc, tb->size, hook->data);
+        hook = hook->next;
+    }
 
     /*
      * For TARGET_TB_PCREL, attribute all executions of the generated

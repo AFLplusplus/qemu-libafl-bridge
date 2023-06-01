@@ -533,7 +533,6 @@ int coroutine_fn bdrv_co_create(BlockDriver *drv, const char *filename,
     int ret;
     GLOBAL_STATE_CODE();
     ERRP_GUARD();
-    assert_bdrv_graph_readable();
 
     if (!drv->bdrv_co_create_opts) {
         error_setg(errp, "Driver '%s' does not support image creation",
@@ -680,7 +679,7 @@ int coroutine_fn bdrv_co_create_opts_simple(BlockDriver *drv,
 
     ret = 0;
 out:
-    blk_unref(blk);
+    blk_co_unref(blk);
     return ret;
 }
 
@@ -1610,10 +1609,11 @@ out:
  * bdrv_refresh_total_sectors() which polls when called from non-coroutine
  * context.
  */
-static int bdrv_open_driver(BlockDriverState *bs, BlockDriver *drv,
-                            const char *node_name, QDict *options,
-                            int open_flags, Error **errp)
+static int no_coroutine_fn GRAPH_UNLOCKED
+bdrv_open_driver(BlockDriverState *bs, BlockDriver *drv, const char *node_name,
+                 QDict *options, int open_flags, Error **errp)
 {
+    AioContext *ctx;
     Error *local_err = NULL;
     int i, ret;
     GLOBAL_STATE_CODE();
@@ -1661,13 +1661,22 @@ static int bdrv_open_driver(BlockDriverState *bs, BlockDriver *drv,
     bs->supported_read_flags |= BDRV_REQ_REGISTERED_BUF;
     bs->supported_write_flags |= BDRV_REQ_REGISTERED_BUF;
 
+    /* Get the context after .bdrv_open, it can change the context */
+    ctx = bdrv_get_aio_context(bs);
+    aio_context_acquire(ctx);
+
     ret = bdrv_refresh_total_sectors(bs, bs->total_sectors);
     if (ret < 0) {
         error_setg_errno(errp, -ret, "Could not refresh total sector count");
+        aio_context_release(ctx);
         return ret;
     }
 
+    bdrv_graph_rdlock_main_loop();
     bdrv_refresh_limits(bs, NULL, &local_err);
+    bdrv_graph_rdunlock_main_loop();
+    aio_context_release(ctx);
+
     if (local_err) {
         error_propagate(errp, local_err);
         return -EINVAL;
@@ -3419,7 +3428,9 @@ static int bdrv_set_file_or_backing_noperm(BlockDriverState *parent_bs,
     }
 
 out:
+    bdrv_graph_rdlock_main_loop();
     bdrv_refresh_limits(parent_bs, tran, NULL);
+    bdrv_graph_rdunlock_main_loop();
 
     return 0;
 }
@@ -3473,6 +3484,8 @@ int bdrv_set_backing_hd(BlockDriverState *bs, BlockDriverState *backing_hd,
  * That QDict has to be flattened; therefore, if the BlockdevRef is a QDict
  * itself, all options starting with "${bdref_key}." are considered part of the
  * BlockdevRef.
+ *
+ * The caller must hold the main AioContext lock.
  *
  * TODO Can this be unified with bdrv_open_image()?
  */
@@ -3640,6 +3653,9 @@ done:
  * BlockdevRef.
  *
  * The BlockdevRef will be removed from the options QDict.
+ *
+ * @parent can move to a different AioContext in this function. Callers must
+ * make sure that their AioContext locking is still correct after this.
  */
 BdrvChild *bdrv_open_child(const char *filename,
                            QDict *options, const char *bdref_key,
@@ -3664,6 +3680,9 @@ BdrvChild *bdrv_open_child(const char *filename,
 
 /*
  * Wrapper on bdrv_open_child() for most popular case: open primary child of bs.
+ *
+ * @parent can move to a different AioContext in this function. Callers must
+ * make sure that their AioContext locking is still correct after this.
  */
 int bdrv_open_file_child(const char *filename,
                          QDict *options, const char *bdref_key,
@@ -3806,9 +3825,7 @@ out:
  * should be opened. If specified, neither options nor a filename may be given,
  * nor can an existing BDS be reused (that is, *pbs has to be NULL).
  *
- * The caller must always hold @filename AioContext lock, because this
- * function eventually calls bdrv_refresh_total_sectors() which polls
- * when called from non-coroutine context.
+ * The caller must always hold the main AioContext lock.
  */
 static BlockDriverState * no_coroutine_fn
 bdrv_open_inherit(const char *filename, const char *reference, QDict *options,
@@ -4096,11 +4113,7 @@ close_and_fail:
     return NULL;
 }
 
-/*
- * The caller must always hold @filename AioContext lock, because this
- * function eventually calls bdrv_refresh_total_sectors() which polls
- * when called from non-coroutine context.
- */
+/* The caller must always hold the main AioContext lock. */
 BlockDriverState *bdrv_open(const char *filename, const char *reference,
                             QDict *options, int flags, Error **errp)
 {
@@ -4917,7 +4930,10 @@ static void bdrv_reopen_commit(BDRVReopenState *reopen_state)
     qdict_del(bs->explicit_options, "backing");
     qdict_del(bs->options, "backing");
 
+    bdrv_graph_rdlock_main_loop();
     bdrv_refresh_limits(bs, NULL, NULL);
+    bdrv_graph_rdunlock_main_loop();
+    bdrv_refresh_total_sectors(bs, bs->total_sectors);
 }
 
 /*
@@ -5315,7 +5331,9 @@ int bdrv_append(BlockDriverState *bs_new, BlockDriverState *bs_top,
 out:
     tran_finalize(tran, ret);
 
+    bdrv_graph_rdlock_main_loop();
     bdrv_refresh_limits(bs_top, NULL, NULL);
+    bdrv_graph_rdunlock_main_loop();
 
     if (new_context && old_context != new_context) {
         aio_context_release(new_context);
@@ -5381,12 +5399,17 @@ static void bdrv_delete(BlockDriverState *bs)
  * empty set of options. The reference to the QDict belongs to the block layer
  * after the call (even on failure), so if the caller intends to reuse the
  * dictionary, it needs to use qobject_ref() before calling bdrv_open.
+ *
+ * The caller holds the AioContext lock for @bs. It must make sure that @bs
+ * stays in the same AioContext, i.e. @options must not refer to nodes in a
+ * different AioContext.
  */
 BlockDriverState *bdrv_insert_node(BlockDriverState *bs, QDict *options,
                                    int flags, Error **errp)
 {
     ERRP_GUARD();
     int ret;
+    AioContext *ctx = bdrv_get_aio_context(bs);
     BlockDriverState *new_node_bs = NULL;
     const char *drvname, *node_name;
     BlockDriver *drv;
@@ -5407,8 +5430,14 @@ BlockDriverState *bdrv_insert_node(BlockDriverState *bs, QDict *options,
 
     GLOBAL_STATE_CODE();
 
+    aio_context_release(ctx);
+    aio_context_acquire(qemu_get_aio_context());
     new_node_bs = bdrv_new_open_driver_opts(drv, node_name, options, flags,
                                             errp);
+    aio_context_release(qemu_get_aio_context());
+    aio_context_acquire(ctx);
+    assert(bdrv_get_aio_context(bs) == ctx);
+
     options = NULL; /* bdrv_new_open_driver() eats options */
     if (!new_node_bs) {
         error_prepend(errp, "Could not create node: ");
@@ -5749,7 +5778,8 @@ exit:
  * sums the size of all data-bearing children.  (This excludes backing
  * children.)
  */
-static int64_t bdrv_sum_allocated_file_size(BlockDriverState *bs)
+static int64_t coroutine_fn GRAPH_RDLOCK
+bdrv_sum_allocated_file_size(BlockDriverState *bs)
 {
     BdrvChild *child;
     int64_t child_size, sum = 0;
@@ -5777,6 +5807,7 @@ int64_t coroutine_fn bdrv_co_get_allocated_file_size(BlockDriverState *bs)
 {
     BlockDriver *drv = bs->drv;
     IO_CODE();
+    assert_bdrv_graph_readable();
 
     if (!drv) {
         return -ENOMEDIUM;
@@ -5849,12 +5880,34 @@ int64_t coroutine_fn bdrv_co_nb_sectors(BlockDriverState *bs)
     if (!drv)
         return -ENOMEDIUM;
 
-    if (drv->has_variable_length) {
+    if (bs->bl.has_variable_length) {
         int ret = bdrv_co_refresh_total_sectors(bs, bs->total_sectors);
         if (ret < 0) {
             return ret;
         }
     }
+    return bs->total_sectors;
+}
+
+/*
+ * This wrapper is written by hand because this function is in the hot I/O path,
+ * via blk_get_geometry.
+ */
+int64_t coroutine_mixed_fn bdrv_nb_sectors(BlockDriverState *bs)
+{
+    BlockDriver *drv = bs->drv;
+    IO_CODE();
+
+    if (!drv)
+        return -ENOMEDIUM;
+
+    if (bs->bl.has_variable_length) {
+        int ret = bdrv_refresh_total_sectors(bs, bs->total_sectors);
+        if (ret < 0) {
+            return ret;
+        }
+    }
+
     return bs->total_sectors;
 }
 
@@ -5876,15 +5929,6 @@ int64_t coroutine_fn bdrv_co_getlength(BlockDriverState *bs)
         return -EFBIG;
     }
     return ret * BDRV_SECTOR_SIZE;
-}
-
-/* return 0 as number of sectors if no device present or error */
-void bdrv_get_geometry(BlockDriverState *bs, uint64_t *nb_sectors_ptr)
-{
-    int64_t nb_sectors = bdrv_nb_sectors(bs);
-    IO_CODE();
-
-    *nb_sectors_ptr = nb_sectors < 0 ? 0 : nb_sectors;
 }
 
 bool bdrv_is_sg(BlockDriverState *bs)
@@ -6333,6 +6377,8 @@ int coroutine_fn bdrv_co_get_info(BlockDriverState *bs, BlockDriverInfo *bdi)
     int ret;
     BlockDriver *drv = bs->drv;
     IO_CODE();
+    assert_bdrv_graph_readable();
+
     /* if bs->drv == NULL, bs is closed, so there's nothing to do here */
     if (!drv) {
         return -ENOMEDIUM;
@@ -6381,6 +6427,8 @@ BlockStatsSpecific *bdrv_get_specific_stats(BlockDriverState *bs)
 void coroutine_fn bdrv_co_debug_event(BlockDriverState *bs, BlkdebugEvent event)
 {
     IO_CODE();
+    assert_bdrv_graph_readable();
+
     if (!bs || !bs->drv || !bs->drv->bdrv_co_debug_event) {
         return;
     }
@@ -7015,6 +7063,8 @@ void bdrv_img_create(const char *filename, const char *fmt,
         return;
     }
 
+    aio_context_acquire(qemu_get_aio_context());
+
     /* Create parameter list */
     create_opts = qemu_opts_append(create_opts, drv->create_opts);
     create_opts = qemu_opts_append(create_opts, proto_drv->create_opts);
@@ -7164,6 +7214,7 @@ out:
     qemu_opts_del(opts);
     qemu_opts_free(create_opts);
     error_propagate(errp, local_err);
+    aio_context_release(qemu_get_aio_context());
 }
 
 AioContext *bdrv_get_aio_context(BlockDriverState *bs)
@@ -7254,9 +7305,6 @@ static void bdrv_detach_aio_context(BlockDriverState *bs)
         bs->drv->bdrv_detach_aio_context(bs);
     }
 
-    if (bs->quiesce_counter) {
-        aio_enable_external(bs->aio_context);
-    }
     bs->aio_context = NULL;
 }
 
@@ -7265,10 +7313,6 @@ static void bdrv_attach_aio_context(BlockDriverState *bs,
 {
     BdrvAioNotifier *ban, *ban_tmp;
     GLOBAL_STATE_CODE();
-
-    if (bs->quiesce_counter) {
-        aio_disable_external(new_context);
-    }
 
     bs->aio_context = new_context;
 
@@ -7950,6 +7994,25 @@ void bdrv_add_child(BlockDriverState *parent_bs, BlockDriverState *child_bs,
     if (!parent_bs->drv || !parent_bs->drv->bdrv_add_child) {
         error_setg(errp, "The node %s does not support adding a child",
                    bdrv_get_device_or_node_name(parent_bs));
+        return;
+    }
+
+    /*
+     * Non-zoned block drivers do not follow zoned storage constraints
+     * (i.e. sequential writes to zones). Refuse mixing zoned and non-zoned
+     * drivers in a graph.
+     */
+    if (!parent_bs->drv->supports_zoned_children &&
+        child_bs->bl.zoned == BLK_Z_HM) {
+        /*
+         * The host-aware model allows zoned storage constraints and random
+         * write. Allow mixing host-aware and non-zoned drivers. Using
+         * host-aware device as a regular device.
+         */
+        error_setg(errp, "Cannot add a %s child to a %s parent",
+                   child_bs->bl.zoned == BLK_Z_HM ? "zoned" : "non-zoned",
+                   parent_bs->drv->supports_zoned_children ?
+                   "support zoned children" : "not support zoned children");
         return;
     }
 

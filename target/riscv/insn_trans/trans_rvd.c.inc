@@ -31,6 +31,12 @@
     } \
 } while (0)
 
+#define REQUIRE_ZCD(ctx) do { \
+    if (!ctx->cfg_ptr->ext_zcd) {  \
+        return false;     \
+    } \
+} while (0)
+
 static bool trans_fld(DisasContext *ctx, arg_fld *a)
 {
     TCGv addr;
@@ -57,6 +63,18 @@ static bool trans_fsd(DisasContext *ctx, arg_fsd *a)
     addr = get_address(ctx, a->rs1, a->imm);
     tcg_gen_qemu_st_i64(cpu_fpr[a->rs2], addr, ctx->mem_idx, MO_TEUQ);
     return true;
+}
+
+static bool trans_c_fld(DisasContext *ctx, arg_fld *a)
+{
+    REQUIRE_ZCD(ctx);
+    return trans_fld(ctx, a);
+}
+
+static bool trans_c_fsd(DisasContext *ctx, arg_fsd *a)
+{
+    REQUIRE_ZCD(ctx);
+    return trans_fsd(ctx, a);
 }
 
 static bool trans_fmadd_d(DisasContext *ctx, arg_fmadd_d *a)
@@ -250,7 +268,6 @@ static bool trans_fsgnjn_d(DisasContext *ctx, arg_fsgnjn_d *a)
         TCGv_i64 t0 = tcg_temp_new_i64();
         tcg_gen_not_i64(t0, src2);
         tcg_gen_deposit_i64(dest, t0, src1, 0, 63);
-        tcg_temp_free_i64(t0);
     }
     gen_set_fpr_d(ctx, a->rd, dest);
     mark_fs_dirty(ctx);
@@ -273,7 +290,6 @@ static bool trans_fsgnjx_d(DisasContext *ctx, arg_fsgnjx_d *a)
         TCGv_i64 t0 = tcg_temp_new_i64();
         tcg_gen_andi_i64(t0, src2, INT64_MIN);
         tcg_gen_xor_i64(dest, src1, t0);
-        tcg_temp_free_i64(t0);
     }
     gen_set_fpr_d(ctx, a->rd, dest);
     mark_fs_dirty(ctx);

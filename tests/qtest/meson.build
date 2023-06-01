@@ -23,7 +23,7 @@ qtests_generic = [
   'readconfig-test',
   'netdev-socket',
 ]
-if config_host.has_key('CONFIG_MODULES')
+if enable_modules
   qtests_generic += [ 'modules-test' ]
 endif
 
@@ -34,10 +34,12 @@ qtests_pci = \
 qtests_cxl = \
   (config_all_devices.has_key('CONFIG_CXL') ? ['cxl-test'] : [])
 
+# FIXME: Get rid of get_option('default_devices') here and check
+#        for the availability of the default NICs in the tests
 qtests_filter = \
-  (slirp.found() ? ['test-netfilter'] : []) + \
-  (config_host.has_key('CONFIG_POSIX') ? ['test-filter-mirror'] : []) + \
-  (config_host.has_key('CONFIG_POSIX') ? ['test-filter-redirector'] : [])
+  (get_option('default_devices') and slirp.found() ? ['test-netfilter'] : []) + \
+  (get_option('default_devices') and config_host.has_key('CONFIG_POSIX') ? ['test-filter-mirror'] : []) + \
+  (get_option('default_devices') and config_host.has_key('CONFIG_POSIX') ? ['test-filter-redirector'] : [])
 
 qtests_i386 = \
   (slirp.found() ? ['pxe-test'] : []) + \
@@ -101,7 +103,7 @@ qtests_i386 = \
    'numa-test'
   ]
 
-if dbus_display
+if dbus_display and targetos != 'windows'
   qtests_i386 += ['dbus-display-test']
 endif
 
@@ -196,13 +198,15 @@ qtests_arm = \
   (config_all_devices.has_key('CONFIG_CMSDK_APB_DUALTIMER') ? ['cmsdk-apb-dualtimer-test'] : []) + \
   (config_all_devices.has_key('CONFIG_CMSDK_APB_TIMER') ? ['cmsdk-apb-timer-test'] : []) + \
   (config_all_devices.has_key('CONFIG_CMSDK_APB_WATCHDOG') ? ['cmsdk-apb-watchdog-test'] : []) + \
-  (config_all_devices.has_key('CONFIG_PFLASH_CFI02') ? ['pflash-cfi02-test'] : []) +         \
+  (config_all_devices.has_key('CONFIG_PFLASH_CFI02') and
+   config_all_devices.has_key('CONFIG_MUSICPAL') ? ['pflash-cfi02-test'] : []) + \
   (config_all_devices.has_key('CONFIG_ASPEED_SOC') ? qtests_aspeed : []) + \
   (config_all_devices.has_key('CONFIG_NPCM7XX') ? qtests_npcm7xx : []) + \
   (config_all_devices.has_key('CONFIG_GENERIC_LOADER') ? ['hexloader-test'] : []) + \
+  (config_all_devices.has_key('CONFIG_TPM_TIS_I2C') ? ['tpm-tis-i2c-test'] : []) + \
+  (config_all_devices.has_key('CONFIG_VEXPRESS') ? ['test-arm-mptimer'] : []) + \
+  (config_all_devices.has_key('CONFIG_MICROBIT') ? ['microbit-test'] : []) + \
   ['arm-cpu-features',
-   'microbit-test',
-   'test-arm-mptimer',
    'boot-serial-test']
 
 # TODO: once aarch64 TCG is fixed on ARM 32 bit host, make bios-tables-test unconditional
@@ -212,15 +216,15 @@ qtests_aarch64 = \
     ['tpm-tis-device-test', 'tpm-tis-device-swtpm-test'] : []) +                                         \
   (config_all_devices.has_key('CONFIG_XLNX_ZYNQMP_ARM') ? ['xlnx-can-test', 'fuzz-xlnx-dp-test'] : []) + \
   (config_all_devices.has_key('CONFIG_RASPI') ? ['bcm2835-dma-test'] : []) +  \
+  (config_all.has_key('CONFIG_TCG') and                                            \
+   config_all_devices.has_key('CONFIG_TPM_TIS_I2C') ? ['tpm-tis-i2c-test'] : []) + \
   ['arm-cpu-features',
    'numa-test',
    'boot-serial-test',
    'migration-test']
 
 qtests_s390x = \
-  (slirp.found() ? ['pxe-test', 'test-netfilter'] : []) +                 \
-  (config_host.has_key('CONFIG_POSIX') ? ['test-filter-mirror'] : []) +                         \
-  (config_host.has_key('CONFIG_POSIX') ? ['test-filter-redirector'] : []) +                     \
+  qtests_filter + \
   ['boot-serial-test',
    'drive_del-test',
    'device-plug-test',
@@ -259,6 +263,7 @@ qos_test_ss.add(
   'virtio-scsi-test.c',
   'virtio-iommu-test.c',
   'vmxnet3-test.c',
+  'igb-test.c',
 )
 
 if config_all_devices.has_key('CONFIG_VIRTIO_SERIAL')
@@ -303,16 +308,19 @@ qtests = {
   'tpm-crb-test': [io, tpmemu_files],
   'tpm-tis-swtpm-test': [io, tpmemu_files, 'tpm-tis-util.c'],
   'tpm-tis-test': [io, tpmemu_files, 'tpm-tis-util.c'],
+  'tpm-tis-i2c-test': [io, tpmemu_files, 'qtest_aspeed.c'],
   'tpm-tis-device-swtpm-test': [io, tpmemu_files, 'tpm-tis-util.c'],
   'tpm-tis-device-test': [io, tpmemu_files, 'tpm-tis-util.c'],
   'vmgenid-test': files('boot-sector.c', 'acpi-utils.c'),
   'netdev-socket': files('netdev-socket.c', '../unit/socket-helpers.c'),
 }
 
-gvnc = dependency('gvnc-1.0', required: false)
-if gvnc.found()
-  qtests += {'vnc-display-test': [gvnc]}
-  qtests_generic += [ 'vnc-display-test' ]
+if vnc.found()
+  gvnc = dependency('gvnc-1.0', required: false)
+  if gvnc.found()
+    qtests += {'vnc-display-test': [gvnc]}
+    qtests_generic += [ 'vnc-display-test' ]
+  endif
 endif
 
 if dbus_display

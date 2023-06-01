@@ -19,7 +19,7 @@
  */
 
 #define REQUIRE_FPU do {\
-    if (ctx->mstatus_fs == 0) \
+    if (ctx->mstatus_fs == EXT_STATUS_DISABLED) \
         if (!ctx->cfg_ptr->ext_zfinx) \
             return false; \
 } while (0)
@@ -28,6 +28,12 @@
     if (!ctx->cfg_ptr->ext_zfinx) { \
         REQUIRE_EXT(ctx, RVF); \
     } \
+} while (0)
+
+#define REQUIRE_ZCF(ctx) do {                  \
+    if (!ctx->cfg_ptr->ext_zcf) {              \
+        return false;                          \
+    }                                          \
 } while (0)
 
 static bool trans_flw(DisasContext *ctx, arg_flw *a)
@@ -59,6 +65,18 @@ static bool trans_fsw(DisasContext *ctx, arg_fsw *a)
     addr = get_address(ctx, a->rs1, a->imm);
     tcg_gen_qemu_st_i64(cpu_fpr[a->rs2], addr, ctx->mem_idx, MO_TEUL);
     return true;
+}
+
+static bool trans_c_flw(DisasContext *ctx, arg_flw *a)
+{
+    REQUIRE_ZCF(ctx);
+    return trans_flw(ctx, a);
+}
+
+static bool trans_c_fsw(DisasContext *ctx, arg_fsw *a)
+{
+    REQUIRE_ZCF(ctx);
+    return trans_fsw(ctx, a);
 }
 
 static bool trans_fmadd_s(DisasContext *ctx, arg_fmadd_s *a)
@@ -233,9 +251,6 @@ static bool trans_fsgnj_s(DisasContext *ctx, arg_fsgnj_s *a)
 
             /* This formulation retains the nanboxing of rs2 in normal 'F'. */
             tcg_gen_deposit_i64(dest, rs2, rs1, 0, 31);
-
-            tcg_temp_free_i64(rs1);
-            tcg_temp_free_i64(rs2);
         } else {
             tcg_gen_deposit_i64(dest, src2, src1, 0, 31);
             tcg_gen_ext32s_i64(dest, dest);
@@ -281,15 +296,12 @@ static bool trans_fsgnjn_s(DisasContext *ctx, arg_fsgnjn_s *a)
         tcg_gen_nor_i64(rs2, rs2, mask);
         tcg_gen_and_i64(dest, mask, rs1);
         tcg_gen_or_i64(dest, dest, rs2);
-
-        tcg_temp_free_i64(rs2);
     }
     /* signed-extended intead of nanboxing for result if enable zfinx */
     if (ctx->cfg_ptr->ext_zfinx) {
         tcg_gen_ext32s_i64(dest, dest);
     }
     gen_set_fpr_hs(ctx, a->rd, dest);
-    tcg_temp_free_i64(rs1);
     mark_fs_dirty(ctx);
     return true;
 }
@@ -329,14 +341,11 @@ static bool trans_fsgnjx_s(DisasContext *ctx, arg_fsgnjx_s *a)
          */
         tcg_gen_andi_i64(dest, rs2, MAKE_64BIT_MASK(31, 1));
         tcg_gen_xor_i64(dest, rs1, dest);
-
-        tcg_temp_free_i64(rs2);
     }
     /* signed-extended intead of nanboxing for result if enable zfinx */
     if (ctx->cfg_ptr->ext_zfinx) {
         tcg_gen_ext32s_i64(dest, dest);
     }
-    tcg_temp_free_i64(rs1);
     gen_set_fpr_hs(ctx, a->rd, dest);
     mark_fs_dirty(ctx);
     return true;

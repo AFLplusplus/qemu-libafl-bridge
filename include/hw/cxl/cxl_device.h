@@ -119,8 +119,10 @@ typedef struct cxl_device_state {
         uint64_t host_set;
     } timestamp;
 
-    /* memory region for persistent memory, HDM */
+    /* memory region size, HDM */
+    uint64_t mem_size;
     uint64_t pmem_size;
+    uint64_t vmem_size;
 } CXLDeviceState;
 
 /* Initialize the register block for a device */
@@ -170,7 +172,7 @@ CXL_DEVICE_CAPABILITY_HEADER_REGISTER(MEMORY_DEVICE,
                                       CXL_DEVICE_CAP_HDR1_OFFSET +
                                           CXL_DEVICE_CAP_REG_SIZE * 2)
 
-int cxl_initialize_mailbox(CXLDeviceState *cxl_dstate);
+void cxl_initialize_mailbox(CXLDeviceState *cxl_dstate);
 void cxl_process_mailbox(CXLDeviceState *cxl_dstate);
 
 #define cxl_device_cap_init(dstate, reg, cap_id)                           \
@@ -232,22 +234,36 @@ REG64(CXL_MEM_DEV_STS, 0)
     FIELD(CXL_MEM_DEV_STS, MBOX_READY, 4, 1)
     FIELD(CXL_MEM_DEV_STS, RESET_NEEDED, 5, 3)
 
+typedef struct CXLError {
+    QTAILQ_ENTRY(CXLError) node;
+    int type; /* Error code as per FE definition */
+    uint32_t header[32];
+} CXLError;
+
+typedef QTAILQ_HEAD(, CXLError) CXLErrorList;
+
 struct CXLType3Dev {
     /* Private */
     PCIDevice parent_obj;
 
     /* Properties */
-    HostMemoryBackend *hostmem;
+    HostMemoryBackend *hostmem; /* deprecated */
+    HostMemoryBackend *hostvmem;
+    HostMemoryBackend *hostpmem;
     HostMemoryBackend *lsa;
     uint64_t sn;
 
     /* State */
-    AddressSpace hostmem_as;
+    AddressSpace hostvmem_as;
+    AddressSpace hostpmem_as;
     CXLComponentState cxl_cstate;
     CXLDeviceState cxl_dstate;
 
     /* DOE */
     DOECap doe_cdat;
+
+    /* Error injection */
+    CXLErrorList error_list;
 };
 
 #define TYPE_CXL_TYPE3 "cxl-type3"
@@ -270,5 +286,7 @@ MemTxResult cxl_type3_read(PCIDevice *d, hwaddr host_addr, uint64_t *data,
                            unsigned size, MemTxAttrs attrs);
 MemTxResult cxl_type3_write(PCIDevice *d, hwaddr host_addr, uint64_t data,
                             unsigned size, MemTxAttrs attrs);
+
+uint64_t cxl_device_get_timestamp(CXLDeviceState *cxlds);
 
 #endif

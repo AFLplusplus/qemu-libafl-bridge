@@ -80,10 +80,10 @@ config I440FX
 
 config ISAPC
     bool
+    imply VGA_ISA
     select ISA_BUS
     select PC
     select IDE_ISA
-    select VGA_ISA
     # FIXME: it is in the same file as i440fx, and does not compile
     # if separated
     depends on I440FX
@@ -136,3 +136,8 @@ config VMPORT
 config VMMOUSE
     bool
     depends on VMPORT
+
+config XEN_EMU
+    bool
+    default y
+    depends on KVM && (I386 || X86_64)

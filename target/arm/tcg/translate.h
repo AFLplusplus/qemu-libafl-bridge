@@ -23,7 +23,7 @@ typedef struct DisasContext {
     /* The address of the current instruction being translated. */
     target_ulong pc_curr;
     /*
-     * For TARGET_TB_PCREL, the full value of cpu_pc is not known
+     * For CF_PCREL, the full value of cpu_pc is not known
      * (although the page offset is known).  For convenience, the
      * translation loop uses the full virtual address that triggered
      * the translation, from base.pc_start through pc_curr.
@@ -149,15 +149,11 @@ typedef struct DisasContext {
     int c15_cpar;
     /* TCG op of the current insn_start.  */
     TCGOp *insn_start;
-#define TMP_A64_MAX 16
-    int tmp_a64_count;
-    TCGv_i64 tmp_a64[TMP_A64_MAX];
 } DisasContext;
 
 typedef struct DisasCompare {
     TCGCond cond;
     TCGv_i32 value;
-    bool value_global;
 } DisasCompare;
 
 /* Share the TCG temporaries common between 32 and 64 bit modes.  */
@@ -222,6 +218,11 @@ static inline int rsub_16(DisasContext *s, int x)
 static inline int rsub_8(DisasContext *s, int x)
 {
     return 8 - x;
+}
+
+static inline int shl_12(DisasContext *s, int x)
+{
+    return x << 12;
 }
 
 static inline int neon_3same_fp_size(DisasContext *s, int x)
@@ -304,7 +305,6 @@ static inline void gen_a64_update_pc(DisasContext *s, target_long diff)
 #endif
 
 void arm_test_cc(DisasCompare *cmp, int cc);
-void arm_free_cc(DisasCompare *cmp);
 void arm_jump_cc(DisasCompare *cmp, TCGLabel *label);
 void arm_gen_test_cc(int cc, TCGLabel *label);
 MemOp pow2_align(unsigned i);
@@ -336,7 +336,6 @@ static inline void set_pstate_bits(uint32_t bits)
     tcg_gen_ld_i32(p, cpu_env, offsetof(CPUARMState, pstate));
     tcg_gen_ori_i32(p, p, bits);
     tcg_gen_st_i32(p, cpu_env, offsetof(CPUARMState, pstate));
-    tcg_temp_free_i32(p);
 }
 
 /* Clear bits within PSTATE.  */
@@ -349,7 +348,6 @@ static inline void clear_pstate_bits(uint32_t bits)
     tcg_gen_ld_i32(p, cpu_env, offsetof(CPUARMState, pstate));
     tcg_gen_andi_i32(p, p, ~bits);
     tcg_gen_st_i32(p, cpu_env, offsetof(CPUARMState, pstate));
-    tcg_temp_free_i32(p);
 }
 
 /* If the singlestep state is Active-not-pending, advance to Active-pending. */
@@ -621,6 +619,23 @@ static inline TCGv_ptr gen_lookup_cp_reg(uint32_t key)
     TCGv_ptr ret = tcg_temp_new_ptr();
     gen_helper_lookup_cp_reg(ret, cpu_env, tcg_constant_i32(key));
     return ret;
+}
+
+/*
+ * Set and reset rounding mode around another operation.
+ */
+static inline TCGv_i32 gen_set_rmode(ARMFPRounding rmode, TCGv_ptr fpst)
+{
+    TCGv_i32 new = tcg_constant_i32(arm_rmode_to_sf(rmode));
+    TCGv_i32 old = tcg_temp_new_i32();
+
+    gen_helper_set_rmode(old, new, fpst);
+    return old;
+}
+
+static inline void gen_restore_rmode(TCGv_i32 old, TCGv_ptr fpst)
+{
+    gen_helper_set_rmode(old, old, fpst);
 }
 
 /*

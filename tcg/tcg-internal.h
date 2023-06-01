@@ -58,10 +58,6 @@ typedef struct TCGCallArgumentLoc {
     unsigned tmp_subindex       : 2;
 } TCGCallArgumentLoc;
 
-/* Avoid "unsigned < 0 is always false" Werror, when iarg_regs is empty. */
-#define REG_P(L) \
-    ((int)(L)->arg_slot < (int)ARRAY_SIZE(tcg_target_call_iarg_regs))
-
 typedef struct TCGHelperInfo {
     void *func;
     const char *name;
@@ -129,5 +125,7 @@ static inline TCGv_i64 TCGV128_HIGH(TCGv_i128 t)
     int o = HOST_BIG_ENDIAN ? 0 : 64 / TCG_TARGET_REG_BITS;
     return temp_tcgv_i64(tcgv_i128_temp(t) + o);
 }
+
+bool tcg_target_has_memory_bswap(MemOp memop);
 
 #endif /* TCG_INTERNAL_H */

@@ -47,11 +47,12 @@
 #include "exec/cputlb.h"
 #include "exec/translate-all.h"
 #include "exec/translator.h"
+#include "exec/tb-flush.h"
 #include "qemu/bitmap.h"
 #include "qemu/qemu-print.h"
-#include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "qemu/cacheinfo.h"
+#include "qemu/timer.h"
 #include "exec/log.h"
 #include "sysemu/cpus.h"
 #include "sysemu/cpu-timers.h"
@@ -70,6 +71,31 @@
 #include "tcg/tcg-internal.h"
 #include "exec/helper-head.h"
 
+#include "tcg/tcg-temp-internal.h"
+
+// reintroduce this in QEMU
+static TCGv_i64 tcg_const_i64(int64_t val)
+{
+    TCGv_i64 t0;
+    t0 = tcg_temp_new_i64();
+    tcg_gen_movi_i64(t0, val);
+    return t0;
+}
+
+#if TARGET_LONG_BITS == 32
+static TCGv_i32 tcg_const_i32(int32_t val)
+{
+    TCGv_i32 t0;
+    t0 = tcg_temp_new_i32();
+    tcg_gen_movi_i32(t0, val);
+    return t0;
+}
+
+#define tcg_const_tl tcg_const_i32
+#else
+#define tcg_const_tl tcg_const_i64
+#endif
+
 target_ulong libafl_gen_cur_pc;
 
 void libafl_helper_table_add(TCGHelperInfo* info);
@@ -77,8 +103,8 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
                                   target_ulong dst_block, int exit_n,
                                   target_ulong cs_base, uint32_t flags,
                                   int cflags);
-void libafl_gen_read(TCGv addr, MemOpIdx oi);
-void libafl_gen_write(TCGv addr, MemOpIdx oi);
+void libafl_gen_read(TCGTemp *addr, MemOpIdx oi);
+void libafl_gen_write(TCGTemp *addr, MemOpIdx oi);
 void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot);
 void libafl_gen_backdoor(target_ulong pc);
 
@@ -298,7 +324,7 @@ void libafl_add_read_hook(uint64_t (*gen)(target_ulong pc, MemOpIdx oi, uint64_t
     }
 }
 
-void libafl_gen_read(TCGv addr, MemOpIdx oi)
+void libafl_gen_read(TCGTemp *addr, MemOpIdx oi)
 {
     size_t size = 1 << (oi & MO_SIZE);
 
@@ -317,11 +343,7 @@ void libafl_gen_read(TCGv addr, MemOpIdx oi)
                 TCGv_i64 tmp0 = tcg_const_i64(cur_id);
                 TCGv_i64 tmp1 = tcg_const_i64(hook->data);
                 TCGTemp *tmp2[3] = { tcgv_i64_temp(tmp0), 
-#if TARGET_LONG_BITS == 32
-                                     tcgv_i32_temp(addr),
-#else
-                                     tcgv_i64_temp(addr),
-#endif
+                                     addr,
                                      tcgv_i64_temp(tmp1) };
                 tcg_gen_callN(func, NULL, 3, tmp2);
                 tcg_temp_free_i64(tmp0);
@@ -331,11 +353,10 @@ void libafl_gen_read(TCGv addr, MemOpIdx oi)
                 TCGv tmp1 = tcg_const_tl(size);
                 TCGv_i64 tmp2 = tcg_const_i64(hook->data);
                 TCGTemp *tmp3[4] = { tcgv_i64_temp(tmp0), 
+                                     addr,
 #if TARGET_LONG_BITS == 32
-                                     tcgv_i32_temp(addr),
                                      tcgv_i32_temp(tmp1),
 #else
-                                     tcgv_i64_temp(addr),
                                      tcgv_i64_temp(tmp1),
 #endif
                                      tcgv_i64_temp(tmp2) };
@@ -413,7 +434,7 @@ void libafl_add_write_hook(uint64_t (*gen)(target_ulong pc, MemOpIdx oi, uint64_
     }
 }
 
-void libafl_gen_write(TCGv addr, MemOpIdx oi)
+void libafl_gen_write(TCGTemp *addr, MemOpIdx oi)
 {
     size_t size = 1 << (oi & MO_SIZE);
 
@@ -432,11 +453,7 @@ void libafl_gen_write(TCGv addr, MemOpIdx oi)
                 TCGv_i64 tmp0 = tcg_const_i64(cur_id);
                 TCGv_i64 tmp1 = tcg_const_i64(hook->data);
                 TCGTemp *tmp2[3] = { tcgv_i64_temp(tmp0), 
-#if TARGET_LONG_BITS == 32
-                                     tcgv_i32_temp(addr),
-#else
-                                     tcgv_i64_temp(addr),
-#endif
+                                     addr,
                                      tcgv_i64_temp(tmp1) };
                 tcg_gen_callN(func, NULL, 3, tmp2);
                 tcg_temp_free_i64(tmp0);
@@ -446,11 +463,10 @@ void libafl_gen_write(TCGv addr, MemOpIdx oi)
                 TCGv tmp1 = tcg_const_tl(size);
                 TCGv_i64 tmp2 = tcg_const_i64(hook->data);
                 TCGTemp *tmp3[4] = { tcgv_i64_temp(tmp0), 
+                                     addr,
 #if TARGET_LONG_BITS == 32
-                                     tcgv_i32_temp(addr),
                                      tcgv_i32_temp(tmp1),
 #else
-                                     tcgv_i64_temp(addr),
                                      tcgv_i64_temp(tmp1),
 #endif
                                      tcgv_i64_temp(tmp2) };
@@ -648,9 +664,11 @@ QEMU_BUILD_BUG_ON(CPU_TRACE_DSTATE_MAX_EVENTS >
 
 TBContext tb_ctx;
 
-/* Encode VAL as a signed leb128 sequence at P.
-   Return P incremented past the encoded value.  */
-static uint8_t *encode_sleb128(uint8_t *p, target_long val)
+/*
+ * Encode VAL as a signed leb128 sequence at P.
+ * Return P incremented past the encoded value.
+ */
+static uint8_t *encode_sleb128(uint8_t *p, int64_t val)
 {
     int more, byte;
 
@@ -668,21 +686,23 @@ static uint8_t *encode_sleb128(uint8_t *p, target_long val)
     return p;
 }
 
-/* Decode a signed leb128 sequence at *PP; increment *PP past the
-   decoded value.  Return the decoded value.  */
-static target_long decode_sleb128(const uint8_t **pp)
+/*
+ * Decode a signed leb128 sequence at *PP; increment *PP past the
+ * decoded value.  Return the decoded value.
+ */
+static int64_t decode_sleb128(const uint8_t **pp)
 {
     const uint8_t *p = *pp;
-    target_long val = 0;
+    int64_t val = 0;
     int byte, shift = 0;
 
     do {
         byte = *p++;
-        val |= (target_ulong)(byte & 0x7f) << shift;
+        val |= (int64_t)(byte & 0x7f) << shift;
         shift += 7;
     } while (byte & 0x80);
     if (shift < TARGET_LONG_BITS && (byte & 0x40)) {
-        val |= -(target_ulong)1 << shift;
+        val |= -(int64_t)1 << shift;
     }
 
     *pp = p;
@@ -708,11 +728,11 @@ static int encode_search(TranslationBlock *tb, uint8_t *block)
     int i, j, n;
 
     for (i = 0, n = tb->icount; i < n; ++i) {
-        target_ulong prev;
+        uint64_t prev;
 
         for (j = 0; j < TARGET_INSN_START_WORDS; ++j) {
             if (i == 0) {
-                prev = (!TARGET_TB_PCREL && j == 0 ? tb_pc(tb) : 0);
+                prev = (!(tb_cflags(tb) & CF_PCREL) && j == 0 ? tb->pc : 0);
             } else {
                 prev = tcg_ctx->gen_insn_data[i - 1][j];
             }
@@ -747,8 +767,8 @@ static int cpu_unwind_data_from_tb(TranslationBlock *tb, uintptr_t host_pc,
     }
 
     memset(data, 0, sizeof(uint64_t) * TARGET_INSN_START_WORDS);
-    if (!TARGET_TB_PCREL) {
-        data[0] = tb_pc(tb);
+    if (!(tb_cflags(tb) & CF_PCREL)) {
+        data[0] = tb->pc;
     }
 
     /*
@@ -879,7 +899,7 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
     
     //// --- End LibAFL code ---
 
-    gen_intermediate_code(env_cpu(env), tb, *max_insns, pc, host_pc);
+    gen_intermediate_code(env_cpu(env), tb, max_insns, pc, host_pc);
     assert(tb->size != 0);
     tcg_ctx->cpu = NULL;
     *max_insns = tb->icount;
@@ -1122,9 +1142,9 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
 
     gen_code_buf = tcg_ctx->code_gen_ptr;
     tb->tc.ptr = tcg_splitwx_to_rx(gen_code_buf);
-#if !TARGET_TB_PCREL
-    tb->pc = pc;
-#endif
+    if (!(cflags & CF_PCREL)) {
+        tb->pc = pc;
+    }
     tb->cs_base = cs_base;
     tb->flags = flags;
     tb->cflags = cflags;
@@ -1132,6 +1152,13 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tb_set_page_addr0(tb, phys_pc);
     tb_set_page_addr1(tb, -1);
     tcg_ctx->gen_tb = tb;
+    tcg_ctx->addr_type = TCG_TYPE_TL;
+#ifdef CONFIG_SOFTMMU
+    tcg_ctx->page_bits = TARGET_PAGE_BITS;
+    tcg_ctx->page_mask = TARGET_PAGE_MASK;
+    tcg_ctx->tlb_dyn_max_bits = CPU_TLB_DYN_MAX_BITS;
+#endif
+
  tb_overflow:
 
 #ifdef CONFIG_PROFILER
@@ -1197,8 +1224,8 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     }
 
     /*
-     * For TARGET_TB_PCREL, attribute all executions of the generated
-     * code to its first mapping.
+     * For CF_PCREL, attribute all executions of the generated code
+     * to its first mapping.
      */
     perf_report_code(pc, tb, tcg_splitwx_to_rx(gen_code_buf));
 
@@ -1209,7 +1236,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     qatomic_set(&prof->search_out_len, prof->search_out_len + search_size);
 #endif
 
-#ifdef DEBUG_DISAS
     if (qemu_loglevel_mask(CPU_LOG_TB_OUT_ASM) &&
         qemu_log_in_addr_range(pc)) {
         FILE *logfile = qemu_log_trylock();
@@ -1232,7 +1258,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
             /* Dump header and the first instruction */
             fprintf(logfile, "OUT: [size=%d]\n", gen_code_size);
             fprintf(logfile,
-                    "  -- guest addr 0x" TARGET_FMT_lx " + tb prologue\n",
+                    "  -- guest addr 0x%016" PRIx64 " + tb prologue\n",
                     tcg_ctx->gen_insn_data[insn][0]);
             chunk_start = tcg_ctx->gen_insn_end_off[insn];
             disas(logfile, tb->tc.ptr, chunk_start);
@@ -1245,7 +1271,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
             while (insn < tb->icount) {
                 size_t chunk_end = tcg_ctx->gen_insn_end_off[insn];
                 if (chunk_end > chunk_start) {
-                    fprintf(logfile, "  -- guest addr 0x" TARGET_FMT_lx "\n",
+                    fprintf(logfile, "  -- guest addr 0x%016" PRIx64 "\n",
                             tcg_ctx->gen_insn_data[insn][0]);
                     disas(logfile, tb->tc.ptr + chunk_start,
                           chunk_end - chunk_start);
@@ -1282,7 +1308,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
             qemu_log_unlock(logfile);
         }
     }
-#endif
 
     qatomic_set(&tcg_ctx->code_gen_ptr, (void *)
         ROUND_UP((uintptr_t)gen_code_buf + gen_code_size + search_size,
@@ -1360,7 +1385,7 @@ void tb_check_watchpoint(CPUState *cpu, uintptr_t retaddr)
         cpu_get_tb_cpu_state(env, &pc, &cs_base, &flags);
         addr = get_page_addr_code(env, pc);
         if (addr != -1) {
-            tb_invalidate_phys_range(addr, addr + 1);
+            tb_invalidate_phys_range(addr, addr);
         }
     }
 }

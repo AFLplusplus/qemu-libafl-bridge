@@ -24,6 +24,7 @@
 #include "exec/cpu-common.h"
 
 #include "exec/exec-all.h"
+#include "exec/tb-flush.h"
 #include "exec/helper-proto.h"
 #include "tcg/tcg.h"
 #include "tcg/tcg-op.h"
@@ -550,17 +551,6 @@ void qemu_plugin_user_postfork(bool is_child)
     } else {
         qemu_rec_mutex_unlock(&plugin.lock);
     }
-}
-
-
-/*
- * Call this function after longjmp'ing to the main loop. It's possible that the
- * last instruction of a TB might have used helpers, and therefore the
- * "disable" instruction will never execute because it ended up as dead code.
- */
-void qemu_plugin_disable_mem_helpers(CPUState *cpu)
-{
-    cpu->plugin_mem_cbs = NULL;
 }
 
 static bool plugin_dyn_cb_arr_cmp(const void *ap, const void *bp)

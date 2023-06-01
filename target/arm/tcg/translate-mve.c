@@ -178,7 +178,6 @@ static bool do_ldst(DisasContext *s, arg_VLDR_VSTR *a, MVEGenLdStFn *fn,
 
     qreg = mve_qreg_ptr(a->qd);
     fn(cpu_env, qreg, addr);
-    tcg_temp_free_ptr(qreg);
 
     /*
      * Writeback always happens after the last beat of the insn,
@@ -189,8 +188,6 @@ static bool do_ldst(DisasContext *s, arg_VLDR_VSTR *a, MVEGenLdStFn *fn,
             tcg_gen_addi_i32(addr, addr, offset);
         }
         store_reg(s, a->rn, addr);
-    } else {
-        tcg_temp_free_i32(addr);
     }
     mve_update_eci(s);
     return true;
@@ -242,9 +239,6 @@ static bool do_ldst_sg(DisasContext *s, arg_vldst_sg *a, MVEGenLdStSGFn fn)
     qd = mve_qreg_ptr(a->qd);
     qm = mve_qreg_ptr(a->qm);
     fn(cpu_env, qd, qm, addr);
-    tcg_temp_free_ptr(qd);
-    tcg_temp_free_ptr(qm);
-    tcg_temp_free_i32(addr);
     mve_update_eci(s);
     return true;
 }
@@ -341,8 +335,6 @@ static bool do_ldst_sg_imm(DisasContext *s, arg_vldst_sg_imm *a,
     qd = mve_qreg_ptr(a->qd);
     qm = mve_qreg_ptr(a->qm);
     fn(cpu_env, qd, qm, tcg_constant_i32(offset));
-    tcg_temp_free_ptr(qd);
-    tcg_temp_free_ptr(qm);
     mve_update_eci(s);
     return true;
 }
@@ -414,8 +406,6 @@ static bool do_vldst_il(DisasContext *s, arg_vldst_il *a, MVEGenLdStIlFn *fn,
     if (a->w) {
         tcg_gen_addi_i32(rn, rn, addrinc);
         store_reg(s, a->rn, rn);
-    } else {
-        tcg_temp_free_i32(rn);
     }
     mve_update_and_store_eci(s);
     return true;
@@ -506,9 +496,7 @@ static bool trans_VDUP(DisasContext *s, arg_VDUP *a)
         qd = mve_qreg_ptr(a->qd);
         tcg_gen_dup_i32(a->size, rt, rt);
         gen_helper_mve_vdup(cpu_env, qd, rt);
-        tcg_temp_free_ptr(qd);
     }
-    tcg_temp_free_i32(rt);
     mve_update_eci(s);
     return true;
 }
@@ -534,8 +522,6 @@ static bool do_1op_vec(DisasContext *s, arg_1op *a, MVEGenOneOpFn fn,
         qd = mve_qreg_ptr(a->qd);
         qm = mve_qreg_ptr(a->qm);
         fn(cpu_env, qd, qm);
-        tcg_temp_free_ptr(qd);
-        tcg_temp_free_ptr(qm);
     }
     mve_update_eci(s);
     return true;
@@ -602,7 +588,7 @@ DO_VCVT(VCVT_FS, vcvt_hs, vcvt_fs)
 DO_VCVT(VCVT_FU, vcvt_hu, vcvt_fu)
 
 static bool do_vcvt_rmode(DisasContext *s, arg_1op *a,
-                          enum arm_fprounding rmode, bool u)
+                          ARMFPRounding rmode, bool u)
 {
     /*
      * Handle VCVT fp to int with specified rounding mode.
@@ -631,8 +617,6 @@ static bool do_vcvt_rmode(DisasContext *s, arg_1op *a,
     qd = mve_qreg_ptr(a->qd);
     qm = mve_qreg_ptr(a->qm);
     fn(cpu_env, qd, qm, tcg_constant_i32(arm_rmode_to_sf(rmode)));
-    tcg_temp_free_ptr(qd);
-    tcg_temp_free_ptr(qm);
     mve_update_eci(s);
     return true;
 }
@@ -821,9 +805,6 @@ static bool do_2op_vec(DisasContext *s, arg_2op *a, MVEGenTwoOpFn fn,
         qn = mve_qreg_ptr(a->qn);
         qm = mve_qreg_ptr(a->qm);
         fn(cpu_env, qd, qn, qm);
-        tcg_temp_free_ptr(qd);
-        tcg_temp_free_ptr(qn);
-        tcg_temp_free_ptr(qm);
     }
     mve_update_eci(s);
     return true;
@@ -1076,9 +1057,6 @@ static bool do_2op_scalar(DisasContext *s, arg_2scalar *a,
     qn = mve_qreg_ptr(a->qn);
     rm = load_reg(s, a->rm);
     fn(cpu_env, qd, qn, rm);
-    tcg_temp_free_i32(rm);
-    tcg_temp_free_ptr(qd);
-    tcg_temp_free_ptr(qn);
     mve_update_eci(s);
     return true;
 }
@@ -1172,7 +1150,7 @@ static bool do_long_dual_acc(DisasContext *s, arg_vmlaldav *a,
                              MVEGenLongDualAccOpFn *fn)
 {
     TCGv_ptr qn, qm;
-    TCGv_i64 rda;
+    TCGv_i64 rda_i, rda_o;
     TCGv_i32 rdalo, rdahi;
 
     if (!dc_isar_feature(aa32_mve, s) ||
@@ -1199,28 +1177,24 @@ static bool do_long_dual_acc(DisasContext *s, arg_vmlaldav *a,
      * of an A=0 (no-accumulate) insn which does not execute the first
      * beat must start with the current rda value, not 0.
      */
+    rda_o = tcg_temp_new_i64();
     if (a->a || mve_skip_first_beat(s)) {
-        rda = tcg_temp_new_i64();
+        rda_i = rda_o;
         rdalo = load_reg(s, a->rdalo);
         rdahi = load_reg(s, a->rdahi);
-        tcg_gen_concat_i32_i64(rda, rdalo, rdahi);
-        tcg_temp_free_i32(rdalo);
-        tcg_temp_free_i32(rdahi);
+        tcg_gen_concat_i32_i64(rda_i, rdalo, rdahi);
     } else {
-        rda = tcg_const_i64(0);
+        rda_i = tcg_constant_i64(0);
     }
 
-    fn(rda, cpu_env, qn, qm, rda);
-    tcg_temp_free_ptr(qn);
-    tcg_temp_free_ptr(qm);
+    fn(rda_o, cpu_env, qn, qm, rda_i);
 
     rdalo = tcg_temp_new_i32();
     rdahi = tcg_temp_new_i32();
-    tcg_gen_extrl_i64_i32(rdalo, rda);
-    tcg_gen_extrh_i64_i32(rdahi, rda);
+    tcg_gen_extrl_i64_i32(rdalo, rda_o);
+    tcg_gen_extrh_i64_i32(rdahi, rda_o);
     store_reg(s, a->rdalo, rdalo);
     store_reg(s, a->rdahi, rdahi);
-    tcg_temp_free_i64(rda);
     mve_update_eci(s);
     return true;
 }
@@ -1285,7 +1259,7 @@ static bool trans_VRMLSLDAVH(DisasContext *s, arg_vmlaldav *a)
 static bool do_dual_acc(DisasContext *s, arg_vmladav *a, MVEGenDualAccOpFn *fn)
 {
     TCGv_ptr qn, qm;
-    TCGv_i32 rda;
+    TCGv_i32 rda_i, rda_o;
 
     if (!dc_isar_feature(aa32_mve, s) ||
         !mve_check_qreg_bank(s, a->qn) ||
@@ -1305,15 +1279,14 @@ static bool do_dual_acc(DisasContext *s, arg_vmladav *a, MVEGenDualAccOpFn *fn)
      * beat must start with the current rda value, not 0.
      */
     if (a->a || mve_skip_first_beat(s)) {
-        rda = load_reg(s, a->rda);
+        rda_o = rda_i = load_reg(s, a->rda);
     } else {
-        rda = tcg_const_i32(0);
+        rda_i = tcg_constant_i32(0);
+        rda_o = tcg_temp_new_i32();
     }
 
-    fn(rda, cpu_env, qn, qm, rda);
-    store_reg(s, a->rda, rda);
-    tcg_temp_free_ptr(qn);
-    tcg_temp_free_ptr(qm);
+    fn(rda_o, cpu_env, qn, qm, rda_i);
+    store_reg(s, a->rda, rda_o);
 
     mve_update_eci(s);
     return true;
@@ -1425,7 +1398,7 @@ static bool trans_VADDV(DisasContext *s, arg_VADDV *a)
         { NULL, NULL }
     };
     TCGv_ptr qm;
-    TCGv_i32 rda;
+    TCGv_i32 rda_i, rda_o;
 
     if (!dc_isar_feature(aa32_mve, s) ||
         a->size == 3) {
@@ -1442,16 +1415,16 @@ static bool trans_VADDV(DisasContext *s, arg_VADDV *a)
      */
     if (a->a || mve_skip_first_beat(s)) {
         /* Accumulate input from Rda */
-        rda = load_reg(s, a->rda);
+        rda_o = rda_i = load_reg(s, a->rda);
     } else {
         /* Accumulate starting at zero */
-        rda = tcg_const_i32(0);
+        rda_i = tcg_constant_i32(0);
+        rda_o = tcg_temp_new_i32();
     }
 
     qm = mve_qreg_ptr(a->qm);
-    fns[a->size][a->u](rda, cpu_env, qm, rda);
-    store_reg(s, a->rda, rda);
-    tcg_temp_free_ptr(qm);
+    fns[a->size][a->u](rda_o, cpu_env, qm, rda_i);
+    store_reg(s, a->rda, rda_o);
 
     mve_update_eci(s);
     return true;
@@ -1466,7 +1439,7 @@ static bool trans_VADDLV(DisasContext *s, arg_VADDLV *a)
      * No need to check Qm's bank: it is only 3 bits in decode.
      */
     TCGv_ptr qm;
-    TCGv_i64 rda;
+    TCGv_i64 rda_i, rda_o;
     TCGv_i32 rdalo, rdahi;
 
     if (!dc_isar_feature(aa32_mve, s)) {
@@ -1488,34 +1461,31 @@ static bool trans_VADDLV(DisasContext *s, arg_VADDLV *a)
      * of an A=0 (no-accumulate) insn which does not execute the first
      * beat must start with the current value of RdaHi:RdaLo, not zero.
      */
+    rda_o = tcg_temp_new_i64();
     if (a->a || mve_skip_first_beat(s)) {
         /* Accumulate input from RdaHi:RdaLo */
-        rda = tcg_temp_new_i64();
+        rda_i = rda_o;
         rdalo = load_reg(s, a->rdalo);
         rdahi = load_reg(s, a->rdahi);
-        tcg_gen_concat_i32_i64(rda, rdalo, rdahi);
-        tcg_temp_free_i32(rdalo);
-        tcg_temp_free_i32(rdahi);
+        tcg_gen_concat_i32_i64(rda_i, rdalo, rdahi);
     } else {
         /* Accumulate starting at zero */
-        rda = tcg_const_i64(0);
+        rda_i = tcg_constant_i64(0);
     }
 
     qm = mve_qreg_ptr(a->qm);
     if (a->u) {
-        gen_helper_mve_vaddlv_u(rda, cpu_env, qm, rda);
+        gen_helper_mve_vaddlv_u(rda_o, cpu_env, qm, rda_i);
     } else {
-        gen_helper_mve_vaddlv_s(rda, cpu_env, qm, rda);
+        gen_helper_mve_vaddlv_s(rda_o, cpu_env, qm, rda_i);
     }
-    tcg_temp_free_ptr(qm);
 
     rdalo = tcg_temp_new_i32();
     rdahi = tcg_temp_new_i32();
-    tcg_gen_extrl_i64_i32(rdalo, rda);
-    tcg_gen_extrh_i64_i32(rdahi, rda);
+    tcg_gen_extrl_i64_i32(rdalo, rda_o);
+    tcg_gen_extrh_i64_i32(rdahi, rda_o);
     store_reg(s, a->rdalo, rdalo);
     store_reg(s, a->rdahi, rdahi);
-    tcg_temp_free_i64(rda);
     mve_update_eci(s);
     return true;
 }
@@ -1543,7 +1513,6 @@ static bool do_1imm(DisasContext *s, arg_1imm *a, MVEGenOneOpImmFn *fn,
     } else {
         qd = mve_qreg_ptr(a->qd);
         fn(cpu_env, qd, tcg_constant_i64(imm));
-        tcg_temp_free_ptr(qd);
     }
     mve_update_eci(s);
     return true;
@@ -1616,8 +1585,6 @@ static bool do_2shift_vec(DisasContext *s, arg_2shift *a, MVEGenTwoOpShiftFn fn,
         qd = mve_qreg_ptr(a->qd);
         qm = mve_qreg_ptr(a->qm);
         fn(cpu_env, qd, qm, tcg_constant_i32(shift));
-        tcg_temp_free_ptr(qd);
-        tcg_temp_free_ptr(qm);
     }
     mve_update_eci(s);
     return true;
@@ -1723,8 +1690,6 @@ static bool do_2shift_scalar(DisasContext *s, arg_shl_scalar *a,
     qda = mve_qreg_ptr(a->qda);
     rm = load_reg(s, a->rm);
     fn(cpu_env, qda, qda, rm);
-    tcg_temp_free_ptr(qda);
-    tcg_temp_free_i32(rm);
     mve_update_eci(s);
     return true;
 }
@@ -1868,7 +1833,6 @@ static bool trans_VSHLC(DisasContext *s, arg_VSHLC *a)
     rdm = load_reg(s, a->rdm);
     gen_helper_mve_vshlc(rdm, cpu_env, qd, rdm, tcg_constant_i32(a->imm));
     store_reg(s, a->rdm, rdm);
-    tcg_temp_free_ptr(qd);
     mve_update_eci(s);
     return true;
 }
@@ -1898,7 +1862,6 @@ static bool do_vidup(DisasContext *s, arg_vidup *a, MVEGenVIDUPFn *fn)
     rn = load_reg(s, a->rn);
     fn(rn, cpu_env, qd, rn, tcg_constant_i32(a->imm));
     store_reg(s, a->rn, rn);
-    tcg_temp_free_ptr(qd);
     mve_update_eci(s);
     return true;
 }
@@ -1934,8 +1897,6 @@ static bool do_viwdup(DisasContext *s, arg_viwdup *a, MVEGenVIWDUPFn *fn)
     rm = load_reg(s, a->rm);
     fn(rn, cpu_env, qd, rn, rm, tcg_constant_i32(a->imm));
     store_reg(s, a->rn, rn);
-    tcg_temp_free_ptr(qd);
-    tcg_temp_free_i32(rm);
     mve_update_eci(s);
     return true;
 }
@@ -2001,8 +1962,6 @@ static bool do_vcmp(DisasContext *s, arg_vcmp *a, MVEGenCmpFn *fn)
     qn = mve_qreg_ptr(a->qn);
     qm = mve_qreg_ptr(a->qm);
     fn(cpu_env, qn, qm);
-    tcg_temp_free_ptr(qn);
-    tcg_temp_free_ptr(qm);
     if (a->mask) {
         /* VPT */
         gen_vpst(s, a->mask);
@@ -2034,8 +1993,6 @@ static bool do_vcmp_scalar(DisasContext *s, arg_vcmp_scalar *a,
         rm = load_reg(s, a->rm);
     }
     fn(cpu_env, qn, rm);
-    tcg_temp_free_ptr(qn);
-    tcg_temp_free_i32(rm);
     if (a->mask) {
         /* VPT */
         gen_vpst(s, a->mask);
@@ -2138,7 +2095,6 @@ static bool do_vmaxv(DisasContext *s, arg_vmaxv *a, MVEGenVADDVFn fn)
     rda = load_reg(s, a->rda);
     fn(rda, cpu_env, qm, rda);
     store_reg(s, a->rda, rda);
-    tcg_temp_free_ptr(qm);
     mve_update_eci(s);
     return true;
 }
@@ -2203,8 +2159,6 @@ static bool do_vabav(DisasContext *s, arg_vabav *a, MVEGenVABAVFn *fn)
     rda = load_reg(s, a->rda);
     fn(rda, cpu_env, qn, qm, rda);
     store_reg(s, a->rda, rda);
-    tcg_temp_free_ptr(qm);
-    tcg_temp_free_ptr(qn);
     mve_update_eci(s);
     return true;
 }
@@ -2297,12 +2251,10 @@ static bool trans_VMOV_from_2gp(DisasContext *s, arg_VMOV_to_2gp *a)
     if (!mve_skip_vmov(s, vd, a->idx, MO_32)) {
         tmp = load_reg(s, a->rt);
         write_neon_element32(tmp, vd, a->idx, MO_32);
-        tcg_temp_free_i32(tmp);
     }
     if (!mve_skip_vmov(s, vd + 1, a->idx, MO_32)) {
         tmp = load_reg(s, a->rt2);
         write_neon_element32(tmp, vd + 1, a->idx, MO_32);
-        tcg_temp_free_i32(tmp);
     }
 
     mve_update_and_store_eci(s);

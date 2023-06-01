@@ -429,49 +429,67 @@ using the ``lcitool`` program provided by the ``libvirt-ci`` project:
 
   https://gitlab.com/libvirt/libvirt-ci
 
-In that project, there is a ``mappings.yml`` file defining the distro native
-package names for a wide variety of third party projects. This is processed
-in combination with a project defined list of build pre-requisites to determine
-the list of native packages to install on each distribution. This can be used
-to generate dockerfiles, VM package lists and Cirrus CI variables needed to
-setup build environments across OS distributions with a consistent set of
-packages present.
-
-When preparing a patch series that adds a new build pre-requisite to QEMU,
-updates to various lcitool data files may be required.
+``libvirt-ci`` contains an ``lcitool`` program as well as a list of
+mappings to distribution package names for a wide variety of third
+party projects.  ``lcitool`` applies the mappings to a list of build
+pre-requisites in ``tests/lcitool/projects/qemu.yml``, determines the
+list of native packages to install on each distribution, and uses them
+to generate build environments (dockerfiles and Cirrus CI variable files)
+that are consistent across OS distribution.
 
 
 Adding new build pre-requisites
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+When preparing a patch series that adds a new build
+pre-requisite to QEMU, the prerequisites should to be added to
+``tests/lcitool/projects/qemu.yml`` in order to make the dependency
+available in the CI build environments.
+
 In the simple case where the pre-requisite is already known to ``libvirt-ci``
-the following steps are needed
+the following steps are needed:
 
  * Edit ``tests/lcitool/projects/qemu.yml`` and add the pre-requisite
 
  * Run ``make lcitool-refresh`` to re-generate all relevant build environment
    manifests
 
-In some cases ``libvirt-ci`` will not know about the build pre-requisite and
-thus some extra preparation steps will be required first
+It may be that ``libvirt-ci`` does not know about the new pre-requisite.
+If that is the case, some extra preparation steps will be required
+first to contribute the mapping to the ``libvirt-ci`` project:
 
  * Fork the ``libvirt-ci`` project on gitlab
 
- * Edit the ``mappings.yml`` change to add an entry for the new build
-   prerequisite, listing its native package name on as many OS distros
-   as practical.
+ * Add an entry for the new build prerequisite to
+   ``lcitool/facts/mappings.yml``, listing its native package name on as
+   many OS distros as practical.  Run ``python -m pytest --regenerate-output``
+   and check that the changes are correct.
 
- * Commit the ``mappings.yml`` change and submit a merge request to
-   the ``libvirt-ci`` project, noting in the description that this
-   is a new build pre-requisite desired for use with QEMU
+ * Commit the ``mappings.yml`` change together with the regenerated test
+   files, and submit a merge request to the ``libvirt-ci`` project.
+   Please note in the description that this is a new build pre-requisite
+   desired for use with QEMU.
 
  * CI pipeline will run to validate that the changes to ``mappings.yml``
    are correct, by attempting to install the newly listed package on
    all OS distributions supported by ``libvirt-ci``.
 
  * Once the merge request is accepted, go back to QEMU and update
-   the ``libvirt-ci`` submodule to point to a commit that contains
-   the ``mappings.yml`` update.
+   the ``tests/lcitool/libvirt-ci`` submodule to point to a commit that
+   contains the ``mappings.yml`` update.  Then add the prerequisite and
+   run ``make lcitool-refresh``.
+
+ * Please also trigger gitlab container generation pipelines on your change
+   for as many OS distros as practical to make sure that there are no
+   obvious breakages when adding the new pre-requisite. Please see
+   `CI <https://www.qemu.org/docs/master/devel/ci.html>`__ documentation
+   page on how to trigger gitlab CI pipelines on your change.
+
+For enterprise distros that default to old, end-of-life versions of the
+Python runtime, QEMU uses a separate set of mappings that work with more
+recent versions.  These can be found in ``tests/lcitool/mappings.yml``.
+Modifying this file should not be necessary unless the new pre-requisite
+is a Python library or tool.
 
 
 Adding new OS distros
@@ -498,18 +516,20 @@ Assuming there is agreement to add a new OS distro then
 
  * Fork the ``libvirt-ci`` project on gitlab
 
- * Add metadata under ``guests/lcitool/lcitool/ansible/group_vars/``
-   for the new OS distro. There might be code changes required if
-   the OS distro uses a package format not currently known. The
-   ``libvirt-ci`` maintainers can advise on this when the issue
-   is file.
+ * Add metadata under ``lcitool/facts/targets/`` for the new OS
+   distro. There might be code changes required if the OS distro
+   uses a package format not currently known. The ``libvirt-ci``
+   maintainers can advise on this when the issue is filed.
 
- * Edit the ``mappings.yml`` change to update all the existing package
-   entries, providing details of the new OS distro
+ * Edit the ``lcitool/facts/mappings.yml`` change to add entries for
+   the new OS, listing the native package names for as many packages
+   as practical.  Run ``python -m pytest --regenerate-output`` and
+   check that the changes are correct.
 
- * Commit the ``mappings.yml`` change and submit a merge request to
-   the ``libvirt-ci`` project, noting in the description that this
-   is a new build pre-requisite desired for use with QEMU
+ * Commit the changes to ``lcitool/facts`` and the regenerated test
+   files, and submit a merge request to the ``libvirt-ci`` project.
+   Please note in the description that this is a new build pre-requisite
+   desired for use with QEMU
 
  * CI pipeline will run to validate that the changes to ``mappings.yml``
    are correct, by attempting to install the newly listed package on
@@ -574,13 +594,13 @@ https://github.com/google/sanitizers/wiki/ThreadSanitizerCppManual
 
 Thread Sanitizer in Docker
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
-TSan is currently supported in the ubuntu2004 docker.
+TSan is currently supported in the ubuntu2204 docker.
 
 The test-tsan test will build using TSan and then run make check.
 
 .. code::
 
-  make docker-test-tsan@ubuntu2004
+  make docker-test-tsan@ubuntu2204
 
 TSan warnings under docker are placed in files located at build/tsan/.
 
@@ -868,9 +888,9 @@ You can run the avocado tests simply by executing:
 
   make check-avocado
 
-This involves the automatic creation of Python virtual environment
-within the build tree (at ``tests/venv``) which will have all the
-right dependencies, and will save tests results also within the
+This involves the automatic installation, from PyPI, of all the
+necessary avocado-framework dependencies into the QEMU venv within the
+build tree (at ``./pyvenv``). Test results are also saved within the
 build tree (at ``tests/results``).
 
 Note: the build environment must be using a Python 3 stack, and have
@@ -927,7 +947,7 @@ may be invoked by running:
 
  .. code::
 
-  tests/venv/bin/avocado run $OPTION1 $OPTION2 tests/avocado/
+  pyvenv/bin/avocado run $OPTION1 $OPTION2 tests/avocado/
 
 Note that if ``make check-avocado`` was not executed before, it is
 possible to create the Python virtual environment with the dependencies
@@ -942,20 +962,20 @@ a test file. To run tests from a single file within the build tree, use:
 
  .. code::
 
-  tests/venv/bin/avocado run tests/avocado/$TESTFILE
+  pyvenv/bin/avocado run tests/avocado/$TESTFILE
 
 To run a single test within a test file, use:
 
  .. code::
 
-  tests/venv/bin/avocado run tests/avocado/$TESTFILE:$TESTCLASS.$TESTNAME
+  pyvenv/bin/avocado run tests/avocado/$TESTFILE:$TESTCLASS.$TESTNAME
 
 Valid test names are visible in the output from any previous execution
 of Avocado or ``make check-avocado``, and can also be queried using:
 
  .. code::
 
-  tests/venv/bin/avocado list tests/avocado
+  pyvenv/bin/avocado list tests/avocado
 
 Manual Installation
 ~~~~~~~~~~~~~~~~~~~

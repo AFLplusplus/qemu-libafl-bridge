@@ -64,7 +64,7 @@ static bool ptw_translate(PTETranslate *inout, hwaddr addr)
     int flags;
 
     inout->gaddr = addr;
-    flags = probe_access_full(inout->env, addr, MMU_DATA_STORE,
+    flags = probe_access_full(inout->env, addr, 0, MMU_DATA_STORE,
                               inout->ptw_idx, true, &inout->haddr, &full, 0);
 
     if (unlikely(flags & TLB_INVALID_MASK)) {
@@ -147,6 +147,7 @@ static bool mmu_translate(CPUX86State *env, const TranslateParams *in,
     hwaddr pte_addr, paddr;
     uint32_t pkr;
     int page_size;
+    int error_code;
 
  restart_all:
     rsvd_mask = ~MAKE_64BIT_MASK(0, env_archcpu(env)->phys_bits);
@@ -428,7 +429,7 @@ do_check_protect_pse36:
         CPUTLBEntryFull *full;
         int flags, nested_page_size;
 
-        flags = probe_access_full(env, paddr, access_type,
+        flags = probe_access_full(env, paddr, 0, access_type,
                                   MMU_NESTED_IDX, true,
                                   &pte_trans.haddr, &full, 0);
         if (unlikely(flags & TLB_INVALID_MASK)) {
@@ -467,7 +468,6 @@ do_check_protect_pse36:
     out->page_size = page_size;
     return true;
 
-    int error_code;
  do_fault_rsvd:
     error_code = PG_ERROR_RSVD_MASK;
     goto do_fault_cont;

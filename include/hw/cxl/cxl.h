@@ -23,12 +23,12 @@
 
 #define CXL_WINDOW_MAX 10
 
-typedef struct PXBDev PXBDev;
+typedef struct PXBCXLDev PXBCXLDev;
 
 typedef struct CXLFixedWindow {
     uint64_t size;
     char **targets;
-    PXBDev *target_hbs[8];
+    PXBCXLDev *target_hbs[8];
     uint8_t num_targets;
     uint8_t enc_int_ways;
     uint8_t enc_int_gran;
@@ -49,6 +49,7 @@ struct CXLHost {
     PCIHostState parent_obj;
 
     CXLComponentState cxl_cstate;
+    bool passthrough;
 };
 
 #define TYPE_PXB_CXL_HOST "pxb-cxl-host"

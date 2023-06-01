@@ -767,6 +767,8 @@ struct MemoryRegion {
     bool is_iommu;
     RAMBlock *ram_block;
     Object *owner;
+    /* owner as TYPE_DEVICE. Used for re-entrancy checks in MR access hotpath */
+    DeviceState *dev;
 
     const MemoryRegionOps *ops;
     void *opaque;
@@ -791,6 +793,9 @@ struct MemoryRegion {
     unsigned ioeventfd_nb;
     MemoryRegionIoeventfd *ioeventfds;
     RamDiscardManager *rdm; /* Only for RAM */
+
+    /* For devices designed to perform re-entrant IO into their own IO MRs */
+    bool disable_reentrancy_guard;
 };
 
 struct IOMMUMemoryRegion {
@@ -929,8 +934,11 @@ struct MemoryListener {
      * its @log_sync must be NULL.  Vice versa.
      *
      * @listener: The #MemoryListener.
+     * @last_stage: The last stage to synchronize the log during migration.
+     * The caller should gurantee that the synchronization with true for
+     * @last_stage is triggered for once after all VCPUs have been stopped.
      */
-    void (*log_sync_global)(MemoryListener *listener);
+    void (*log_sync_global)(MemoryListener *listener, bool last_stage);
 
     /**
      * @log_clear:
@@ -1318,6 +1326,7 @@ void memory_region_init_resizeable_ram(MemoryRegion *mr,
  * @ram_flags: RamBlock flags. Supported flags: RAM_SHARED, RAM_PMEM,
  *             RAM_NORESERVE,
  * @path: the path in which to allocate the RAM.
+ * @offset: offset within the file referenced by path
  * @readonly: true to open @path for reading, false for read/write.
  * @errp: pointer to Error*, to store an error if it happens.
  *
@@ -1331,6 +1340,7 @@ void memory_region_init_ram_from_file(MemoryRegion *mr,
                                       uint64_t align,
                                       uint32_t ram_flags,
                                       const char *path,
+                                      ram_addr_t offset,
                                       bool readonly,
                                       Error **errp);
 
@@ -1730,6 +1740,16 @@ void memory_region_notify_iommu(IOMMUMemoryRegion *iommu_mr,
  */
 void memory_region_notify_iommu_one(IOMMUNotifier *notifier,
                                     IOMMUTLBEvent *event);
+
+/**
+ * memory_region_unmap_iommu_notifier_range: notify a unmap for an IOMMU
+ *                                           translation that covers the
+ *                                           range of a notifier
+ *
+ * @notifier: the notifier to be notified
+ */
+void memory_region_unmap_iommu_notifier_range(IOMMUNotifier *notifier);
+
 
 /**
  * memory_region_register_iommu_notifier: register a notifier for changes to
@@ -2407,8 +2427,10 @@ MemoryRegionSection memory_region_find(MemoryRegion *mr,
  * memory_global_dirty_log_sync: synchronize the dirty log for all memory
  *
  * Synchronizes the dirty page log for all address spaces.
+ *
+ * @last_stage: whether this is the last stage of live migration
  */
-void memory_global_dirty_log_sync(void);
+void memory_global_dirty_log_sync(bool last_stage);
 
 /**
  * memory_global_dirty_log_sync: synchronize the dirty log for all memory

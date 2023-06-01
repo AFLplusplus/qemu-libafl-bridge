@@ -31,8 +31,6 @@
 # define TARGET_PAGE_BITS_VARY
 # define TARGET_PAGE_BITS_MIN  10
 
-# define TARGET_TB_PCREL 1
-
 /*
  * Cache the attrs and shareability fields from the page table entry.
  *
@@ -46,8 +44,6 @@
     uint8_t shareability;         \
     bool guarded;
 #endif
-
-#define NB_MMU_MODES 12
 
 //// --- Begin LibAFL code ---
 

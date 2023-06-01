@@ -23,6 +23,7 @@
 #include "bootinfo.h"
 #include "net/net.h"
 #include "qapi/error.h"
+#include "qemu/error-report.h"
 #include "sysemu/qtest.h"
 #include "sysemu/runstate.h"
 #include "sysemu/reset.h"
@@ -346,10 +347,17 @@ type_init(virt_machine_register_types)
     } \
     type_init(machvirt_machine_##major##_##minor##_init);
 
-static void virt_machine_8_0_options(MachineClass *mc)
+static void virt_machine_8_1_options(MachineClass *mc)
 {
 }
-DEFINE_VIRT_MACHINE(8, 0, true)
+DEFINE_VIRT_MACHINE(8, 1, true)
+
+static void virt_machine_8_0_options(MachineClass *mc)
+{
+    virt_machine_8_1_options(mc);
+    compat_props_add(mc->compat_props, hw_compat_8_0, hw_compat_8_0_len);
+}
+DEFINE_VIRT_MACHINE(8, 0, false)
 
 static void virt_machine_7_2_options(MachineClass *mc)
 {

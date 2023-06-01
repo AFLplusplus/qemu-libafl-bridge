@@ -99,7 +99,7 @@ static int inet_get_free_port_multiple(int nb, int *port, bool ipv6)
 
     nb = i;
     for (i = 0; i < nb; i++) {
-        closesocket(sock[i]);
+        close(sock[i]);
     }
 
     return nb;
@@ -189,28 +189,26 @@ static void wait_stream_disconnected(QTestState *qts, const char *id)
     qobject_unref(resp);
 }
 
-static void test_stream_inet_reconnect(void)
+static void test_stream_unix_reconnect(void)
 {
     QTestState *qts0, *qts1;
-    int port;
     SocketAddress *addr;
+    gchar *path;
 
-    port = inet_get_free_port(false);
+    path = g_strconcat(tmpdir, "/stream_unix_reconnect", NULL);
     qts0 = qtest_initf("-nodefaults -M none "
-                       "-netdev stream,id=st0,server=true,addr.type=inet,"
-                       "addr.ipv4=on,addr.ipv6=off,"
-                       "addr.host=127.0.0.1,addr.port=%d", port);
+                       "-netdev stream,id=st0,server=true,addr.type=unix,"
+                       "addr.path=%s", path);
 
     EXPECT_STATE(qts0, "st0: index=0,type=stream,\r\n", 0);
 
     qts1 = qtest_initf("-nodefaults -M none "
-                       "-netdev stream,server=false,id=st0,addr.type=inet,"
-                       "addr.ipv4=on,addr.ipv6=off,reconnect=1,"
-                       "addr.host=127.0.0.1,addr.port=%d", port);
+                       "-netdev stream,server=false,id=st0,addr.type=unix,"
+                       "addr.path=%s,reconnect=1", path);
 
     wait_stream_connected(qts0, "st0", &addr);
-    g_assert_cmpint(addr->type, ==, SOCKET_ADDRESS_TYPE_INET);
-    g_assert_cmpstr(addr->u.inet.host, ==, "127.0.0.1");
+    g_assert_cmpint(addr->type, ==, SOCKET_ADDRESS_TYPE_UNIX);
+    g_assert_cmpstr(addr->u.q_unix.path, ==, path);
     qapi_free_SocketAddress(addr);
 
     /* kill server */
@@ -221,24 +219,23 @@ static void test_stream_inet_reconnect(void)
 
     /* restart server */
     qts0 = qtest_initf("-nodefaults -M none "
-                       "-netdev stream,id=st0,server=true,addr.type=inet,"
-                       "addr.ipv4=on,addr.ipv6=off,"
-                       "addr.host=127.0.0.1,addr.port=%d", port);
+                       "-netdev stream,id=st0,server=true,addr.type=unix,"
+                       "addr.path=%s", path);
 
     /* wait connection events*/
     wait_stream_connected(qts0, "st0", &addr);
-    g_assert_cmpint(addr->type, ==, SOCKET_ADDRESS_TYPE_INET);
-    g_assert_cmpstr(addr->u.inet.host, ==, "127.0.0.1");
+    g_assert_cmpint(addr->type, ==, SOCKET_ADDRESS_TYPE_UNIX);
+    g_assert_cmpstr(addr->u.q_unix.path, ==, path);
     qapi_free_SocketAddress(addr);
 
     wait_stream_connected(qts1, "st0", &addr);
-    g_assert_cmpint(addr->type, ==, SOCKET_ADDRESS_TYPE_INET);
-    g_assert_cmpstr(addr->u.inet.host, ==, "127.0.0.1");
-    g_assert_cmpint(atoi(addr->u.inet.port), ==, port);
+    g_assert_cmpint(addr->type, ==, SOCKET_ADDRESS_TYPE_UNIX);
+    g_assert_cmpstr(addr->u.q_unix.path, ==, path);
     qapi_free_SocketAddress(addr);
 
     qtest_quit(qts1);
     qtest_quit(qts0);
+    g_free(path);
 }
 
 static void test_stream_inet_ipv6(void)
@@ -361,8 +358,8 @@ static void test_stream_fd(void)
     qtest_quit(qts1);
     qtest_quit(qts0);
 
-    closesocket(sock[0]);
-    closesocket(sock[1]);
+    close(sock[0]);
+    close(sock[1]);
 }
 #endif
 
@@ -487,8 +484,8 @@ static void test_dgram_fd(void)
     qtest_quit(qts1);
     qtest_quit(qts0);
 
-    closesocket(sv[0]);
-    closesocket(sv[1]);
+    close(sv[0]);
+    close(sv[1]);
 }
 #endif
 
@@ -517,8 +514,6 @@ int main(int argc, char **argv)
 #ifndef _WIN32
         qtest_add_func("/netdev/dgram/mcast", test_dgram_mcast);
 #endif
-        qtest_add_func("/netdev/stream/inet/reconnect",
-                       test_stream_inet_reconnect);
     }
     if (has_ipv6) {
         qtest_add_func("/netdev/stream/inet/ipv6", test_stream_inet_ipv6);
@@ -530,6 +525,8 @@ int main(int argc, char **argv)
         qtest_add_func("/netdev/dgram/unix", test_dgram_unix);
 #endif
         qtest_add_func("/netdev/stream/unix", test_stream_unix);
+        qtest_add_func("/netdev/stream/unix/reconnect",
+                       test_stream_unix_reconnect);
 #ifdef CONFIG_LINUX
         qtest_add_func("/netdev/stream/unix/abstract",
                        test_stream_unix_abstract);

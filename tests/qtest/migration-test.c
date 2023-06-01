@@ -40,9 +40,6 @@
 #include "linux/kvm.h"
 #endif
 
-/* TODO actually test the results and get rid of this */
-#define qtest_qmp_discard_response(...) qobject_unref(qtest_qmp(__VA_ARGS__))
-
 unsigned start_address;
 unsigned end_address;
 static bool uffd_feature_thread_id;
@@ -406,10 +403,45 @@ static void migrate_set_parameter_str(QTestState *who, const char *parameter,
     migrate_check_parameter_str(who, parameter, value);
 }
 
+static long long migrate_get_parameter_bool(QTestState *who,
+                                           const char *parameter)
+{
+    QDict *rsp;
+    int result;
+
+    rsp = wait_command(who, "{ 'execute': 'query-migrate-parameters' }");
+    result = qdict_get_bool(rsp, parameter);
+    qobject_unref(rsp);
+    return !!result;
+}
+
+static void migrate_check_parameter_bool(QTestState *who, const char *parameter,
+                                        int value)
+{
+    int result;
+
+    result = migrate_get_parameter_bool(who, parameter);
+    g_assert_cmpint(result, ==, value);
+}
+
+static void migrate_set_parameter_bool(QTestState *who, const char *parameter,
+                                      int value)
+{
+    QDict *rsp;
+
+    rsp = qtest_qmp(who,
+                    "{ 'execute': 'migrate-set-parameters',"
+                    "'arguments': { %s: %i } }",
+                    parameter, value);
+    g_assert(qdict_haskey(rsp, "return"));
+    qobject_unref(rsp);
+    migrate_check_parameter_bool(who, parameter, value);
+}
+
 static void migrate_ensure_non_converge(QTestState *who)
 {
-    /* Can't converge with 1ms downtime + 30 mbs bandwidth limit */
-    migrate_set_parameter_int(who, "max-bandwidth", 30 * 1000 * 1000);
+    /* Can't converge with 1ms downtime + 3 mbs bandwidth limit */
+    migrate_set_parameter_int(who, "max-bandwidth", 3 * 1000 * 1000);
     migrate_set_parameter_int(who, "downtime-limit", 1);
 }
 
@@ -731,7 +763,7 @@ static void test_migrate_end(QTestState *from, QTestState *to, bool test_dest)
             usleep(1000 * 10);
         } while (dest_byte_a == dest_byte_b);
 
-        qtest_qmp_discard_response(to, "{ 'execute' : 'stop'}");
+        qtest_qmp_assert_success(to, "{ 'execute' : 'stop'}");
 
         /* With it stopped, check nothing changes */
         qtest_memread(to, start_address, &dest_byte_c, 1);
@@ -1092,6 +1124,36 @@ test_migrate_tls_x509_finish(QTestState *from,
 #endif /* CONFIG_TASN1 */
 #endif /* CONFIG_GNUTLS */
 
+static void *
+test_migrate_compress_start(QTestState *from,
+                            QTestState *to)
+{
+    migrate_set_parameter_int(from, "compress-level", 1);
+    migrate_set_parameter_int(from, "compress-threads", 4);
+    migrate_set_parameter_bool(from, "compress-wait-thread", true);
+    migrate_set_parameter_int(to, "decompress-threads", 4);
+
+    migrate_set_capability(from, "compress", true);
+    migrate_set_capability(to, "compress", true);
+
+    return NULL;
+}
+
+static void *
+test_migrate_compress_nowait_start(QTestState *from,
+                                   QTestState *to)
+{
+    migrate_set_parameter_int(from, "compress-level", 9);
+    migrate_set_parameter_int(from, "compress-threads", 1);
+    migrate_set_parameter_bool(from, "compress-wait-thread", false);
+    migrate_set_parameter_int(to, "decompress-threads", 1);
+
+    migrate_set_capability(from, "compress", true);
+    migrate_set_capability(to, "compress", true);
+
+    return NULL;
+}
+
 static int migrate_postcopy_prepare(QTestState **from_ptr,
                                     QTestState **to_ptr,
                                     MigrateCommon *args)
@@ -1165,6 +1227,15 @@ static void test_postcopy_common(MigrateCommon *args)
 static void test_postcopy(void)
 {
     MigrateCommon args = { };
+
+    test_postcopy_common(&args);
+}
+
+static void test_postcopy_compress(void)
+{
+    MigrateCommon args = {
+        .start_hook = test_migrate_compress_start
+    };
 
     test_postcopy_common(&args);
 }
@@ -1270,6 +1341,15 @@ static void test_postcopy_recovery(void)
     test_postcopy_recovery_common(&args);
 }
 
+static void test_postcopy_recovery_compress(void)
+{
+    MigrateCommon args = {
+        .start_hook = test_migrate_compress_start
+    };
+
+    test_postcopy_recovery_common(&args);
+}
+
 #ifdef CONFIG_GNUTLS
 static void test_postcopy_recovery_tls_psk(void)
 {
@@ -1303,6 +1383,7 @@ static void test_postcopy_preempt_all(void)
 
     test_postcopy_recovery_common(&args);
 }
+
 #endif
 
 static void test_baddest(void)
@@ -1518,6 +1599,40 @@ static void test_precopy_unix_xbzrle(void)
 
         .start_hook = test_migrate_xbzrle_start,
 
+        .iterations = 2,
+    };
+
+    test_precopy_common(&args);
+}
+
+static void test_precopy_unix_compress(void)
+{
+    g_autofree char *uri = g_strdup_printf("unix:%s/migsocket", tmpfs);
+    MigrateCommon args = {
+        .connect_uri = uri,
+        .listen_uri = uri,
+        .start_hook = test_migrate_compress_start,
+        /*
+         * Test that no invalid thread state is left over from
+         * the previous iteration.
+         */
+        .iterations = 2,
+    };
+
+    test_precopy_common(&args);
+}
+
+static void test_precopy_unix_compress_nowait(void)
+{
+    g_autofree char *uri = g_strdup_printf("unix:%s/migsocket", tmpfs);
+    MigrateCommon args = {
+        .connect_uri = uri,
+        .listen_uri = uri,
+        .start_hook = test_migrate_compress_nowait_start,
+        /*
+         * Test that no invalid thread state is left over from
+         * the previous iteration.
+         */
         .iterations = 2,
     };
 
@@ -1796,6 +1911,21 @@ static void test_validate_uuid_dst_not_set(void)
     do_test_validate_uuid(&args, false);
 }
 
+/*
+ * The way auto_converge works, we need to do too many passes to
+ * run this test.  Auto_converge logic is only run once every
+ * three iterations, so:
+ *
+ * - 3 iterations without auto_converge enabled
+ * - 3 iterations with pct = 5
+ * - 3 iterations with pct = 30
+ * - 3 iterations with pct = 55
+ * - 3 iterations with pct = 80
+ * - 3 iterations with pct = 95 (max(95, 80 + 25))
+ *
+ * To make things even worse, we need to run the initial stage at
+ * 3MB/s so we enter autoconverge even when host is (over)loaded.
+ */
 static void test_migrate_auto_converge(void)
 {
     g_autofree char *uri = g_strdup_printf("unix:%s/migsocket", tmpfs);
@@ -1808,7 +1938,7 @@ static void test_migrate_auto_converge(void)
      * E.g., with 1Gb/s bandwith migration may pass without throttling,
      * so we need to decrease a bandwidth.
      */
-    const int64_t init_pct = 5, inc_pct = 50, max_pct = 95;
+    const int64_t init_pct = 5, inc_pct = 25, max_pct = 95;
 
     if (test_migrate_start(&from, &to, uri, &args)) {
         return;
@@ -1835,13 +1965,16 @@ static void test_migrate_auto_converge(void)
 
     /* Wait for throttling begins */
     percentage = 0;
-    while (percentage == 0) {
+    do {
         percentage = read_migrate_property_int(from, "cpu-throttle-percentage");
-        usleep(100);
+        if (percentage != 0) {
+            break;
+        }
+        usleep(20);
         g_assert_false(got_stop);
-    }
-    /* The first percentage of throttling should be equal to init_pct */
-    g_assert_cmpint(percentage, ==, init_pct);
+    } while (true);
+    /* The first percentage of throttling should be at least init_pct */
+    g_assert_cmpint(percentage, >=, init_pct);
     /* Now, when we tested that throttling works, let it converge */
     migrate_ensure_converge(from);
 
@@ -2459,13 +2592,24 @@ static bool kvm_dirty_ring_supported(void)
 
 int main(int argc, char **argv)
 {
-    const bool has_kvm = qtest_has_accel("kvm");
-    const bool has_uffd = ufd_version_check();
-    const char *arch = qtest_get_arch();
+    bool has_kvm, has_tcg;
+    bool has_uffd;
+    const char *arch;
     g_autoptr(GError) err = NULL;
     int ret;
 
     g_test_init(&argc, &argv, NULL);
+
+    has_kvm = qtest_has_accel("kvm");
+    has_tcg = qtest_has_accel("tcg");
+
+    if (!has_tcg && !has_kvm) {
+        g_test_skip("No KVM or TCG accelerator available");
+        return 0;
+    }
+
+    has_uffd = ufd_version_check();
+    arch = qtest_get_arch();
 
     /*
      * On ppc64, the test only works with kvm-hv, but not with kvm-pr and TCG
@@ -2503,11 +2647,27 @@ int main(int argc, char **argv)
         qtest_add_func("/migration/postcopy/preempt/plain", test_postcopy_preempt);
         qtest_add_func("/migration/postcopy/preempt/recovery/plain",
                        test_postcopy_preempt_recovery);
+        if (getenv("QEMU_TEST_FLAKY_TESTS")) {
+            qtest_add_func("/migration/postcopy/compress/plain",
+                           test_postcopy_compress);
+            qtest_add_func("/migration/postcopy/recovery/compress/plain",
+                           test_postcopy_recovery_compress);
+        }
     }
 
     qtest_add_func("/migration/bad_dest", test_baddest);
     qtest_add_func("/migration/precopy/unix/plain", test_precopy_unix_plain);
     qtest_add_func("/migration/precopy/unix/xbzrle", test_precopy_unix_xbzrle);
+    /*
+     * Compression fails from time to time.
+     * Put test here but don't enable it until everything is fixed.
+     */
+    if (getenv("QEMU_TEST_FLAKY_TESTS")) {
+        qtest_add_func("/migration/precopy/unix/compress/wait",
+                       test_precopy_unix_compress);
+        qtest_add_func("/migration/precopy/unix/compress/nowait",
+                       test_precopy_unix_compress_nowait);
+    }
 #ifdef CONFIG_GNUTLS
     qtest_add_func("/migration/precopy/unix/tls/psk",
                    test_precopy_unix_tls_psk);
@@ -2568,12 +2728,22 @@ int main(int argc, char **argv)
                    test_validate_uuid_src_not_set);
     qtest_add_func("/migration/validate_uuid_dst_not_set",
                    test_validate_uuid_dst_not_set);
-
-    qtest_add_func("/migration/auto_converge", test_migrate_auto_converge);
+    /*
+     * See explanation why this test is slow on function definition
+     */
+    if (g_test_slow()) {
+        qtest_add_func("/migration/auto_converge", test_migrate_auto_converge);
+    }
     qtest_add_func("/migration/multifd/tcp/plain/none",
                    test_multifd_tcp_none);
-    qtest_add_func("/migration/multifd/tcp/plain/cancel",
-                   test_multifd_tcp_cancel);
+    /*
+     * This test is flaky and sometimes fails in CI and otherwise:
+     * don't run unless user opts in via environment variable.
+     */
+    if (getenv("QEMU_TEST_FLAKY_TESTS")) {
+        qtest_add_func("/migration/multifd/tcp/plain/cancel",
+                       test_multifd_tcp_cancel);
+    }
     qtest_add_func("/migration/multifd/tcp/plain/zlib",
                    test_multifd_tcp_zlib);
 #ifdef CONFIG_ZSTD

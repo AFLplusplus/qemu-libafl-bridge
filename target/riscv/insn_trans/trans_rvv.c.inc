@@ -29,21 +29,22 @@ static inline bool is_overlapped(const int8_t astart, int8_t asize,
 
 static bool require_rvv(DisasContext *s)
 {
-    return s->mstatus_vs != 0;
+    return s->mstatus_vs != EXT_STATUS_DISABLED;
 }
 
 static bool require_rvf(DisasContext *s)
 {
-    if (s->mstatus_fs == 0) {
+    if (s->mstatus_fs == EXT_STATUS_DISABLED) {
         return false;
     }
 
     switch (s->sew) {
     case MO_16:
+        return s->cfg_ptr->ext_zvfh;
     case MO_32:
-        return has_ext(s, RVF);
+        return s->cfg_ptr->ext_zve32f;
     case MO_64:
-        return has_ext(s, RVD);
+        return s->cfg_ptr->ext_zve64d;
     default:
         return false;
     }
@@ -51,63 +52,38 @@ static bool require_rvf(DisasContext *s)
 
 static bool require_scale_rvf(DisasContext *s)
 {
-    if (s->mstatus_fs == 0) {
+    if (s->mstatus_fs == EXT_STATUS_DISABLED) {
         return false;
     }
 
     switch (s->sew) {
     case MO_8:
+        return s->cfg_ptr->ext_zvfh;
     case MO_16:
-        return has_ext(s, RVF);
+        return s->cfg_ptr->ext_zve32f;
     case MO_32:
-        return has_ext(s, RVD);
+        return s->cfg_ptr->ext_zve64d;
     default:
         return false;
     }
 }
 
-static bool require_zve32f(DisasContext *s)
+static bool require_scale_rvfmin(DisasContext *s)
 {
-    /* RVV + Zve32f = RVV. */
-    if (has_ext(s, RVV)) {
-        return true;
+    if (s->mstatus_fs == EXT_STATUS_DISABLED) {
+        return false;
     }
 
-    /* Zve32f doesn't support FP64. (Section 18.2) */
-    return s->cfg_ptr->ext_zve32f ? s->sew <= MO_32 : true;
-}
-
-static bool require_scale_zve32f(DisasContext *s)
-{
-    /* RVV + Zve32f = RVV. */
-    if (has_ext(s, RVV)) {
-        return true;
+    switch (s->sew) {
+    case MO_8:
+        return s->cfg_ptr->ext_zvfhmin;
+    case MO_16:
+        return s->cfg_ptr->ext_zve32f;
+    case MO_32:
+        return s->cfg_ptr->ext_zve64d;
+    default:
+        return false;
     }
-
-    /* Zve32f doesn't support FP64. (Section 18.2) */
-    return s->cfg_ptr->ext_zve64f ? s->sew <= MO_16 : true;
-}
-
-static bool require_zve64f(DisasContext *s)
-{
-    /* RVV + Zve64f = RVV. */
-    if (has_ext(s, RVV)) {
-        return true;
-    }
-
-    /* Zve64f doesn't support FP64. (Section 18.2) */
-    return s->cfg_ptr->ext_zve64f ? s->sew <= MO_32 : true;
-}
-
-static bool require_scale_zve64f(DisasContext *s)
-{
-    /* RVV + Zve64f = RVV. */
-    if (has_ext(s, RVV)) {
-        return true;
-    }
-
-    /* Zve64f doesn't support FP64. (Section 18.2) */
-    return s->cfg_ptr->ext_zve64f ? s->sew <= MO_16 : true;
 }
 
 /* Destination vector register group cannot overlap source mask register. */
@@ -173,9 +149,7 @@ static bool do_vsetvl(DisasContext *s, int rd, int rs1, TCGv s2)
 {
     TCGv s1, dst;
 
-    if (!require_rvv(s) ||
-        !(has_ext(s, RVV) || s->cfg_ptr->ext_zve32f ||
-          s->cfg_ptr->ext_zve64f)) {
+    if (!require_rvv(s) || !s->cfg_ptr->ext_zve32f) {
         return false;
     }
 
@@ -198,11 +172,6 @@ static bool do_vsetvl(DisasContext *s, int rd, int rs1, TCGv s2)
     gen_set_pc_imm(s, s->pc_succ_insn);
     lookup_and_goto_ptr(s);
     s->base.is_jmp = DISAS_NORETURN;
-
-    if (rd == 0 && rs1 == 0) {
-        tcg_temp_free(s1);
-    }
-
     return true;
 }
 
@@ -210,9 +179,7 @@ static bool do_vsetivli(DisasContext *s, int rd, TCGv s1, TCGv s2)
 {
     TCGv dst;
 
-    if (!require_rvv(s) ||
-        !(has_ext(s, RVV) || s->cfg_ptr->ext_zve32f ||
-          s->cfg_ptr->ext_zve64f)) {
+    if (!require_rvv(s) || !s->cfg_ptr->ext_zve32f) {
         return false;
     }
 
@@ -242,8 +209,8 @@ static bool trans_vsetvli(DisasContext *s, arg_vsetvli *a)
 
 static bool trans_vsetivli(DisasContext *s, arg_vsetivli *a)
 {
-    TCGv s1 = tcg_const_tl(a->rs1);
-    TCGv s2 = tcg_const_tl(a->zimm);
+    TCGv s1 = tcg_constant_tl(a->rs1);
+    TCGv s2 = tcg_constant_tl(a->zimm);
     return do_vsetivli(s, a->rd, s1, s2);
 }
 
@@ -271,8 +238,8 @@ static bool vext_check_store(DisasContext *s, int vd, int nf, uint8_t eew)
 {
     int8_t emul = eew - s->sew + s->lmul;
     return (emul >= -3 && emul <= 3) &&
-            require_align(vd, emul) &&
-            require_nf(vd, nf, emul);
+           require_align(vd, emul) &&
+           require_nf(vd, nf, emul);
 }
 
 /*
@@ -315,13 +282,12 @@ static bool vext_check_st_index(DisasContext *s, int vd, int vs2, int nf,
                require_nf(vd, nf, s->lmul);
 
     /*
-     * All Zve* extensions support all vector load and store instructions,
-     * except Zve64* extensions do not support EEW=64 for index values
-     * when XLEN=32. (Section 18.2)
+     * V extension supports all vector load and store instructions,
+     * except V extension does not support EEW=64 for index values
+     * when XLEN=32. (Section 18.3)
      */
     if (get_xl(s) == MXL_RV32) {
-        ret &= (!has_ext(s, RVV) &&
-                s->cfg_ptr->ext_zve64f ? eew != MO_64 : true);
+        ret &= (eew != MO_64);
     }
 
     return ret;
@@ -349,7 +315,7 @@ static bool vext_check_ld_index(DisasContext *s, int vd, int vs2,
     int8_t seg_vd;
     int8_t emul = eew - s->sew + s->lmul;
     bool ret = vext_check_st_index(s, vd, vs2, nf, eew) &&
-        require_vm(vm, vd);
+               require_vm(vm, vd);
 
     /* Each segment register group has to follow overlap rules. */
     for (int i = 0; i < nf; ++i) {
@@ -379,8 +345,8 @@ static bool vext_check_ld_index(DisasContext *s, int vd, int vs2,
 static bool vext_check_ss(DisasContext *s, int vd, int vs, int vm)
 {
     return require_vm(vm, vd) &&
-        require_align(vd, s->lmul) &&
-        require_align(vs, s->lmul);
+           require_align(vd, s->lmul) &&
+           require_align(vs, s->lmul);
 }
 
 /*
@@ -399,7 +365,7 @@ static bool vext_check_ss(DisasContext *s, int vd, int vs, int vm)
 static bool vext_check_sss(DisasContext *s, int vd, int vs1, int vs2, int vm)
 {
     return vext_check_ss(s, vd, vs2, vm) &&
-        require_align(vs1, s->lmul);
+           require_align(vs1, s->lmul);
 }
 
 static bool vext_check_ms(DisasContext *s, int vd, int vs)
@@ -430,7 +396,7 @@ static bool vext_check_ms(DisasContext *s, int vd, int vs)
 static bool vext_check_mss(DisasContext *s, int vd, int vs1, int vs2)
 {
     bool ret = vext_check_ms(s, vd, vs2) &&
-        require_align(vs1, s->lmul);
+               require_align(vs1, s->lmul);
     if (vd != vs1) {
         ret &= require_noover(vd, 0, vs1, s->lmul);
     }
@@ -494,14 +460,14 @@ static bool vext_narrow_check_common(DisasContext *s, int vd, int vs2,
 static bool vext_check_ds(DisasContext *s, int vd, int vs, int vm)
 {
     return vext_wide_check_common(s, vd, vm) &&
-        require_align(vs, s->lmul) &&
-        require_noover(vd, s->lmul + 1, vs, s->lmul);
+           require_align(vs, s->lmul) &&
+           require_noover(vd, s->lmul + 1, vs, s->lmul);
 }
 
 static bool vext_check_dd(DisasContext *s, int vd, int vs, int vm)
 {
     return vext_wide_check_common(s, vd, vm) &&
-        require_align(vs, s->lmul + 1);
+           require_align(vs, s->lmul + 1);
 }
 
 /*
@@ -519,8 +485,8 @@ static bool vext_check_dd(DisasContext *s, int vd, int vs, int vm)
 static bool vext_check_dss(DisasContext *s, int vd, int vs1, int vs2, int vm)
 {
     return vext_check_ds(s, vd, vs2, vm) &&
-        require_align(vs1, s->lmul) &&
-        require_noover(vd, s->lmul + 1, vs1, s->lmul);
+           require_align(vs1, s->lmul) &&
+           require_noover(vd, s->lmul + 1, vs1, s->lmul);
 }
 
 /*
@@ -541,7 +507,7 @@ static bool vext_check_dss(DisasContext *s, int vd, int vs1, int vs2, int vm)
 static bool vext_check_dds(DisasContext *s, int vd, int vs1, int vs2, int vm)
 {
     return vext_check_ds(s, vd, vs1, vm) &&
-        require_align(vs2, s->lmul + 1);
+           require_align(vs2, s->lmul + 1);
 }
 
 static bool vext_check_sd(DisasContext *s, int vd, int vs, int vm)
@@ -569,7 +535,7 @@ static bool vext_check_sd(DisasContext *s, int vd, int vs, int vm)
 static bool vext_check_sds(DisasContext *s, int vd, int vs1, int vs2, int vm)
 {
     return vext_check_sd(s, vd, vs2, vm) &&
-        require_align(vs1, s->lmul);
+           require_align(vs1, s->lmul);
 }
 
 /*
@@ -581,7 +547,7 @@ static bool vext_check_sds(DisasContext *s, int vd, int vs1, int vs2, int vm)
  */
 static bool vext_check_reduction(DisasContext *s, int vs2)
 {
-    return require_align(vs2, s->lmul) && (s->vstart == 0);
+    return require_align(vs2, s->lmul) && s->vstart_eq_zero;
 }
 
 /*
@@ -672,9 +638,6 @@ static bool ldst_us_trans(uint32_t vd, uint32_t rs1, uint32_t data,
     tcg_gen_addi_ptr(mask, cpu_env, vreg_ofs(s, 0));
 
     fn(dest, mask, base, cpu_env, desc);
-
-    tcg_temp_free_ptr(dest);
-    tcg_temp_free_ptr(mask);
 
     if (!is_store) {
         mark_vs_dirty(s);
@@ -838,9 +801,6 @@ static bool ldst_stride_trans(uint32_t vd, uint32_t rs1, uint32_t rs2,
 
     fn(dest, mask, base, stride, cpu_env, desc);
 
-    tcg_temp_free_ptr(dest);
-    tcg_temp_free_ptr(mask);
-
     if (!is_store) {
         mark_vs_dirty(s);
     }
@@ -948,10 +908,6 @@ static bool ldst_index_trans(uint32_t vd, uint32_t rs1, uint32_t vs2,
     tcg_gen_addi_ptr(mask, cpu_env, vreg_ofs(s, 0));
 
     fn(dest, mask, base, index, cpu_env, desc);
-
-    tcg_temp_free_ptr(dest);
-    tcg_temp_free_ptr(mask);
-    tcg_temp_free_ptr(index);
 
     if (!is_store) {
         mark_vs_dirty(s);
@@ -1092,8 +1048,6 @@ static bool ldff_trans(uint32_t vd, uint32_t rs1, uint32_t data,
 
     fn(dest, mask, base, cpu_env, desc);
 
-    tcg_temp_free_ptr(dest);
-    tcg_temp_free_ptr(mask);
     mark_vs_dirty(s);
     gen_set_label(over);
     return true;
@@ -1153,8 +1107,6 @@ static bool ldst_whole_trans(uint32_t vd, uint32_t rs1, uint32_t nf,
     tcg_gen_addi_ptr(dest, cpu_env, vreg_ofs(s, vd));
 
     fn(dest, base, cpu_env, desc);
-
-    tcg_temp_free_ptr(dest);
 
     if (!is_store) {
         mark_vs_dirty(s);
@@ -1311,9 +1263,6 @@ static bool opivx_trans(uint32_t vd, uint32_t rs1, uint32_t vs2, uint32_t vm,
 
     fn(dest, mask, src1, src2, cpu_env, desc);
 
-    tcg_temp_free_ptr(dest);
-    tcg_temp_free_ptr(mask);
-    tcg_temp_free_ptr(src2);
     mark_vs_dirty(s);
     gen_set_label(over);
     return true;
@@ -1344,7 +1293,6 @@ do_opivx_gvec(DisasContext *s, arg_rmrr *a, GVecGen2sFn *gvec_fn,
         gvec_fn(s->sew, vreg_ofs(s, a->rd), vreg_ofs(s, a->rs2),
                 src1, MAXSZ(s), MAXSZ(s));
 
-        tcg_temp_free_i64(src1);
         mark_vs_dirty(s);
         return true;
     }
@@ -1479,9 +1427,6 @@ static bool opivi_trans(uint32_t vd, uint32_t imm, uint32_t vs2, uint32_t vm,
 
     fn(dest, mask, src1, src2, cpu_env, desc);
 
-    tcg_temp_free_ptr(dest);
-    tcg_temp_free_ptr(mask);
-    tcg_temp_free_ptr(src2);
     mark_vs_dirty(s);
     gen_set_label(over);
     return true;
@@ -1850,7 +1795,6 @@ do_opivx_gvec_shift(DisasContext *s, arg_rmrr *a, GVecGen2sFn32 *gvec_fn,
         gvec_fn(s->sew, vreg_ofs(s, a->rd), vreg_ofs(s, a->rs2),
                 src1, MAXSZ(s), MAXSZ(s));
 
-        tcg_temp_free_i32(src1);
         mark_vs_dirty(s);
         return true;
     }
@@ -2027,8 +1971,7 @@ static bool vmulh_vv_check(DisasContext *s, arg_rmrr *a)
      * are not included for EEW=64 in Zve64*. (Section 18.2)
      */
     return opivv_check(s, a) &&
-           (!has_ext(s, RVV) &&
-            s->cfg_ptr->ext_zve64f ? s->sew != MO_64 : true);
+           (!has_ext(s, RVV) ? s->sew != MO_64 : true);
 }
 
 static bool vmulh_vx_check(DisasContext *s, arg_rmrr *a)
@@ -2041,8 +1984,7 @@ static bool vmulh_vx_check(DisasContext *s, arg_rmrr *a)
      * are not included for EEW=64 in Zve64*. (Section 18.2)
      */
     return opivx_check(s, a) &&
-           (!has_ext(s, RVV) &&
-            s->cfg_ptr->ext_zve64f ? s->sew != MO_64 : true);
+           (!has_ext(s, RVV) ? s->sew != MO_64 : true);
 }
 
 GEN_OPIVV_GVEC_TRANS(vmul_vv,  mul)
@@ -2145,7 +2087,6 @@ static bool trans_vmv_v_x(DisasContext *s, arg_vmv_v_x *a)
                 tcg_gen_ext_tl_i64(s1_i64, s1);
                 tcg_gen_gvec_dup_i64(s->sew, vreg_ofs(s, a->rd),
                                      MAXSZ(s), MAXSZ(s), s1_i64);
-                tcg_temp_free_i64(s1_i64);
             } else {
                 tcg_gen_gvec_dup_tl(s->sew, vreg_ofs(s, a->rd),
                                     MAXSZ(s), MAXSZ(s), s1);
@@ -2166,9 +2107,6 @@ static bool trans_vmv_v_x(DisasContext *s, arg_vmv_v_x *a)
                                               s->cfg_ptr->vlen / 8, data));
             tcg_gen_addi_ptr(dest, cpu_env, vreg_ofs(s, a->rd));
             fns[s->sew](dest, s1_i64, cpu_env, desc);
-
-            tcg_temp_free_ptr(dest);
-            tcg_temp_free_i64(s1_i64);
         }
 
         mark_vs_dirty(s);
@@ -2210,7 +2148,6 @@ static bool trans_vmv_v_i(DisasContext *s, arg_vmv_v_i *a)
             tcg_gen_addi_ptr(dest, cpu_env, vreg_ofs(s, a->rd));
             fns[s->sew](dest, s1, cpu_env, desc);
 
-            tcg_temp_free_ptr(dest);
             mark_vs_dirty(s);
             gen_set_label(over);
         }
@@ -2259,8 +2196,7 @@ static bool vsmul_vv_check(DisasContext *s, arg_rmrr *a)
      * for EEW=64 in Zve64*. (Section 18.2)
      */
     return opivv_check(s, a) &&
-           (!has_ext(s, RVV) &&
-            s->cfg_ptr->ext_zve64f ? s->sew != MO_64 : true);
+           (!has_ext(s, RVV) ? s->sew != MO_64 : true);
 }
 
 static bool vsmul_vx_check(DisasContext *s, arg_rmrr *a)
@@ -2271,8 +2207,7 @@ static bool vsmul_vx_check(DisasContext *s, arg_rmrr *a)
      * for EEW=64 in Zve64*. (Section 18.2)
      */
     return opivx_check(s, a) &&
-           (!has_ext(s, RVV) &&
-            s->cfg_ptr->ext_zve64f ? s->sew != MO_64 : true);
+           (!has_ext(s, RVV) ? s->sew != MO_64 : true);
 }
 
 GEN_OPIVV_TRANS(vsmul_vv, vsmul_vv_check)
@@ -2335,9 +2270,7 @@ static bool opfvv_check(DisasContext *s, arg_rmrr *a)
     return require_rvv(s) &&
            require_rvf(s) &&
            vext_check_isa_ill(s) &&
-           vext_check_sss(s, a->rd, a->rs1, a->rs2, a->vm) &&
-           require_zve32f(s) &&
-           require_zve64f(s);
+           vext_check_sss(s, a->rd, a->rs1, a->rs2, a->vm);
 }
 
 /* OPFVV without GVEC IR */
@@ -2407,10 +2340,6 @@ static bool opfvf_trans(uint32_t vd, uint32_t rs1, uint32_t vs2,
 
     fn(dest, mask, t1, src2, cpu_env, desc);
 
-    tcg_temp_free_ptr(dest);
-    tcg_temp_free_ptr(mask);
-    tcg_temp_free_ptr(src2);
-    tcg_temp_free_i64(t1);
     mark_vs_dirty(s);
     gen_set_label(over);
     return true;
@@ -2425,9 +2354,7 @@ static bool opfvf_check(DisasContext *s, arg_rmrr *a)
     return require_rvv(s) &&
            require_rvf(s) &&
            vext_check_isa_ill(s) &&
-           vext_check_ss(s, a->rd, a->rs2, a->vm) &&
-           require_zve32f(s) &&
-           require_zve64f(s);
+           vext_check_ss(s, a->rd, a->rs2, a->vm);
 }
 
 /* OPFVF without GVEC IR */
@@ -2465,9 +2392,7 @@ static bool opfvv_widen_check(DisasContext *s, arg_rmrr *a)
            require_scale_rvf(s) &&
            (s->sew != MO_8) &&
            vext_check_isa_ill(s) &&
-           vext_check_dss(s, a->rd, a->rs1, a->rs2, a->vm) &&
-           require_scale_zve32f(s) &&
-           require_scale_zve64f(s);
+           vext_check_dss(s, a->rd, a->rs1, a->rs2, a->vm);
 }
 
 /* OPFVV with WIDEN */
@@ -2510,9 +2435,7 @@ static bool opfvf_widen_check(DisasContext *s, arg_rmrr *a)
            require_scale_rvf(s) &&
            (s->sew != MO_8) &&
            vext_check_isa_ill(s) &&
-           vext_check_ds(s, a->rd, a->rs2, a->vm) &&
-           require_scale_zve32f(s) &&
-           require_scale_zve64f(s);
+           vext_check_ds(s, a->rd, a->rs2, a->vm);
 }
 
 /* OPFVF with WIDEN */
@@ -2544,9 +2467,7 @@ static bool opfwv_widen_check(DisasContext *s, arg_rmrr *a)
            require_scale_rvf(s) &&
            (s->sew != MO_8) &&
            vext_check_isa_ill(s) &&
-           vext_check_dds(s, a->rd, a->rs1, a->rs2, a->vm) &&
-           require_scale_zve32f(s) &&
-           require_scale_zve64f(s);
+           vext_check_dds(s, a->rd, a->rs1, a->rs2, a->vm);
 }
 
 /* WIDEN OPFVV with WIDEN */
@@ -2589,9 +2510,7 @@ static bool opfwf_widen_check(DisasContext *s, arg_rmrr *a)
            require_scale_rvf(s) &&
            (s->sew != MO_8) &&
            vext_check_isa_ill(s) &&
-           vext_check_dd(s, a->rd, a->rs2, a->vm) &&
-           require_scale_zve32f(s) &&
-           require_scale_zve64f(s);
+           vext_check_dd(s, a->rd, a->rs2, a->vm);
 }
 
 /* WIDEN OPFVF with WIDEN */
@@ -2668,9 +2587,7 @@ static bool opfv_check(DisasContext *s, arg_rmr *a)
            require_rvf(s) &&
            vext_check_isa_ill(s) &&
            /* OPFV instructions ignore vs1 check */
-           vext_check_ss(s, a->rd, a->rs2, a->vm) &&
-           require_zve32f(s) &&
-           require_zve64f(s);
+           vext_check_ss(s, a->rd, a->rs2, a->vm);
 }
 
 static bool do_opfv(DisasContext *s, arg_rmr *a,
@@ -2735,9 +2652,7 @@ static bool opfvv_cmp_check(DisasContext *s, arg_rmrr *a)
     return require_rvv(s) &&
            require_rvf(s) &&
            vext_check_isa_ill(s) &&
-           vext_check_mss(s, a->rd, a->rs1, a->rs2) &&
-           require_zve32f(s) &&
-           require_zve64f(s);
+           vext_check_mss(s, a->rd, a->rs1, a->rs2);
 }
 
 GEN_OPFVV_TRANS(vmfeq_vv, opfvv_cmp_check)
@@ -2750,9 +2665,7 @@ static bool opfvf_cmp_check(DisasContext *s, arg_rmrr *a)
     return require_rvv(s) &&
            require_rvf(s) &&
            vext_check_isa_ill(s) &&
-           vext_check_ms(s, a->rd, a->rs2) &&
-           require_zve32f(s) &&
-           require_zve64f(s);
+           vext_check_ms(s, a->rd, a->rs2);
 }
 
 GEN_OPFVF_TRANS(vmfeq_vf, opfvf_cmp_check)
@@ -2773,9 +2686,7 @@ static bool trans_vfmv_v_f(DisasContext *s, arg_vfmv_v_f *a)
     if (require_rvv(s) &&
         require_rvf(s) &&
         vext_check_isa_ill(s) &&
-        require_align(a->rd, s->lmul) &&
-        require_zve32f(s) &&
-        require_zve64f(s)) {
+        require_align(a->rd, s->lmul)) {
         gen_set_rm(s, RISCV_FRM_DYN);
 
         TCGv_i64 t1;
@@ -2814,11 +2725,9 @@ static bool trans_vfmv_v_f(DisasContext *s, arg_vfmv_v_f *a)
 
             fns[s->sew - 1](dest, t1, cpu_env, desc);
 
-            tcg_temp_free_ptr(dest);
             mark_vs_dirty(s);
             gen_set_label(over);
         }
-        tcg_temp_free_i64(t1);
         return true;
     }
     return false;
@@ -2860,18 +2769,14 @@ static bool opfv_widen_check(DisasContext *s, arg_rmr *a)
 static bool opxfv_widen_check(DisasContext *s, arg_rmr *a)
 {
     return opfv_widen_check(s, a) &&
-           require_rvf(s) &&
-           require_zve32f(s) &&
-           require_zve64f(s);
+           require_rvf(s);
 }
 
 static bool opffv_widen_check(DisasContext *s, arg_rmr *a)
 {
     return opfv_widen_check(s, a) &&
-           require_scale_rvf(s) &&
-           (s->sew != MO_8) &&
-           require_scale_zve32f(s) &&
-           require_scale_zve64f(s);
+           require_scale_rvfmin(s) &&
+           (s->sew != MO_8);
 }
 
 #define GEN_OPFV_WIDEN_TRANS(NAME, CHECK, HELPER, FRM)             \
@@ -2922,9 +2827,7 @@ static bool opfxv_widen_check(DisasContext *s, arg_rmr *a)
            require_scale_rvf(s) &&
            vext_check_isa_ill(s) &&
            /* OPFV widening instructions ignore vs1 check */
-           vext_check_ds(s, a->rd, a->rs2, a->vm) &&
-           require_scale_zve32f(s) &&
-           require_scale_zve64f(s);
+           vext_check_ds(s, a->rd, a->rs2, a->vm);
 }
 
 #define GEN_OPFXV_WIDEN_TRANS(NAME)                                \
@@ -2979,18 +2882,21 @@ static bool opfxv_narrow_check(DisasContext *s, arg_rmr *a)
 {
     return opfv_narrow_check(s, a) &&
            require_rvf(s) &&
-           (s->sew != MO_64) &&
-           require_zve32f(s) &&
-           require_zve64f(s);
+           (s->sew != MO_64);
 }
 
 static bool opffv_narrow_check(DisasContext *s, arg_rmr *a)
 {
     return opfv_narrow_check(s, a) &&
+           require_scale_rvfmin(s) &&
+           (s->sew != MO_8);
+}
+
+static bool opffv_rod_narrow_check(DisasContext *s, arg_rmr *a)
+{
+    return opfv_narrow_check(s, a) &&
            require_scale_rvf(s) &&
-           (s->sew != MO_8) &&
-           require_scale_zve32f(s) &&
-           require_scale_zve64f(s);
+           (s->sew != MO_8);
 }
 
 #define GEN_OPFV_NARROW_TRANS(NAME, CHECK, HELPER, FRM)            \
@@ -3030,7 +2936,7 @@ GEN_OPFV_NARROW_TRANS(vfncvt_f_x_w, opfxv_narrow_check, vfncvt_f_x_w,
 GEN_OPFV_NARROW_TRANS(vfncvt_f_f_w, opffv_narrow_check, vfncvt_f_f_w,
                       RISCV_FRM_DYN)
 /* Reuse the helper function from vfncvt.f.f.w */
-GEN_OPFV_NARROW_TRANS(vfncvt_rod_f_f_w, opffv_narrow_check, vfncvt_f_f_w,
+GEN_OPFV_NARROW_TRANS(vfncvt_rod_f_f_w, opffv_rod_narrow_check, vfncvt_f_f_w,
                       RISCV_FRM_ROD)
 
 static bool opxfv_narrow_check(DisasContext *s, arg_rmr *a)
@@ -3039,9 +2945,7 @@ static bool opxfv_narrow_check(DisasContext *s, arg_rmr *a)
            require_scale_rvf(s) &&
            vext_check_isa_ill(s) &&
            /* OPFV narrowing instructions ignore vs1 check */
-           vext_check_sd(s, a->rd, a->rs2, a->vm) &&
-           require_scale_zve32f(s) &&
-           require_scale_zve64f(s);
+           vext_check_sd(s, a->rd, a->rs2, a->vm);
 }
 
 #define GEN_OPXFV_NARROW_TRANS(NAME, HELPER, FRM)                  \
@@ -3115,9 +3019,7 @@ GEN_OPIVV_WIDEN_TRANS(vwredsumu_vs, reduction_widen_check)
 static bool freduction_check(DisasContext *s, arg_rmrr *a)
 {
     return reduction_check(s, a) &&
-           require_rvf(s) &&
-           require_zve32f(s) &&
-           require_zve64f(s);
+           require_rvf(s);
 }
 
 GEN_OPFVV_TRANS(vfredusum_vs, freduction_check)
@@ -3181,7 +3083,7 @@ static bool trans_vcpop_m(DisasContext *s, arg_rmr *a)
 {
     if (require_rvv(s) &&
         vext_check_isa_ill(s) &&
-        s->vstart == 0) {
+        s->vstart_eq_zero) {
         TCGv_ptr src2, mask;
         TCGv dst;
         TCGv_i32 desc;
@@ -3200,10 +3102,6 @@ static bool trans_vcpop_m(DisasContext *s, arg_rmr *a)
 
         gen_helper_vcpop_m(dst, mask, src2, cpu_env, desc);
         gen_set_gpr(s, a->rd, dst);
-
-        tcg_temp_free_ptr(mask);
-        tcg_temp_free_ptr(src2);
-
         return true;
     }
     return false;
@@ -3214,7 +3112,7 @@ static bool trans_vfirst_m(DisasContext *s, arg_rmr *a)
 {
     if (require_rvv(s) &&
         vext_check_isa_ill(s) &&
-        s->vstart == 0) {
+        s->vstart_eq_zero) {
         TCGv_ptr src2, mask;
         TCGv dst;
         TCGv_i32 desc;
@@ -3233,17 +3131,16 @@ static bool trans_vfirst_m(DisasContext *s, arg_rmr *a)
 
         gen_helper_vfirst_m(dst, mask, src2, cpu_env, desc);
         gen_set_gpr(s, a->rd, dst);
-
-        tcg_temp_free_ptr(mask);
-        tcg_temp_free_ptr(src2);
         return true;
     }
     return false;
 }
 
-/* vmsbf.m set-before-first mask bit */
-/* vmsif.m set-includ-first mask bit */
-/* vmsof.m set-only-first mask bit */
+/*
+ * vmsbf.m set-before-first mask bit
+ * vmsif.m set-including-first mask bit
+ * vmsof.m set-only-first mask bit
+ */
 #define GEN_M_TRANS(NAME)                                          \
 static bool trans_##NAME(DisasContext *s, arg_rmr *a)              \
 {                                                                  \
@@ -3251,7 +3148,7 @@ static bool trans_##NAME(DisasContext *s, arg_rmr *a)              \
         vext_check_isa_ill(s) &&                                   \
         require_vm(a->vm, a->rd) &&                                \
         (a->rd != a->rs2) &&                                       \
-        (s->vstart == 0)) {                                        \
+        s->vstart_eq_zero) {                                       \
         uint32_t data = 0;                                         \
         gen_helper_gvec_3_ptr *fn = gen_helper_##NAME;             \
         TCGLabel *over = gen_new_label();                          \
@@ -3292,7 +3189,7 @@ static bool trans_viota_m(DisasContext *s, arg_viota_m *a)
         !is_overlapped(a->rd, 1 << MAX(s->lmul, 0), a->rs2, 1) &&
         require_vm(a->vm, a->rd) &&
         require_align(a->rd, s->lmul) &&
-        (s->vstart == 0)) {
+        s->vstart_eq_zero) {
         uint32_t data = 0;
         TCGLabel *over = gen_new_label();
         tcg_gen_brcondi_tl(TCG_COND_EQ, cpu_vl, 0, over);
@@ -3430,8 +3327,6 @@ static void vec_element_loadx(DisasContext *s, TCGv_i64 dest,
     /* Perform the load. */
     load_element(dest, base,
                  vreg_ofs(s, vreg), s->sew, false);
-    tcg_temp_free_ptr(base);
-    tcg_temp_free_i32(ofs);
 
     /* Flush out-of-range indexing to zero.  */
     t_vlmax = tcg_constant_i64(vlmax);
@@ -3440,8 +3335,6 @@ static void vec_element_loadx(DisasContext *s, TCGv_i64 dest,
 
     tcg_gen_movcond_i64(TCG_COND_LTU, dest, t_idx,
                         t_vlmax, dest, t_zero);
-
-    tcg_temp_free_i64(t_idx);
 }
 
 static void vec_element_loadi(DisasContext *s, TCGv_i64 dest,
@@ -3501,9 +3394,6 @@ static bool trans_vmv_x_s(DisasContext *s, arg_vmv_x_s *a)
         vec_element_loadi(s, t1, a->rs2, 0, true);
         tcg_gen_trunc_i64_tl(dest, t1);
         gen_set_gpr(s, a->rd, dest);
-        tcg_temp_free_i64(t1);
-        tcg_temp_free(dest);
-
         return true;
     }
     return false;
@@ -3531,7 +3421,6 @@ static bool trans_vmv_s_x(DisasContext *s, arg_vmv_s_x *a)
         s1 = get_gpr(s, a->rs1, EXT_NONE);
         tcg_gen_ext_tl_i64(t1, s1);
         vec_element_storei(s, a->rd, 0, t1);
-        tcg_temp_free_i64(t1);
         mark_vs_dirty(s);
         gen_set_label(over);
         return true;
@@ -3544,9 +3433,7 @@ static bool trans_vfmv_f_s(DisasContext *s, arg_vfmv_f_s *a)
 {
     if (require_rvv(s) &&
         require_rvf(s) &&
-        vext_check_isa_ill(s) &&
-        require_zve32f(s) &&
-        require_zve64f(s)) {
+        vext_check_isa_ill(s)) {
         gen_set_rm(s, RISCV_FRM_DYN);
 
         unsigned int ofs = (8 << s->sew);
@@ -3572,9 +3459,7 @@ static bool trans_vfmv_s_f(DisasContext *s, arg_vfmv_s_f *a)
 {
     if (require_rvv(s) &&
         require_rvf(s) &&
-        vext_check_isa_ill(s) &&
-        require_zve32f(s) &&
-        require_zve64f(s)) {
+        vext_check_isa_ill(s)) {
         gen_set_rm(s, RISCV_FRM_DYN);
 
         /* The instructions ignore LMUL and vector register group. */
@@ -3590,7 +3475,6 @@ static bool trans_vfmv_s_f(DisasContext *s, arg_vfmv_s_f *a)
         do_nanbox(s, t1, cpu_fpr[a->rs1]);
 
         vec_element_storei(s, a->rd, 0, t1);
-        tcg_temp_free_i64(t1);
         mark_vs_dirty(s);
         gen_set_label(over);
         return true;
@@ -3625,17 +3509,13 @@ GEN_OPIVI_TRANS(vslidedown_vi, IMM_ZX, vslidedown_vx, slidedown_check)
 static bool fslideup_check(DisasContext *s, arg_rmrr *a)
 {
     return slideup_check(s, a) &&
-           require_rvf(s) &&
-           require_zve32f(s) &&
-           require_zve64f(s);
+           require_rvf(s);
 }
 
 static bool fslidedown_check(DisasContext *s, arg_rmrr *a)
 {
     return slidedown_check(s, a) &&
-           require_rvf(s) &&
-           require_zve32f(s) &&
-           require_zve64f(s);
+           require_rvf(s);
 }
 
 GEN_OPFVF_TRANS(vfslide1up_vf, fslideup_check)
@@ -3703,7 +3583,6 @@ static bool trans_vrgather_vx(DisasContext *s, arg_rmrr *a)
 
         tcg_gen_gvec_dup_i64(s->sew, vreg_ofs(s, a->rd),
                              MAXSZ(s), MAXSZ(s), dest);
-        tcg_temp_free_i64(dest);
         mark_vs_dirty(s);
     } else {
         static gen_helper_opivx * const fns[4] = {
@@ -3759,7 +3638,7 @@ static bool vcompress_vm_check(DisasContext *s, arg_r *a)
            require_align(a->rs2, s->lmul) &&
            (a->rd != a->rs2) &&
            !is_overlapped(a->rd, 1 << MAX(s->lmul, 0), a->rs1, 1) &&
-           (s->vstart == 0);
+           s->vstart_eq_zero;
 }
 
 static bool trans_vcompress_vm(DisasContext *s, arg_r *a)
@@ -3798,7 +3677,7 @@ static bool trans_##NAME(DisasContext *s, arg_##NAME * a)               \
         QEMU_IS_ALIGNED(a->rd, LEN) &&                                  \
         QEMU_IS_ALIGNED(a->rs2, LEN)) {                                 \
         uint32_t maxsz = (s->cfg_ptr->vlen >> 3) * LEN;                 \
-        if (s->vstart == 0) {                                           \
+        if (s->vstart_eq_zero) {                                        \
             /* EEW = 8 */                                               \
             tcg_gen_gvec_mov(MO_8, vreg_ofs(s, a->rd),                  \
                              vreg_ofs(s, a->rs2), maxsz, maxsz);        \

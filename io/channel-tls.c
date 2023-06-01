@@ -74,6 +74,9 @@ qio_channel_tls_new_server(QIOChannel *master,
     ioc = QIO_CHANNEL_TLS(object_new(TYPE_QIO_CHANNEL_TLS));
 
     ioc->master = master;
+    if (qio_channel_has_feature(master, QIO_CHANNEL_FEATURE_SHUTDOWN)) {
+        qio_channel_set_feature(QIO_CHANNEL(ioc), QIO_CHANNEL_FEATURE_SHUTDOWN);
+    }
     object_ref(OBJECT(master));
 
     ioc->session = qcrypto_tls_session_new(
@@ -446,6 +449,7 @@ qio_channel_tls_read_watch(QIOChannelTLS *tioc, GSource *source)
     object_ref(OBJECT(tioc));
 
     g_source_add_child_source(source, child);
+    g_source_unref(child);
 }
 
 static GSource *qio_channel_tls_create_watch(QIOChannel *ioc,

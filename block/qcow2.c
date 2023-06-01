@@ -118,8 +118,9 @@ static int qcow2_crypto_hdr_read_func(QCryptoBlock *block, size_t offset,
 }
 
 
-static int qcow2_crypto_hdr_init_func(QCryptoBlock *block, size_t headerlen,
-                                      void *opaque, Error **errp)
+static int coroutine_fn GRAPH_RDLOCK
+qcow2_crypto_hdr_init_func(QCryptoBlock *block, size_t headerlen, void *opaque,
+                           Error **errp)
 {
     BlockDriverState *bs = opaque;
     BDRVQcow2State *s = bs->opaque;
@@ -144,9 +145,7 @@ static int qcow2_crypto_hdr_init_func(QCryptoBlock *block, size_t headerlen,
      */
     clusterlen = size_to_clusters(s, headerlen) * s->cluster_size;
     assert(qcow2_pre_write_overlap_check(bs, 0, ret, clusterlen, false) == 0);
-    ret = bdrv_pwrite_zeroes(bs->file,
-                             ret,
-                             clusterlen, 0);
+    ret = bdrv_co_pwrite_zeroes(bs->file, ret, clusterlen, 0);
     if (ret < 0) {
         error_setg_errno(errp, -ret, "Could not zero fill encryption header");
         return -1;
@@ -156,9 +155,11 @@ static int qcow2_crypto_hdr_init_func(QCryptoBlock *block, size_t headerlen,
 }
 
 
-static int qcow2_crypto_hdr_write_func(QCryptoBlock *block, size_t offset,
-                                       const uint8_t *buf, size_t buflen,
-                                       void *opaque, Error **errp)
+/* The graph lock must be held when called in coroutine context */
+static int coroutine_mixed_fn
+qcow2_crypto_hdr_write_func(QCryptoBlock *block, size_t offset,
+                            const uint8_t *buf, size_t buflen,
+                            void *opaque, Error **errp)
 {
     BlockDriverState *bs = opaque;
     BDRVQcow2State *s = bs->opaque;
@@ -199,10 +200,10 @@ qcow2_extract_crypto_opts(QemuOpts *opts, const char *fmt, Error **errp)
  * unknown magic is skipped (future extension this version knows nothing about)
  * return 0 upon success, non-0 otherwise
  */
-static int qcow2_read_extensions(BlockDriverState *bs, uint64_t start_offset,
-                                 uint64_t end_offset, void **p_feature_table,
-                                 int flags, bool *need_update_header,
-                                 Error **errp)
+static int coroutine_fn GRAPH_RDLOCK
+qcow2_read_extensions(BlockDriverState *bs, uint64_t start_offset,
+                      uint64_t end_offset, void **p_feature_table,
+                      int flags, bool *need_update_header, Error **errp)
 {
     BDRVQcow2State *s = bs->opaque;
     QCowExtension ext;
@@ -228,7 +229,7 @@ static int qcow2_read_extensions(BlockDriverState *bs, uint64_t start_offset,
         printf("attempting to read extended header in offset %lu\n", offset);
 #endif
 
-        ret = bdrv_pread(bs->file, offset, sizeof(ext), &ext, 0);
+        ret = bdrv_co_pread(bs->file, offset, sizeof(ext), &ext, 0);
         if (ret < 0) {
             error_setg_errno(errp, -ret, "qcow2_read_extension: ERROR: "
                              "pread fail from offset %" PRIu64, offset);
@@ -256,7 +257,7 @@ static int qcow2_read_extensions(BlockDriverState *bs, uint64_t start_offset,
                            sizeof(bs->backing_format));
                 return 2;
             }
-            ret = bdrv_pread(bs->file, offset, ext.len, bs->backing_format, 0);
+            ret = bdrv_co_pread(bs->file, offset, ext.len, bs->backing_format, 0);
             if (ret < 0) {
                 error_setg_errno(errp, -ret, "ERROR: ext_backing_format: "
                                  "Could not read format name");
@@ -272,7 +273,7 @@ static int qcow2_read_extensions(BlockDriverState *bs, uint64_t start_offset,
         case QCOW2_EXT_MAGIC_FEATURE_TABLE:
             if (p_feature_table != NULL) {
                 void *feature_table = g_malloc0(ext.len + 2 * sizeof(Qcow2Feature));
-                ret = bdrv_pread(bs->file, offset, ext.len, feature_table, 0);
+                ret = bdrv_co_pread(bs->file, offset, ext.len, feature_table, 0);
                 if (ret < 0) {
                     error_setg_errno(errp, -ret, "ERROR: ext_feature_table: "
                                      "Could not read table");
@@ -298,7 +299,7 @@ static int qcow2_read_extensions(BlockDriverState *bs, uint64_t start_offset,
                 return -EINVAL;
             }
 
-            ret = bdrv_pread(bs->file, offset, ext.len, &s->crypto_header, 0);
+            ret = bdrv_co_pread(bs->file, offset, ext.len, &s->crypto_header, 0);
             if (ret < 0) {
                 error_setg_errno(errp, -ret,
                                  "Unable to read CRYPTO header extension");
@@ -354,7 +355,7 @@ static int qcow2_read_extensions(BlockDriverState *bs, uint64_t start_offset,
                 break;
             }
 
-            ret = bdrv_pread(bs->file, offset, ext.len, &bitmaps_ext, 0);
+            ret = bdrv_co_pread(bs->file, offset, ext.len, &bitmaps_ext, 0);
             if (ret < 0) {
                 error_setg_errno(errp, -ret, "bitmaps_ext: "
                                  "Could not read ext header");
@@ -418,7 +419,7 @@ static int qcow2_read_extensions(BlockDriverState *bs, uint64_t start_offset,
         case QCOW2_EXT_MAGIC_DATA_FILE:
         {
             s->image_data_file = g_malloc0(ext.len + 1);
-            ret = bdrv_pread(bs->file, offset, ext.len, s->image_data_file, 0);
+            ret = bdrv_co_pread(bs->file, offset, ext.len, s->image_data_file, 0);
             if (ret < 0) {
                 error_setg_errno(errp, -ret,
                                  "ERROR: Could not read data file name");
@@ -442,7 +443,7 @@ static int qcow2_read_extensions(BlockDriverState *bs, uint64_t start_offset,
                 uext->len = ext.len;
                 QLIST_INSERT_HEAD(&s->unknown_header_ext, uext, next);
 
-                ret = bdrv_pread(bs->file, offset, uext->len, uext->data, 0);
+                ret = bdrv_co_pread(bs->file, offset, uext->len, uext->data, 0);
                 if (ret < 0) {
                     error_setg_errno(errp, -ret, "ERROR: unknown extension: "
                                      "Could not read data");
@@ -1241,8 +1242,9 @@ static void qcow2_update_options_abort(BlockDriverState *bs,
     qapi_free_QCryptoBlockOpenOptions(r->crypto_opts);
 }
 
-static int qcow2_update_options(BlockDriverState *bs, QDict *options,
-                                int flags, Error **errp)
+static int coroutine_fn
+qcow2_update_options(BlockDriverState *bs, QDict *options, int flags,
+                     Error **errp)
 {
     Qcow2ReopenState r = {};
     int ret;
@@ -1617,9 +1619,11 @@ qcow2_do_open(BlockDriverState *bs, QDict *options, int flags,
 
     if (open_data_file) {
         /* Open external data file */
+        bdrv_graph_co_rdunlock();
         s->data_file = bdrv_co_open_child(NULL, options, "data-file", bs,
                                           &child_of_bds, BDRV_CHILD_DATA,
                                           true, errp);
+        bdrv_graph_co_rdlock();
         if (*errp) {
             ret = -EINVAL;
             goto fail;
@@ -1627,10 +1631,12 @@ qcow2_do_open(BlockDriverState *bs, QDict *options, int flags,
 
         if (s->incompatible_features & QCOW2_INCOMPAT_DATA_FILE) {
             if (!s->data_file && s->image_data_file) {
+                bdrv_graph_co_rdunlock();
                 s->data_file = bdrv_co_open_child(s->image_data_file, options,
                                                   "data-file", bs,
                                                   &child_of_bds,
                                                   BDRV_CHILD_DATA, false, errp);
+                bdrv_graph_co_rdlock();
                 if (!s->data_file) {
                     ret = -EINVAL;
                     goto fail;
@@ -1855,7 +1861,9 @@ qcow2_do_open(BlockDriverState *bs, QDict *options, int flags,
  fail:
     g_free(s->image_data_file);
     if (open_data_file && has_data_file(bs)) {
+        bdrv_graph_co_rdunlock();
         bdrv_unref_child(bs, s->data_file);
+        bdrv_graph_co_rdlock();
         s->data_file = NULL;
     }
     g_free(s->unknown_header_fields);
@@ -1890,12 +1898,14 @@ static void coroutine_fn qcow2_open_entry(void *opaque)
     QCow2OpenCo *qoc = opaque;
     BDRVQcow2State *s = qoc->bs->opaque;
 
-    assume_graph_lock(); /* FIXME */
+    GRAPH_RDLOCK_GUARD();
 
     qemu_co_mutex_lock(&s->lock);
     qoc->ret = qcow2_do_open(qoc->bs, qoc->options, qoc->flags, true,
                              qoc->errp);
     qemu_co_mutex_unlock(&s->lock);
+
+    aio_wait_kick();
 }
 
 static int qcow2_open(BlockDriverState *bs, QDict *options, int flags,
@@ -1919,14 +1929,13 @@ static int qcow2_open(BlockDriverState *bs, QDict *options, int flags,
     /* Initialise locks */
     qemu_co_mutex_init(&s->lock);
 
-    if (qemu_in_coroutine()) {
-        /* From bdrv_co_create.  */
-        qcow2_open_entry(&qoc);
-    } else {
-        assert(qemu_get_current_aio_context() == qemu_get_aio_context());
-        qemu_coroutine_enter(qemu_coroutine_create(qcow2_open_entry, &qoc));
-        BDRV_POLL_WHILE(bs, qoc.ret == -EINPROGRESS);
-    }
+    assert(!qemu_in_coroutine());
+    assert(qemu_get_current_aio_context() == qemu_get_aio_context());
+
+    aio_co_enter(bdrv_get_aio_context(bs),
+                 qemu_coroutine_create(qcow2_open_entry, &qoc));
+    AIO_WAIT_WHILE_UNLOCKED(NULL, qoc.ret == -EINPROGRESS);
+
     return qoc.ret;
 }
 
@@ -2088,11 +2097,10 @@ static void qcow2_join_options(QDict *options, QDict *old_options)
     }
 }
 
-static int coroutine_fn qcow2_co_block_status(BlockDriverState *bs,
-                                              bool want_zero,
-                                              int64_t offset, int64_t count,
-                                              int64_t *pnum, int64_t *map,
-                                              BlockDriverState **file)
+static int coroutine_fn GRAPH_RDLOCK
+qcow2_co_block_status(BlockDriverState *bs, bool want_zero, int64_t offset,
+                      int64_t count, int64_t *pnum, int64_t *map,
+                      BlockDriverState **file)
 {
     BDRVQcow2State *s = bs->opaque;
     uint64_t host_offset;
@@ -3140,9 +3148,10 @@ static int qcow2_change_backing_file(BlockDriverState *bs,
     return qcow2_update_header(bs);
 }
 
-static int qcow2_set_up_encryption(BlockDriverState *bs,
-                                   QCryptoBlockCreateOptions *cryptoopts,
-                                   Error **errp)
+static int coroutine_fn GRAPH_RDLOCK
+qcow2_set_up_encryption(BlockDriverState *bs,
+                        QCryptoBlockCreateOptions *cryptoopts,
+                        Error **errp)
 {
     BDRVQcow2State *s = bs->opaque;
     QCryptoBlock *crypto = NULL;
@@ -3234,7 +3243,7 @@ preallocate_co(BlockDriverState *bs, uint64_t offset, uint64_t new_length,
      * all of the allocated clusters (otherwise we get failing reads after
      * EOF). Extend the image to the last allocated sector.
      */
-    file_length = bdrv_getlength(s->data_file->bs);
+    file_length = bdrv_co_getlength(s->data_file->bs);
     if (file_length < 0) {
         error_setg_errno(errp, -file_length, "Could not get file size");
         ret = file_length;
@@ -3429,7 +3438,7 @@ static uint64_t qcow2_opt_get_refcount_bits_del(QemuOpts *opts, int version,
     return refcount_bits;
 }
 
-static int coroutine_fn
+static int coroutine_fn GRAPH_UNLOCKED
 qcow2_co_create(BlockdevCreateOptions *create_options, Error **errp)
 {
     BlockdevCreateOptionsQcow2 *qcow2_opts;
@@ -3705,7 +3714,7 @@ qcow2_co_create(BlockdevCreateOptions *create_options, Error **errp)
         goto out;
     }
 
-    blk_unref(blk);
+    blk_co_unref(blk);
     blk = NULL;
 
     /*
@@ -3727,8 +3736,10 @@ qcow2_co_create(BlockdevCreateOptions *create_options, Error **errp)
         goto out;
     }
 
+    bdrv_graph_co_rdlock();
     ret = qcow2_alloc_clusters(blk_bs(blk), 3 * cluster_size);
     if (ret < 0) {
+        bdrv_graph_co_rdunlock();
         error_setg_errno(errp, -ret, "Could not allocate clusters for qcow2 "
                          "header and refcount table");
         goto out;
@@ -3746,6 +3757,8 @@ qcow2_co_create(BlockdevCreateOptions *create_options, Error **errp)
 
     /* Create a full header (including things like feature table) */
     ret = qcow2_update_header(blk_bs(blk));
+    bdrv_graph_co_rdunlock();
+
     if (ret < 0) {
         error_setg_errno(errp, -ret, "Could not update qcow2 header");
         goto out;
@@ -3779,13 +3792,16 @@ qcow2_co_create(BlockdevCreateOptions *create_options, Error **errp)
 
     /* Want encryption? There you go. */
     if (qcow2_opts->encrypt) {
+        bdrv_graph_co_rdlock();
         ret = qcow2_set_up_encryption(blk_bs(blk), qcow2_opts->encrypt, errp);
+        bdrv_graph_co_rdunlock();
+
         if (ret < 0) {
             goto out;
         }
     }
 
-    blk_unref(blk);
+    blk_co_unref(blk);
     blk = NULL;
 
     /* Reopen the image without BDRV_O_NO_FLUSH to flush it before returning.
@@ -3810,13 +3826,13 @@ qcow2_co_create(BlockdevCreateOptions *create_options, Error **errp)
 
     ret = 0;
 out:
-    blk_unref(blk);
-    bdrv_unref(bs);
-    bdrv_unref(data_bs);
+    blk_co_unref(blk);
+    bdrv_co_unref(bs);
+    bdrv_co_unref(data_bs);
     return ret;
 }
 
-static int coroutine_fn GRAPH_RDLOCK
+static int coroutine_fn GRAPH_UNLOCKED
 qcow2_co_create_opts(BlockDriver *drv, const char *filename, QemuOpts *opts,
                      Error **errp)
 {
@@ -3936,15 +3952,17 @@ qcow2_co_create_opts(BlockDriver *drv, const char *filename, QemuOpts *opts,
     ret = qcow2_co_create(create_options, errp);
 finish:
     if (ret < 0) {
+        bdrv_graph_co_rdlock();
         bdrv_co_delete_file_noerr(bs);
         bdrv_co_delete_file_noerr(data_bs);
+        bdrv_graph_co_rdunlock();
     } else {
         ret = 0;
     }
 
     qobject_unref(qdict);
-    bdrv_unref(bs);
-    bdrv_unref(data_bs);
+    bdrv_co_unref(bs);
+    bdrv_co_unref(data_bs);
     qapi_free_BlockdevCreateOptions(create_options);
     return ret;
 }
@@ -4097,7 +4115,7 @@ qcow2_co_copy_range_from(BlockDriverState *bs,
         case QCOW2_SUBCLUSTER_UNALLOCATED_PLAIN:
         case QCOW2_SUBCLUSTER_UNALLOCATED_ALLOC:
             if (bs->backing && bs->backing->bs) {
-                int64_t backing_length = bdrv_getlength(bs->backing->bs);
+                int64_t backing_length = bdrv_co_getlength(bs->backing->bs);
                 if (src_offset >= backing_length) {
                     cur_write_flags |= BDRV_REQ_ZERO_WRITE;
                 } else {
@@ -4292,7 +4310,7 @@ qcow2_co_truncate(BlockDriverState *bs, int64_t offset, bool exact,
             goto fail;
         }
 
-        old_file_size = bdrv_getlength(bs->file->bs);
+        old_file_size = bdrv_co_getlength(bs->file->bs);
         if (old_file_size < 0) {
             error_setg_errno(errp, -old_file_size,
                              "Failed to inquire current file length");
@@ -4385,7 +4403,7 @@ qcow2_co_truncate(BlockDriverState *bs, int64_t offset, bool exact,
             break;
         }
 
-        old_file_size = bdrv_getlength(bs->file->bs);
+        old_file_size = bdrv_co_getlength(bs->file->bs);
         if (old_file_size < 0) {
             error_setg_errno(errp, -old_file_size,
                              "Failed to inquire current file length");
@@ -4693,7 +4711,7 @@ qcow2_co_pwritev_compressed_part(BlockDriverState *bs,
          * align end of file to a sector boundary to ease reading with
          * sector based I/Os
          */
-        int64_t len = bdrv_getlength(bs->file->bs);
+        int64_t len = bdrv_co_getlength(bs->file->bs);
         if (len < 0) {
             return len;
         }

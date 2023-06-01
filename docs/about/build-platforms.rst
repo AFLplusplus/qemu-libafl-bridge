@@ -67,7 +67,8 @@ Non-supported architectures may be removed in the future following the
 Linux OS, macOS, FreeBSD, NetBSD, OpenBSD
 -----------------------------------------
 
-The project aims to support the most recent major version at all times. Support
+The project aims to support the most recent major version at all times for
+up to five years after its initial release. Support
 for the previous major version will be dropped 2 years after the new major
 version is released or when the vendor itself drops support, whichever comes
 first. In this context, third-party efforts to extend the lifetime of a distro
@@ -97,7 +98,7 @@ Python runtime
   option of the ``configure`` script to point QEMU to a supported
   version of the Python runtime.
 
-  As of QEMU |version|, the minimum supported version of Python is 3.6.
+  As of QEMU |version|, the minimum supported version of Python is 3.7.
 
 Python build dependencies
   Some of QEMU's build dependencies are written in Python.  Usually these

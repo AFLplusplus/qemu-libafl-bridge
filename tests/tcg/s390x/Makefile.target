@@ -2,6 +2,9 @@ S390X_SRC=$(SRC_PATH)/tests/tcg/s390x
 VPATH+=$(S390X_SRC)
 CFLAGS+=-march=zEC12 -m64
 
+%.o: %.c
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c $< -o $@
+
 config-cc.mak: Makefile
 	$(quiet-@)( \
 	    $(call cc-option,-march=z14, CROSS_CC_HAS_Z14); \
@@ -28,9 +31,20 @@ TESTS+=div
 TESTS+=clst
 TESTS+=long-double
 TESTS+=cdsg
+TESTS+=chrl
+TESTS+=rxsbg
+TESTS+=ex-relative-long
+TESTS+=ex-branch
 
 cdsg: CFLAGS+=-pthread
 cdsg: LDFLAGS+=-pthread
+
+rxsbg: CFLAGS+=-O2
+
+include $(S390X_SRC)/pgm-specification.mak
+$(PGM_SPECIFICATION_TESTS): pgm-specification-user.o
+$(PGM_SPECIFICATION_TESTS): LDFLAGS+=pgm-specification-user.o
+TESTS += $(PGM_SPECIFICATION_TESTS)
 
 Z13_TESTS=vistr
 $(Z13_TESTS): CFLAGS+=-march=z13 -O2
@@ -51,7 +65,7 @@ $(Z15_TESTS): CFLAGS+=-march=z15 -O2
 TESTS+=$(Z15_TESTS)
 endif
 
-ifneq ($(HAVE_GDB_BIN),)
+ifeq ($(HOST_GDB_SUPPORTS_ARCH),y)
 GDB_SCRIPT=$(SRC_PATH)/tests/guest-debug/run-test.py
 
 run-gdbstub-signals-s390x: signals-s390x

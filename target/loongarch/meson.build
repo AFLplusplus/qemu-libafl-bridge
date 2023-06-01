@@ -11,11 +11,13 @@ loongarch_tcg_ss.add(files(
   'op_helper.c',
   'translate.c',
   'gdbstub.c',
+  'lsx_helper.c',
 ))
 loongarch_tcg_ss.add(zlib)
 
 loongarch_softmmu_ss = ss.source_set()
 loongarch_softmmu_ss.add(files(
+  'loongarch-qmp-cmds.c',
   'machine.c',
   'tlb_helper.c',
   'constant_timer.c',

@@ -20,6 +20,7 @@
 #include "monitor/hmp.h"
 #include "monitor/monitor.h"
 #include "exec/memory.h"
+#include "exec/target_page.h"
 #include "hw/boards.h"
 #include "sysemu/kvm.h"
 #include "trace.h"
@@ -231,18 +232,18 @@ bool dirtylimit_vcpu_index_valid(int cpu_index)
              cpu_index >= ms->smp.max_cpus);
 }
 
-static inline int64_t dirtylimit_dirty_ring_full_time(uint64_t dirtyrate)
+static uint64_t dirtylimit_dirty_ring_full_time(uint64_t dirtyrate)
 {
     static uint64_t max_dirtyrate;
-    uint32_t dirty_ring_size = kvm_dirty_ring_size();
-    uint64_t dirty_ring_size_meory_MB =
-        dirty_ring_size * TARGET_PAGE_SIZE >> 20;
+    uint64_t dirty_ring_size_MiB;
+
+    dirty_ring_size_MiB = qemu_target_pages_to_MiB(kvm_dirty_ring_size());
 
     if (max_dirtyrate < dirtyrate) {
         max_dirtyrate = dirtyrate;
     }
 
-    return dirty_ring_size_meory_MB * 1000000 / max_dirtyrate;
+    return dirty_ring_size_MiB * 1000000 / max_dirtyrate;
 }
 
 static inline bool dirtylimit_done(uint64_t quota,

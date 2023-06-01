@@ -7,14 +7,14 @@
 FROM registry.fedoraproject.org/fedora:37
 
 RUN dnf install -y nosync && \
-    echo -e '#!/bin/sh\n\
+    printf '#!/bin/sh\n\
 if test -d /usr/lib64\n\
 then\n\
     export LD_PRELOAD=/usr/lib64/nosync/nosync.so\n\
 else\n\
     export LD_PRELOAD=/usr/lib/nosync/nosync.so\n\
 fi\n\
-exec "$@"' > /usr/bin/nosync && \
+exec "$@"\n' > /usr/bin/nosync && \
     chmod +x /usr/bin/nosync && \
     nosync dnf update -y && \
     nosync dnf install -y \
@@ -43,7 +43,6 @@ exec "$@"' > /usr/bin/nosync && \
                gcc \
                gcc-c++ \
                gcovr \
-               genisoimage \
                gettext \
                git \
                glib2-devel \
@@ -90,6 +89,7 @@ exec "$@"' > /usr/bin/nosync && \
                make \
                mesa-libgbm-devel \
                meson \
+               mtools \
                ncurses-devel \
                nettle-devel \
                ninja-build \
@@ -110,9 +110,9 @@ exec "$@"' > /usr/bin/nosync && \
                python3-sphinx \
                python3-sphinx_rtd_theme \
                rdma-core-devel \
-               rpm \
                sed \
                snappy-devel \
+               socat \
                sparse \
                spice-protocol \
                spice-server-devel \
@@ -128,8 +128,10 @@ exec "$@"' > /usr/bin/nosync && \
                which \
                xen-devel \
                xfsprogs-devel \
+               xorriso \
                zlib-devel \
-               zlib-static && \
+               zlib-static \
+               zstd && \
     nosync dnf autoremove -y && \
     nosync dnf clean all -y && \
     rpm -qa | sort > /packages.txt && \
@@ -145,3 +147,8 @@ ENV LANG "en_US.UTF-8"
 ENV MAKE "/usr/bin/make"
 ENV NINJA "/usr/bin/ninja"
 ENV PYTHON "/usr/bin/python3"
+# As a final step configure the user (if env is defined)
+ARG USER
+ARG UID
+RUN if [ "${USER}" ]; then \
+  id ${USER} 2>/dev/null || useradd -u ${UID} -U ${USER}; fi

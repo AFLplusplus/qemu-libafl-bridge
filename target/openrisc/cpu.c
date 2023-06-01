@@ -22,6 +22,8 @@
 #include "qemu/qemu-print.h"
 #include "cpu.h"
 #include "exec/exec-all.h"
+#include "fpu/softfloat-helpers.h"
+#include "tcg/tcg.h"
 
 static void openrisc_cpu_set_pc(CPUState *cs, vaddr value)
 {
@@ -43,7 +45,8 @@ static void openrisc_cpu_synchronize_from_tb(CPUState *cs,
 {
     OpenRISCCPU *cpu = OPENRISC_CPU(cs);
 
-    cpu->env.pc = tb_pc(tb);
+    tcg_debug_assert(!(cs->tcg_cflags & CF_PCREL));
+    cpu->env.pc = tb->pc;
 }
 
 static void openrisc_restore_state_to_opc(CPUState *cs,
@@ -87,6 +90,9 @@ static void openrisc_cpu_reset_hold(Object *obj)
     cpu->env.lock_addr = -1;
     s->exception_index = -1;
     cpu_set_fpcsr(&cpu->env, 0);
+
+    set_float_detect_tininess(float_tininess_before_rounding,
+                              &cpu->env.fp_status);
 
 #ifndef CONFIG_USER_ONLY
     cpu->env.picmr = 0x00000000;

@@ -25,7 +25,6 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
                       findutils \
                       flex \
                       gcovr \
-                      genisoimage \
                       gettext \
                       git \
                       hostname \
@@ -37,6 +36,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
                       locales \
                       make \
                       meson \
+                      mtools \
                       ncat \
                       ninja-build \
                       openssh-client \
@@ -52,10 +52,13 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
                       python3-yaml \
                       rpm2cpio \
                       sed \
+                      socat \
                       sparse \
                       tar \
                       tesseract-ocr \
-                      tesseract-ocr-eng && \
+                      tesseract-ocr-eng \
+                      xorriso \
+                      zstd && \
     eatmydata apt-get autoremove -y && \
     eatmydata apt-get autoclean -y && \
     sed -Ei 's,^# (en_US\.UTF-8 .*)$,\1,' /etc/locale.gen && \
@@ -145,7 +148,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     eatmydata apt-get autoremove -y && \
     eatmydata apt-get autoclean -y && \
     mkdir -p /usr/local/share/meson/cross && \
-    echo "[binaries]\n\
+    printf "[binaries]\n\
 c = '/usr/bin/arm-linux-gnueabihf-gcc'\n\
 ar = '/usr/bin/arm-linux-gnueabihf-gcc-ar'\n\
 strip = '/usr/bin/arm-linux-gnueabihf-strip'\n\
@@ -155,7 +158,7 @@ pkgconfig = '/usr/bin/arm-linux-gnueabihf-pkg-config'\n\
 system = 'linux'\n\
 cpu_family = 'arm'\n\
 cpu = 'armhf'\n\
-endian = 'little'" > /usr/local/share/meson/cross/arm-linux-gnueabihf && \
+endian = 'little'\n" > /usr/local/share/meson/cross/arm-linux-gnueabihf && \
     dpkg-query --showformat '${Package}_${Version}_${Architecture}\n' --show > /packages.txt && \
     mkdir -p /usr/libexec/ccache-wrappers && \
     ln -s /usr/bin/ccache /usr/libexec/ccache-wrappers/arm-linux-gnueabihf-c++ && \
@@ -167,3 +170,8 @@ ENV ABI "arm-linux-gnueabihf"
 ENV MESON_OPTS "--cross-file=arm-linux-gnueabihf"
 ENV QEMU_CONFIGURE_OPTS --cross-prefix=arm-linux-gnueabihf-
 ENV DEF_TARGET_LIST arm-softmmu,arm-linux-user
+# As a final step configure the user (if env is defined)
+ARG USER
+ARG UID
+RUN if [ "${USER}" ]; then \
+  id ${USER} 2>/dev/null || useradd -u ${UID} -U ${USER}; fi

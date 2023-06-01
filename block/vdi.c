@@ -734,8 +734,9 @@ nonallocating_write:
     return ret;
 }
 
-static int coroutine_fn vdi_co_do_create(BlockdevCreateOptions *create_options,
-                                         size_t block_size, Error **errp)
+static int coroutine_fn GRAPH_UNLOCKED
+vdi_co_do_create(BlockdevCreateOptions *create_options, size_t block_size,
+                 Error **errp)
 {
     BlockdevCreateOptionsVdi *vdi_opts;
     int ret = 0;
@@ -886,19 +887,19 @@ static int coroutine_fn vdi_co_do_create(BlockdevCreateOptions *create_options,
 
     ret = 0;
 exit:
-    blk_unref(blk);
-    bdrv_unref(bs_file);
+    blk_co_unref(blk);
+    bdrv_co_unref(bs_file);
     g_free(bmap);
     return ret;
 }
 
-static int coroutine_fn vdi_co_create(BlockdevCreateOptions *create_options,
-                                      Error **errp)
+static int coroutine_fn GRAPH_UNLOCKED
+vdi_co_create(BlockdevCreateOptions *create_options, Error **errp)
 {
     return vdi_co_do_create(create_options, DEFAULT_CLUSTER_SIZE, errp);
 }
 
-static int coroutine_fn GRAPH_RDLOCK
+static int coroutine_fn GRAPH_UNLOCKED
 vdi_co_create_opts(BlockDriver *drv, const char *filename,
                    QemuOpts *opts, Error **errp)
 {
@@ -975,7 +976,7 @@ vdi_co_create_opts(BlockDriver *drv, const char *filename,
 done:
     qobject_unref(qdict);
     qapi_free_BlockdevCreateOptions(create_options);
-    bdrv_unref(bs_file);
+    bdrv_co_unref(bs_file);
     return ret;
 }
 

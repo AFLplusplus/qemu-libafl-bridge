@@ -68,7 +68,7 @@ void qemu_file_set_hooks(QEMUFile *f, const QEMUFileHooks *hooks);
 int qemu_fclose(QEMUFile *f);
 
 /*
- * qemu_file_total_transferred:
+ * qemu_file_transferred:
  *
  * Report the total number of bytes transferred with
  * this file.
@@ -83,19 +83,19 @@ int qemu_fclose(QEMUFile *f);
  *
  * Returns: the total bytes transferred
  */
-int64_t qemu_file_total_transferred(QEMUFile *f);
+uint64_t qemu_file_transferred(QEMUFile *f);
 
 /*
- * qemu_file_total_transferred_fast:
+ * qemu_file_transferred_fast:
  *
- * As qemu_file_total_transferred except for writable
+ * As qemu_file_transferred except for writable
  * files, where no flush is performed and the reported
  * amount will include the size of any queued buffers,
  * on top of the amount actually transferred.
  *
  * Returns: the total bytes transferred and queued
  */
-int64_t qemu_file_total_transferred_fast(QEMUFile *f);
+uint64_t qemu_file_transferred_fast(QEMUFile *f);
 
 /*
  * put_buffer without copying the buffer.
@@ -108,18 +108,19 @@ bool qemu_file_is_writable(QEMUFile *f);
 
 #include "migration/qemu-file-types.h"
 
-size_t qemu_peek_buffer(QEMUFile *f, uint8_t **buf, size_t size, size_t offset);
-size_t qemu_get_buffer_in_place(QEMUFile *f, uint8_t **buf, size_t size);
+size_t coroutine_mixed_fn qemu_peek_buffer(QEMUFile *f, uint8_t **buf, size_t size, size_t offset);
+size_t coroutine_mixed_fn qemu_get_buffer_in_place(QEMUFile *f, uint8_t **buf, size_t size);
 ssize_t qemu_put_compression_data(QEMUFile *f, z_stream *stream,
                                   const uint8_t *p, size_t size);
 int qemu_put_qemu_file(QEMUFile *f_des, QEMUFile *f_src);
+bool qemu_file_buffer_empty(QEMUFile *file);
 
 /*
  * Note that you can only peek continuous bytes from where the current pointer
  * is; you aren't guaranteed to be able to peak to +n bytes unless you've
  * previously peeked +n-1.
  */
-int qemu_peek_byte(QEMUFile *f, int offset);
+int coroutine_mixed_fn qemu_peek_byte(QEMUFile *f, int offset);
 void qemu_file_skip(QEMUFile *f, int size);
 /*
  * qemu_file_credit_transfer:
@@ -129,17 +130,6 @@ void qemu_file_skip(QEMUFile *f, int size);
  * accounting information tracks the total migration traffic.
  */
 void qemu_file_credit_transfer(QEMUFile *f, size_t size);
-void qemu_file_reset_rate_limit(QEMUFile *f);
-/*
- * qemu_file_acct_rate_limit:
- *
- * Report on a number of bytes the have been transferred
- * out of band from the main file object I/O methods, and
- * need to be applied to the rate limiting calcuations
- */
-void qemu_file_acct_rate_limit(QEMUFile *f, int64_t len);
-void qemu_file_set_rate_limit(QEMUFile *f, int64_t new_rate);
-int64_t qemu_file_get_rate_limit(QEMUFile *f);
 int qemu_file_get_error_obj(QEMUFile *f, Error **errp);
 int qemu_file_get_error_obj_any(QEMUFile *f1, QEMUFile *f2, Error **errp);
 void qemu_file_set_error_obj(QEMUFile *f, int ret, Error *err);

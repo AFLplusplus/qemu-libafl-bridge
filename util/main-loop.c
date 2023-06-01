@@ -252,10 +252,6 @@ static int max_priority;
 static int glib_pollfds_idx;
 static int glib_n_poll_fds;
 
-void qemu_fd_register(int fd)
-{
-}
-
 static void glib_pollfds_fill(int64_t *cur_timeout)
 {
     GMainContext *context = g_main_context_default();
@@ -412,13 +408,6 @@ void qemu_del_wait_object(HANDLE handle, WaitObjectFunc *func, void *opaque)
     if (found) {
         w->num--;
     }
-}
-
-void qemu_fd_register(int fd)
-{
-    WSAEventSelect(fd, event_notifier_get_handle(&qemu_aio_context->notifier),
-                   FD_READ | FD_ACCEPT | FD_CLOSE |
-                   FD_CONNECT | FD_WRITE | FD_OOB);
 }
 
 static int pollfds_fill(GArray *pollfds, fd_set *rfds, fd_set *wfds,
@@ -616,9 +605,11 @@ void main_loop_wait(int nonblocking)
 
 /* Functions to operate on the main QEMU AioContext.  */
 
-QEMUBH *qemu_bh_new_full(QEMUBHFunc *cb, void *opaque, const char *name)
+QEMUBH *qemu_bh_new_full(QEMUBHFunc *cb, void *opaque, const char *name,
+                         MemReentrancyGuard *reentrancy_guard)
 {
-    return aio_bh_new_full(qemu_aio_context, cb, opaque, name);
+    return aio_bh_new_full(qemu_aio_context, cb, opaque, name,
+                           reentrancy_guard);
 }
 
 /*
@@ -653,14 +644,13 @@ void qemu_set_fd_handler(int fd,
                          void *opaque)
 {
     iohandler_init();
-    aio_set_fd_handler(iohandler_ctx, fd, false,
-                       fd_read, fd_write, NULL, NULL, opaque);
+    aio_set_fd_handler(iohandler_ctx, fd, fd_read, fd_write, NULL, NULL,
+                       opaque);
 }
 
 void event_notifier_set_handler(EventNotifier *e,
                                 EventNotifierHandler *handler)
 {
     iohandler_init();
-    aio_set_event_notifier(iohandler_ctx, e, false,
-                           handler, NULL, NULL);
+    aio_set_event_notifier(iohandler_ctx, e, handler, NULL, NULL);
 }

@@ -82,7 +82,6 @@ enum ImmUnionTag {
     VALUE,
     QEMU_TMP,
     IMM_PC,
-    IMM_NPC,
     IMM_CONSTEXT,
 };
 
@@ -185,7 +184,6 @@ typedef struct HexValue {
     unsigned bit_width;         /**< Bit width of the rvalue                  */
     HexSignedness signedness;   /**< Unsigned flag for the rvalue             */
     bool is_dotnew;             /**< rvalue of predicate type is dotnew?      */
-    bool is_manual;             /**< Opt out of automatic freeing of params   */
 } HexValue;
 
 /**

@@ -481,14 +481,14 @@ static inline void bswap128s(Int128 *s)
  * a possible structure and the native types.  Ease parameter passing
  * via use of the transparent union extension.
  */
-#ifdef CONFIG_INT128
+#ifdef CONFIG_INT128_TYPE
 typedef union {
-    Int128 s;
-    __int128_t i;
     __uint128_t u;
+    __int128_t i;
+    Int128 s;
 } Int128Alias __attribute__((transparent_union));
 #else
 typedef Int128 Int128Alias;
-#endif /* CONFIG_INT128 */
+#endif /* CONFIG_INT128_TYPE */
 
 #endif /* INT128_H */

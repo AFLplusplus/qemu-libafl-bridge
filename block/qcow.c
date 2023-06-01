@@ -800,8 +800,8 @@ static void qcow_close(BlockDriverState *bs)
     error_free(s->migration_blocker);
 }
 
-static int coroutine_fn qcow_co_create(BlockdevCreateOptions *opts,
-                                       Error **errp)
+static int coroutine_fn GRAPH_UNLOCKED
+qcow_co_create(BlockdevCreateOptions *opts, Error **errp)
 {
     BlockdevCreateOptionsQcow *qcow_opts;
     int header_size, backing_filename_len, l1_size, shift, i;
@@ -915,13 +915,13 @@ static int coroutine_fn qcow_co_create(BlockdevCreateOptions *opts,
     g_free(tmp);
     ret = 0;
 exit:
-    blk_unref(qcow_blk);
-    bdrv_unref(bs);
+    blk_co_unref(qcow_blk);
+    bdrv_co_unref(bs);
     qcrypto_block_free(crypto);
     return ret;
 }
 
-static int coroutine_fn GRAPH_RDLOCK
+static int coroutine_fn GRAPH_UNLOCKED
 qcow_co_create_opts(BlockDriver *drv, const char *filename,
                     QemuOpts *opts, Error **errp)
 {
@@ -1015,7 +1015,7 @@ qcow_co_create_opts(BlockDriver *drv, const char *filename,
 fail:
     g_free(backing_fmt);
     qobject_unref(qdict);
-    bdrv_unref(bs);
+    bdrv_co_unref(bs);
     qapi_free_BlockdevCreateOptions(create_options);
     return ret;
 }

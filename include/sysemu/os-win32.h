@@ -29,6 +29,7 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <ws2tcpip.h>
+#include "qemu/typedefs.h"
 
 #ifdef HAVE_AFUNIX_H
 #include <afunix.h>
@@ -164,9 +165,30 @@ static inline void qemu_funlockfile(FILE *f)
 #endif
 }
 
-/* We wrap all the sockets functions so that we can
- * set errno based on WSAGetLastError()
+/* Helper for WSAEventSelect, to report errors */
+bool qemu_socket_select(int sockfd, WSAEVENT hEventObject,
+                        long lNetworkEvents, Error **errp);
+
+bool qemu_socket_unselect(int sockfd, Error **errp);
+
+/* We wrap all the sockets functions so that we can set errno based on
+ * WSAGetLastError(), and use file-descriptors instead of SOCKET.
  */
+
+/*
+ * qemu_close_socket_osfhandle:
+ * @fd: a file descriptor associated with a SOCKET
+ *
+ * Close only the C run-time file descriptor, leave the SOCKET opened.
+ *
+ * Returns zero on success. On error, -1 is returned, and errno is set to
+ * indicate the error.
+ */
+int qemu_close_socket_osfhandle(int fd);
+
+#undef close
+#define close qemu_close_wrap
+int qemu_close_wrap(int fd);
 
 #undef connect
 #define connect qemu_connect_wrap
@@ -198,10 +220,6 @@ int qemu_shutdown_wrap(int sockfd, int how);
 #undef ioctlsocket
 #define ioctlsocket qemu_ioctlsocket_wrap
 int qemu_ioctlsocket_wrap(int fd, int req, void *val);
-
-#undef closesocket
-#define closesocket qemu_closesocket_wrap
-int qemu_closesocket_wrap(int fd);
 
 #undef getsockopt
 #define getsockopt qemu_getsockopt_wrap
@@ -240,6 +258,10 @@ ssize_t qemu_recv_wrap(int sockfd, void *buf, size_t len, int flags);
 #define recvfrom qemu_recvfrom_wrap
 ssize_t qemu_recvfrom_wrap(int sockfd, void *buf, size_t len, int flags,
                            struct sockaddr *addr, socklen_t *addrlen);
+
+EXCEPTION_DISPOSITION
+win32_close_exception_handler(struct _EXCEPTION_RECORD*, void*,
+                              struct _CONTEXT*, void*);
 
 #ifdef __cplusplus
 }

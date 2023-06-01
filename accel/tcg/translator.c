@@ -16,11 +16,35 @@
 #include "exec/log.h"
 #include "exec/translator.h"
 #include "exec/plugin-gen.h"
-#include "sysemu/replay.h"
+#include "exec/replay-core.h"
 
 //// --- Begin LibAFL code ---
 
 #include "tcg/tcg-internal.h"
+#include "tcg/tcg-temp-internal.h"
+
+// reintroduce this in QEMU
+static TCGv_i64 tcg_const_i64(int64_t val)
+{
+    TCGv_i64 t0;
+    t0 = tcg_temp_new_i64();
+    tcg_gen_movi_i64(t0, val);
+    return t0;
+}
+
+#if TARGET_LONG_BITS == 32
+static TCGv_i32 tcg_const_i32(int32_t val)
+{
+    TCGv_i32 t0;
+    t0 = tcg_temp_new_i32();
+    tcg_gen_movi_i32(t0, val);
+    return t0;
+}
+
+#define tcg_const_tl tcg_const_i32
+#else
+#define tcg_const_tl tcg_const_i64
+#endif
 
 extern target_ulong libafl_gen_cur_pc;
 
@@ -54,19 +78,6 @@ extern struct libafl_backdoor_hook* libafl_backdoor_hooks;
 
 //// --- End LibAFL code ---
 
-/* Pairs with tcg_clear_temp_count.
-   To be called by #TranslatorOps.{translate_insn,tb_stop} if
-   (1) the target is sufficiently clean to support reporting,
-   (2) as and when all temporaries are known to be consumed.
-   For most targets, (2) is at the end of translate_insn.  */
-void translator_loop_temp_check(DisasContextBase *db)
-{
-    if (tcg_check_temp_count()) {
-        qemu_log("warning: TCG temporary leaks before "
-                 TARGET_FMT_lx "\n", db->pc_next);
-    }
-}
-
 bool translator_use_goto_tb(DisasContextBase *db, target_ulong dest)
 {
     /* Suppress goto_tb if requested. */
@@ -78,7 +89,7 @@ bool translator_use_goto_tb(DisasContextBase *db, target_ulong dest)
     return ((db->pc_first ^ dest) & TARGET_PAGE_MASK) == 0;
 }
 
-void translator_loop(CPUState *cpu, TranslationBlock *tb, int max_insns,
+void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
                      target_ulong pc, void *host_pc,
                      const TranslatorOps *ops, DisasContextBase *db)
 {
@@ -91,7 +102,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int max_insns,
     db->pc_next = pc;
     db->is_jmp = DISAS_NEXT;
     db->num_insns = 0;
-    db->max_insns = max_insns;
+    db->max_insns = *max_insns;
     db->singlestep_enabled = cflags & CF_SINGLE_STEP;
     db->host_addr[0] = host_pc;
     db->host_addr[1] = NULL;
@@ -103,9 +114,6 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int max_insns,
     ops->init_disas_context(db, cpu);
     tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
 
-    /* Reset the temp count so that we can identify leaks */
-    tcg_clear_temp_count();
-
     /* Start translating.  */
     gen_tb_start(db->tb);
     ops->tb_start(db, cpu);
@@ -114,7 +122,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int max_insns,
     plugin_enabled = plugin_gen_tb_start(cpu, db, cflags & CF_MEMI_ONLY);
 
     while (true) {
-        db->num_insns++;
+        *max_insns = ++db->num_insns;
         ops->insn_start(db, cpu);
         tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
 
@@ -248,7 +256,6 @@ post_translate_insn:
     tb->size = db->pc_next - db->pc_first;
     tb->icount = db->num_insns;
 
-#ifdef DEBUG_DISAS
     if (qemu_loglevel_mask(CPU_LOG_TB_IN_ASM)
         && qemu_log_in_addr_range(db->pc_first)) {
         FILE *logfile = qemu_log_trylock();
@@ -259,7 +266,6 @@ post_translate_insn:
             qemu_log_unlock(logfile);
         }
     }
-#endif
 }
 
 static void *translator_access(CPUArchState *env, DisasContextBase *db,

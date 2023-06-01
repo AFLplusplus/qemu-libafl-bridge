@@ -32,28 +32,7 @@
 #include "qapi/qapi-types-migration.h"
 #include "exec/cpu-common.h"
 #include "io/channel.h"
-#include "qemu/stats64.h"
 
-/*
- * These are the migration statistic counters that need to be updated using
- * atomic ops (can be accessed by more than one thread).  Here since we
- * cannot modify MigrationStats directly to use Stat64 as it was defined in
- * the QAPI scheme, we define an internal structure to hold them, and we
- * propagate the real values when QMP queries happen.
- *
- * IOW, the corresponding fields within ram_counters on these specific
- * fields will be always zero and not being used at all; they're just
- * placeholders to make it QAPI-compatible.
- */
-typedef struct {
-    Stat64 transferred;
-    Stat64 duplicate;
-    Stat64 normal;
-    Stat64 postcopy_bytes;
-} MigrationAtomicStats;
-
-extern MigrationAtomicStats ram_atomic_counters;
-extern MigrationStats ram_counters;
 extern XBZRLECacheStats xbzrle_counters;
 extern CompressionStats compression_counters;
 
@@ -74,7 +53,6 @@ void mig_throttle_counter_reset(void);
 
 uint64_t ram_pagesize_summary(void);
 int ram_save_queue_pages(const char *rbname, ram_addr_t start, ram_addr_t len);
-void acct_update_position(QEMUFile *f, size_t size, bool zero);
 void ram_postcopy_migrated_memory_release(MigrationState *ms);
 /* For outgoing discard bitmap */
 void ram_postcopy_send_discard_bitmap(MigrationState *ms);
@@ -104,6 +82,7 @@ int colo_init_ram_cache(void);
 void colo_flush_ram_cache(void);
 void colo_release_ram_cache(void);
 void colo_incoming_start_dirty_log(void);
+void colo_record_bitmap(RAMBlock *block, ram_addr_t *normal, uint32_t pages);
 
 /* Background snapshot */
 bool ram_write_tracking_available(void);
@@ -111,7 +90,5 @@ bool ram_write_tracking_compatible(void);
 void ram_write_tracking_prepare(void);
 int ram_write_tracking_start(void);
 void ram_write_tracking_stop(void);
-
-void dirty_sync_missed_zero_copy(void);
 
 #endif

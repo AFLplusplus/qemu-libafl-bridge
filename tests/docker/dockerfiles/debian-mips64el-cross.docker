@@ -25,7 +25,6 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
                       findutils \
                       flex \
                       gcovr \
-                      genisoimage \
                       gettext \
                       git \
                       hostname \
@@ -37,6 +36,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
                       locales \
                       make \
                       meson \
+                      mtools \
                       ncat \
                       ninja-build \
                       openssh-client \
@@ -52,10 +52,13 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
                       python3-yaml \
                       rpm2cpio \
                       sed \
+                      socat \
                       sparse \
                       tar \
                       tesseract-ocr \
-                      tesseract-ocr-eng && \
+                      tesseract-ocr-eng \
+                      xorriso \
+                      zstd && \
     eatmydata apt-get autoremove -y && \
     eatmydata apt-get autoclean -y && \
     sed -Ei 's,^# (en_US\.UTF-8 .*)$,\1,' /etc/locale.gen && \
@@ -142,7 +145,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     eatmydata apt-get autoremove -y && \
     eatmydata apt-get autoclean -y && \
     mkdir -p /usr/local/share/meson/cross && \
-    echo "[binaries]\n\
+    printf "[binaries]\n\
 c = '/usr/bin/mips64el-linux-gnuabi64-gcc'\n\
 ar = '/usr/bin/mips64el-linux-gnuabi64-gcc-ar'\n\
 strip = '/usr/bin/mips64el-linux-gnuabi64-strip'\n\
@@ -152,7 +155,7 @@ pkgconfig = '/usr/bin/mips64el-linux-gnuabi64-pkg-config'\n\
 system = 'linux'\n\
 cpu_family = 'mips64'\n\
 cpu = 'mips64el'\n\
-endian = 'little'" > /usr/local/share/meson/cross/mips64el-linux-gnuabi64 && \
+endian = 'little'\n" > /usr/local/share/meson/cross/mips64el-linux-gnuabi64 && \
     dpkg-query --showformat '${Package}_${Version}_${Architecture}\n' --show > /packages.txt && \
     mkdir -p /usr/libexec/ccache-wrappers && \
     ln -s /usr/bin/ccache /usr/libexec/ccache-wrappers/mips64el-linux-gnuabi64-c++ && \
@@ -164,3 +167,8 @@ ENV ABI "mips64el-linux-gnuabi64"
 ENV MESON_OPTS "--cross-file=mips64el-linux-gnuabi64"
 ENV QEMU_CONFIGURE_OPTS --cross-prefix=mips64el-linux-gnuabi64-
 ENV DEF_TARGET_LIST mips64el-softmmu,mips64el-linux-user
+# As a final step configure the user (if env is defined)
+ARG USER
+ARG UID
+RUN if [ "${USER}" ]; then \
+  id ${USER} 2>/dev/null || useradd -u ${UID} -U ${USER}; fi

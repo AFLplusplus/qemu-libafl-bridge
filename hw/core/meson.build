@@ -41,17 +41,14 @@ softmmu_ss.add(files(
   'gpio.c',
   'loader.c',
   'machine-hmp-cmds.c',
+  'machine-qmp-cmds.c',
   'machine.c',
   'nmi.c',
   'null-machine.c',
+  'numa.c',
   'qdev-fw.c',
   'qdev-properties-system.c',
   'sysbus.c',
   'vm-change-state-handler.c',
   'clock-vmstate.c',
-))
-
-specific_ss.add(when: 'CONFIG_SOFTMMU', if_true: files(
-  'machine-qmp-cmds.c',
-  'numa.c',
 ))

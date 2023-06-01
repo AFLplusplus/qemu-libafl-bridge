@@ -967,8 +967,8 @@ static int calculate_rounded_image_size(BlockdevCreateOptionsVpc *vpc_opts,
     return 0;
 }
 
-static int coroutine_fn vpc_co_create(BlockdevCreateOptions *opts,
-                                      Error **errp)
+static int coroutine_fn GRAPH_UNLOCKED
+vpc_co_create(BlockdevCreateOptions *opts, Error **errp)
 {
     BlockdevCreateOptionsVpc *vpc_opts;
     BlockBackend *blk = NULL;
@@ -1082,12 +1082,12 @@ static int coroutine_fn vpc_co_create(BlockdevCreateOptions *opts,
     }
 
 out:
-    blk_unref(blk);
-    bdrv_unref(bs);
+    blk_co_unref(blk);
+    bdrv_co_unref(bs);
     return ret;
 }
 
-static int coroutine_fn GRAPH_RDLOCK
+static int coroutine_fn GRAPH_UNLOCKED
 vpc_co_create_opts(BlockDriver *drv, const char *filename,
                    QemuOpts *opts, Error **errp)
 {
@@ -1162,7 +1162,7 @@ vpc_co_create_opts(BlockDriver *drv, const char *filename,
 
 fail:
     qobject_unref(qdict);
-    bdrv_unref(bs);
+    bdrv_co_unref(bs);
     qapi_free_BlockdevCreateOptions(create_options);
     return ret;
 }

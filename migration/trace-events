@@ -186,6 +186,9 @@ process_incoming_migration_co_end(int ret, int ps) "ret=%d postcopy-state=%d"
 process_incoming_migration_co_postcopy_end_main(void) ""
 postcopy_preempt_enabled(bool value) "%d"
 
+# migration-stats
+migration_transferred_bytes(uint64_t qemu_file, uint64_t multifd) "qemu_file %" PRIu64 " multifd %" PRIu64
+
 # channel.c
 migration_set_incoming_channel(void *ioc, const char *ioctype) "ioc=%p ioctype=%s"
 migration_set_outgoing_channel(void *ioc, const char *ioctype, const char *hostname, void *err)  "ioc=%p ioctype=%s hostname=%s err=%p"
@@ -342,8 +345,8 @@ dirty_bitmap_load_success(void) ""
 # dirtyrate.c
 dirtyrate_set_state(const char *new_state) "new state %s"
 query_dirty_rate_info(const char *new_state) "current state %s"
-get_ramblock_vfn_hash(const char *idstr, uint64_t vfn, uint32_t crc) "ramblock name: %s, vfn: %"PRIu64 ", crc: %" PRIu32
-calc_page_dirty_rate(const char *idstr, uint32_t new_crc, uint32_t old_crc) "ramblock name: %s, new crc: %" PRIu32 ", old crc: %" PRIu32
+get_ramblock_vfn_hash(const char *idstr, uint64_t vfn, uint32_t hash) "ramblock name: %s, vfn: %"PRIu64 ", hash: %" PRIu32
+calc_page_dirty_rate(const char *idstr, uint32_t new_hash, uint32_t old_hash) "ramblock name: %s, new hash: %" PRIu32 ", old hash: %" PRIu32
 skip_sample_ramblock(const char *idstr, uint64_t ramblock_size) "ramblock name: %s, ramblock size: %" PRIu64
 find_page_matched(const char *idstr) "ramblock %s addr or size changed"
 dirtyrate_calculate(int64_t dirtyrate) "dirty rate: %" PRIi64 " MB/s"

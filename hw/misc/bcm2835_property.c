@@ -282,7 +282,17 @@ static void bcm2835_property_mbox_push(BCM2835PropertyState *s, uint32_t value)
             break;
 
         case 0x00050001: /* Get command line */
-            resplen = 0;
+            /*
+             * We follow the firmware behaviour: no NUL terminator is
+             * written to the buffer, and if the buffer is too short
+             * we report the required length in the response header
+             * and copy nothing to the buffer.
+             */
+            resplen = strlen(s->command_line);
+            if (bufsize >= resplen)
+                address_space_write(&s->dma_as, value + 12,
+                                    MEMTXATTRS_UNSPECIFIED, s->command_line,
+                                    resplen);
             break;
 
         default:
@@ -382,6 +392,13 @@ static void bcm2835_property_init(Object *obj)
 
     memory_region_init_io(&s->iomem, OBJECT(s), &bcm2835_property_ops, s,
                           TYPE_BCM2835_PROPERTY, 0x10);
+
+    /*
+     * bcm2835_property_ops call into bcm2835_mbox, which in-turn reads from
+     * iomem. As such, mark iomem as re-entracy safe.
+     */
+    s->iomem.disable_reentrancy_guard = true;
+
     sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->iomem);
     sysbus_init_irq(SYS_BUS_DEVICE(s), &s->mbox_irq);
 }
@@ -413,6 +430,7 @@ static void bcm2835_property_realize(DeviceState *dev, Error **errp)
 
 static Property bcm2835_property_props[] = {
     DEFINE_PROP_UINT32("board-rev", BCM2835PropertyState, board_rev, 0),
+    DEFINE_PROP_STRING("command-line", BCM2835PropertyState, command_line),
     DEFINE_PROP_END_OF_LIST()
 };
 

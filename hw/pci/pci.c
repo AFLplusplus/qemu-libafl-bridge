@@ -49,6 +49,9 @@
 #include "qemu/cutils.h"
 #include "pci-internal.h"
 
+#include "hw/xen/xen.h"
+#include "hw/i386/kvm/xen_evtchn.h"
+
 //#define DEBUG_PCI
 #ifdef DEBUG_PCI
 # define PCI_DPRINTF(format, ...)       printf(format, ## __VA_ARGS__)
@@ -76,6 +79,8 @@ static Property pci_props[] = {
     DEFINE_PROP_STRING("failover_pair_id", PCIDevice,
                        failover_pair_id),
     DEFINE_PROP_UINT32("acpi-index",  PCIDevice, acpi_index, 0),
+    DEFINE_PROP_BIT("x-pcie-err-unc-mask", PCIDevice, cap_present,
+                    QEMU_PCIE_ERR_UNC_MASK_BITNR, true),
     DEFINE_PROP_END_OF_LIST()
 };
 
@@ -91,6 +96,21 @@ static const VMStateDescription vmstate_pcibus = {
         VMSTATE_END_OF_LIST()
     }
 };
+
+static gint g_cmp_uint32(gconstpointer a, gconstpointer b, gpointer user_data)
+{
+    return a - b;
+}
+
+static GSequence *pci_acpi_index_list(void)
+{
+    static GSequence *used_acpi_index_list;
+
+    if (!used_acpi_index_list) {
+        used_acpi_index_list = g_sequence_new(NULL);
+    }
+    return used_acpi_index_list;
+}
 
 static void pci_init_bus_master(PCIDevice *pci_dev)
 {
@@ -279,9 +299,13 @@ static void pci_change_irq_level(PCIDevice *pci_dev, int irq_num, int change)
 {
     PCIBus *bus;
     for (;;) {
+        int dev_irq = irq_num;
         bus = pci_get_bus(pci_dev);
         assert(bus->map_irq);
         irq_num = bus->map_irq(pci_dev, irq_num);
+        trace_pci_route_irq(dev_irq, DEVICE(pci_dev)->canonical_path, irq_num,
+                            pci_bus_is_root(bus) ? "root-complex"
+                                    : DEVICE(bus->parent_dev)->canonical_path);
         if (bus->set_irq)
             break;
         pci_dev = bus->parent_dev;
@@ -319,6 +343,17 @@ static void pci_msi_trigger(PCIDevice *dev, MSIMessage msg)
 {
     MemTxAttrs attrs = {};
 
+    /*
+     * Xen uses the high bits of the address to contain some of the bits
+     * of the PIRQ#. Therefore we can't just send the write cycle and
+     * trust that it's caught by the APIC at 0xfee00000 because the
+     * target of the write might be e.g. 0x0x1000fee46000 for PIRQ#4166.
+     * So we intercept the delivery here instead of in kvm_send_msi().
+     */
+    if (xen_mode == XEN_EMULATE &&
+        xen_evtchn_deliver_pirq_msi(msg.address, msg.data)) {
+        return;
+    }
     attrs.requester_id = pci_requester_id(dev);
     address_space_stl_le(&dev->bus_master_as, msg.address, msg.data,
                          attrs, NULL);
@@ -988,6 +1023,9 @@ static void do_pci_unregister_device(PCIDevice *pci_dev)
     pci_get_bus(pci_dev)->devices[pci_dev->devfn] = NULL;
     pci_config_free(pci_dev);
 
+    if (xen_mode == XEN_EMULATE) {
+        xen_evtchn_remove_pci_device(pci_dev);
+    }
     if (memory_region_is_mapped(&pci_dev->bus_master_enable_region)) {
         memory_region_del_subregion(&pci_dev->bus_master_container_region,
                                     &pci_dev->bus_master_enable_region);
@@ -1078,6 +1116,21 @@ static bool pci_bus_devfn_available(PCIBus *bus, int devfn)
 static bool pci_bus_devfn_reserved(PCIBus *bus, int devfn)
 {
     return bus->slot_reserved_mask & (1UL << PCI_SLOT(devfn));
+}
+
+uint32_t pci_bus_get_slot_reserved_mask(PCIBus *bus)
+{
+    return bus->slot_reserved_mask;
+}
+
+void pci_bus_set_slot_reserved_mask(PCIBus *bus, uint32_t mask)
+{
+    bus->slot_reserved_mask |= mask;
+}
+
+void pci_bus_clear_slot_reserved_mask(PCIBus *bus, uint32_t mask)
+{
+    bus->slot_reserved_mask &= ~mask;
 }
 
 /* -1 for devfn means auto assign */
@@ -1225,6 +1278,17 @@ static void pci_qdev_unrealize(DeviceState *dev)
     do_pci_unregister_device(pci_dev);
 
     pci_dev->msi_trigger = NULL;
+
+    /*
+     * clean up acpi-index so it could reused by another device
+     */
+    if (pci_dev->acpi_index) {
+        GSequence *used_indexes = pci_acpi_index_list();
+
+        g_sequence_remove(g_sequence_lookup(used_indexes,
+                          GINT_TO_POINTER(pci_dev->acpi_index),
+                          g_cmp_uint32, NULL));
+    }
 }
 
 void pci_register_bar(PCIDevice *pci_dev, int region_num,
@@ -1600,8 +1664,12 @@ PCIINTxRoute pci_device_route_intx_to_irq(PCIDevice *dev, int pin)
     PCIBus *bus;
 
     do {
+        int dev_irq = pin;
         bus = pci_get_bus(dev);
         pin = bus->map_irq(dev, pin);
+        trace_pci_route_irq(dev_irq, DEVICE(dev)->canonical_path, pin,
+                            pci_bus_is_root(bus) ? "root-complex"
+                                    : DEVICE(bus->parent_dev)->canonical_path);
         dev = bus->parent_dev;
     } while (dev);
 
@@ -1648,7 +1716,7 @@ void pci_device_set_intx_routing_notifier(PCIDevice *dev,
  * 9.1: Interrupt routing. Table 9-1
  *
  * the PCI Express Base Specification, Revision 2.1
- * 2.2.8.1: INTx interrutp signaling - Rules
+ * 2.2.8.1: INTx interrupt signaling - Rules
  *          the Implementation Note
  *          Table 2-20
  */
@@ -1980,6 +2048,8 @@ PCIDevice *pci_find_device(PCIBus *bus, int bus_num, uint8_t devfn)
     return bus->devices[devfn];
 }
 
+#define ONBOARD_INDEX_MAX (16 * 1024 - 1)
+
 static void pci_qdev_realize(DeviceState *qdev, Error **errp)
 {
     PCIDevice *pci_dev = (PCIDevice *)qdev;
@@ -1988,6 +2058,35 @@ static void pci_qdev_realize(DeviceState *qdev, Error **errp)
     Error *local_err = NULL;
     bool is_default_rom;
     uint16_t class_id;
+
+    /*
+     * capped by systemd (see: udev-builtin-net_id.c)
+     * as it's the only known user honor it to avoid users
+     * misconfigure QEMU and then wonder why acpi-index doesn't work
+     */
+    if (pci_dev->acpi_index > ONBOARD_INDEX_MAX) {
+        error_setg(errp, "acpi-index should be less or equal to %u",
+                   ONBOARD_INDEX_MAX);
+        return;
+    }
+
+    /*
+     * make sure that acpi-index is unique across all present PCI devices
+     */
+    if (pci_dev->acpi_index) {
+        GSequence *used_indexes = pci_acpi_index_list();
+
+        if (g_sequence_lookup(used_indexes,
+                              GINT_TO_POINTER(pci_dev->acpi_index),
+                              g_cmp_uint32, NULL)) {
+            error_setg(errp, "a PCI device with acpi-index = %" PRIu32
+                       " already exist", pci_dev->acpi_index);
+            return;
+        }
+        g_sequence_insert_sorted(used_indexes,
+                                 GINT_TO_POINTER(pci_dev->acpi_index),
+                                 g_cmp_uint32, NULL);
+    }
 
     if (pci_dev->romsize != -1 && !is_power_of_2(pci_dev->romsize)) {
         error_setg(errp, "ROM size %u is not a power of two", pci_dev->romsize);
@@ -2210,15 +2309,14 @@ static void pci_add_option_rom(PCIDevice *pdev, bool is_default_rom,
                                Error **errp)
 {
     int64_t size;
-    char *path;
+    g_autofree char *path = NULL;
     void *ptr;
     char name[32];
     const VMStateDescription *vmsd;
 
-    if (!pdev->romfile)
+    if (!pdev->romfile || !strlen(pdev->romfile)) {
         return;
-    if (strlen(pdev->romfile) == 0)
-        return;
+    }
 
     if (!pdev->rom_bar) {
         /*
@@ -2253,23 +2351,20 @@ static void pci_add_option_rom(PCIDevice *pdev, bool is_default_rom,
     size = get_image_size(path);
     if (size < 0) {
         error_setg(errp, "failed to find romfile \"%s\"", pdev->romfile);
-        g_free(path);
         return;
     } else if (size == 0) {
         error_setg(errp, "romfile \"%s\" is empty", pdev->romfile);
-        g_free(path);
         return;
     } else if (size > 2 * GiB) {
         error_setg(errp, "romfile \"%s\" too large (size cannot exceed 2 GiB)",
                    pdev->romfile);
-        g_free(path);
         return;
     }
     if (pdev->romsize != -1) {
         if (size > pdev->romsize) {
-            error_setg(errp, "romfile \"%s\" (%u bytes) is too large for ROM size %u",
+            error_setg(errp, "romfile \"%s\" (%u bytes) "
+                       "is too large for ROM size %u",
                        pdev->romfile, (uint32_t)size, pdev->romsize);
-            g_free(path);
             return;
         }
     } else {
@@ -2277,21 +2372,18 @@ static void pci_add_option_rom(PCIDevice *pdev, bool is_default_rom,
     }
 
     vmsd = qdev_get_vmsd(DEVICE(pdev));
+    snprintf(name, sizeof(name), "%s.rom",
+             vmsd ? vmsd->name : object_get_typename(OBJECT(pdev)));
 
-    if (vmsd) {
-        snprintf(name, sizeof(name), "%s.rom", vmsd->name);
-    } else {
-        snprintf(name, sizeof(name), "%s.rom", object_get_typename(OBJECT(pdev)));
-    }
     pdev->has_rom = true;
-    memory_region_init_rom(&pdev->rom, OBJECT(pdev), name, pdev->romsize, &error_fatal);
+    memory_region_init_rom(&pdev->rom, OBJECT(pdev), name, pdev->romsize,
+                           &error_fatal);
+
     ptr = memory_region_get_ram_ptr(&pdev->rom);
     if (load_image_size(path, ptr, size) < 0) {
         error_setg(errp, "failed to load romfile \"%s\"", pdev->romfile);
-        g_free(path);
         return;
     }
-    g_free(path);
 
     if (is_default_rom) {
         /* Only the default rom images will be patched (if needed). */

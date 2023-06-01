@@ -64,8 +64,8 @@ struct vtd_as_key {
 struct vtd_iotlb_key {
     uint64_t gfn;
     uint32_t pasid;
-    uint32_t level;
     uint16_t sid;
+    uint8_t level;
 };
 
 static void vtd_address_space_refresh_all(IntelIOMMUState *s);
@@ -221,10 +221,11 @@ static gboolean vtd_iotlb_equal(gconstpointer v1, gconstpointer v2)
 static guint vtd_iotlb_hash(gconstpointer v)
 {
     const struct vtd_iotlb_key *key = v;
+    uint64_t hash64 = key->gfn | ((uint64_t)(key->sid) << VTD_IOTLB_SID_SHIFT) |
+        (uint64_t)(key->level - 1) << VTD_IOTLB_LVL_SHIFT |
+        (uint64_t)(key->pasid) << VTD_IOTLB_PASID_SHIFT;
 
-    return key->gfn | ((key->sid) << VTD_IOTLB_SID_SHIFT) |
-           (key->level) << VTD_IOTLB_LVL_SHIFT |
-           (key->pasid) << VTD_IOTLB_PASID_SHIFT;
+    return (guint)((hash64 >> 32) ^ (hash64 & 0xffffffffU));
 }
 
 static gboolean vtd_as_equal(gconstpointer v1, gconstpointer v2)
@@ -1530,13 +1531,17 @@ static int vtd_sync_shadow_page_table_range(VTDAddressSpace *vtd_as,
     return vtd_page_walk(s, ce, addr, addr + size, &info, vtd_as->pasid);
 }
 
-static int vtd_sync_shadow_page_table(VTDAddressSpace *vtd_as)
+static int vtd_address_space_sync(VTDAddressSpace *vtd_as)
 {
     int ret;
     VTDContextEntry ce;
     IOMMUNotifier *n;
 
-    if (!(vtd_as->iommu.iommu_notify_flags & IOMMU_NOTIFIER_IOTLB_EVENTS)) {
+    /* If no MAP notifier registered, we simply invalidate all the cache */
+    if (!vtd_as_has_map_notifier(vtd_as)) {
+        IOMMU_NOTIFIER_FOREACH(n, &vtd_as->iommu) {
+            memory_region_unmap_iommu_notifier_range(n);
+        }
         return 0;
     }
 
@@ -2000,7 +2005,7 @@ static void vtd_iommu_replay_all(IntelIOMMUState *s)
     VTDAddressSpace *vtd_as;
 
     QLIST_FOREACH(vtd_as, &s->vtd_as_with_notifiers, next) {
-        vtd_sync_shadow_page_table(vtd_as);
+        vtd_address_space_sync(vtd_as);
     }
 }
 
@@ -2082,7 +2087,7 @@ static void vtd_context_device_invalidate(IntelIOMMUState *s,
              * framework will skip MAP notifications if that
              * happened.
              */
-            vtd_sync_shadow_page_table(vtd_as);
+            vtd_address_space_sync(vtd_as);
         }
     }
 }
@@ -2140,7 +2145,7 @@ static void vtd_iotlb_domain_invalidate(IntelIOMMUState *s, uint16_t domain_id)
         if (!vtd_dev_to_context_entry(s, pci_bus_num(vtd_as->bus),
                                       vtd_as->devfn, &ce) &&
             domain_id == vtd_get_domain_id(s, &ce, vtd_as->pasid)) {
-            vtd_sync_shadow_page_table(vtd_as);
+            vtd_address_space_sync(vtd_as);
         }
     }
 }
@@ -3179,11 +3184,26 @@ static int vtd_iommu_notify_flag_changed(IOMMUMemoryRegion *iommu,
 {
     VTDAddressSpace *vtd_as = container_of(iommu, VTDAddressSpace, iommu);
     IntelIOMMUState *s = vtd_as->iommu_state;
+    X86IOMMUState *x86_iommu = X86_IOMMU_DEVICE(s);
 
     /* TODO: add support for VFIO and vhost users */
     if (s->snoop_control) {
         error_setg_errno(errp, ENOTSUP,
                          "Snoop Control with vhost or VFIO is not supported");
+        return -ENOTSUP;
+    }
+    if (!s->caching_mode && (new & IOMMU_NOTIFIER_MAP)) {
+        error_setg_errno(errp, ENOTSUP,
+                         "device %02x.%02x.%x requires caching mode",
+                         pci_bus_num(vtd_as->bus), PCI_SLOT(vtd_as->devfn),
+                         PCI_FUNC(vtd_as->devfn));
+        return -ENOTSUP;
+    }
+    if (!x86_iommu->dt_supported && (new & IOMMU_NOTIFIER_DEVIOTLB_UNMAP)) {
+        error_setg_errno(errp, ENOTSUP,
+                         "device %02x.%02x.%x requires device IOTLB mode",
+                         pci_bus_num(vtd_as->bus), PCI_SLOT(vtd_as->devfn),
+                         PCI_FUNC(vtd_as->devfn));
         return -ENOTSUP;
     }
 

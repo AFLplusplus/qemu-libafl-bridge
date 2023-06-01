@@ -38,11 +38,6 @@ block_ss.add(files(
   'snapshot-access.c',
   'throttle-groups.c',
   'throttle.c',
-  'vhdx-endian.c',
-  'vhdx-log.c',
-  'vhdx.c',
-  'vmdk.c',
-  'vpc.c',
   'write-threshold.c',
 ), zstd, zlib, gnutls)
 
@@ -54,6 +49,19 @@ if get_option('qcow1').allowed()
 endif
 if get_option('vdi').allowed()
   block_ss.add(files('vdi.c'))
+endif
+if get_option('vhdx').allowed()
+  block_ss.add(files(
+    'vhdx-endian.c',
+    'vhdx-log.c',
+    'vhdx.c'
+  ))
+endif
+if get_option('vmdk').allowed()
+  block_ss.add(files('vmdk.c'))
+endif
+if get_option('vpc').allowed()
+  block_ss.add(files('vpc.c'))
 endif
 if get_option('cloop').allowed()
   block_ss.add(files('cloop.c'))
@@ -84,7 +92,7 @@ block_ss.add(when: 'CONFIG_WIN32', if_true: files('file-win32.c', 'win32-aio.c')
 block_ss.add(when: 'CONFIG_POSIX', if_true: [files('file-posix.c'), coref, iokit])
 block_ss.add(when: libiscsi, if_true: files('iscsi-opts.c'))
 block_ss.add(when: 'CONFIG_LINUX', if_true: files('nvme.c'))
-if not get_option('replication').disabled()
+if get_option('replication').allowed()
   block_ss.add(files('replication.c'))
 endif
 block_ss.add(when: libaio, if_true: files('linux-aio.c'))

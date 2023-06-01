@@ -81,6 +81,16 @@ void cpu_loop(CPUPPCState *env)
 
         arch_interrupt = true;
         switch (trapnr) {
+
+//// --- Begin LibAFL code ---
+
+#define EXCP_LIBAFL_BP 0xf4775747
+
+        case EXCP_LIBAFL_BP:
+            return;
+
+//// --- End LibAFL code ---
+
         case POWERPC_EXCP_NONE:
             /* Just go on */
             break;

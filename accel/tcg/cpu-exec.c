@@ -896,9 +896,12 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
     return false;
 }
 
+// LibAFL: Add last_tb_pc arg
+
 static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
                                     target_ulong pc,
-                                    TranslationBlock **last_tb, int *tb_exit)
+                                    TranslationBlock **last_tb, int *tb_exit,
+                                    target_ulong *last_tb_pc)
 {
     int32_t insns_left;
 
@@ -906,6 +909,10 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
     tb = cpu_tb_exec(cpu, tb, tb_exit);
     if (*tb_exit != TB_EXIT_REQUESTED) {
         *last_tb = tb;
+
+//// --- Begin LibAFL code ---
+        *last_tb_pc = pc;
+//// --- End LibAFL code ---
         return;
     }
 
@@ -966,6 +973,10 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
     while (!cpu_handle_exception(cpu, &ret)) {
         TranslationBlock *last_tb = NULL;
         int tb_exit = 0;
+
+        //// --- Begin LibAFL code ---
+        target_ulong last_tb_pc = 0;
+        //// --- End LibAFL code ---
 
         while (!cpu_handle_interrupt(cpu, &last_tb)) {
             TranslationBlock *tb;
@@ -1034,31 +1045,30 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 
                 //// --- Begin LibAFL code ---
 
-#if !TARGET_TB_PCREL
-                if (last_tb->jmp_reset_offset[1] != TB_JMP_OFFSET_INVALID) {
-                    mmap_lock();
-                    TranslationBlock *edge = libafl_gen_edge(cpu, last_tb->pc, tb->pc,
-                                                             tb_exit, cs_base, flags, cflags);
-                    mmap_unlock();
+                if (cflags & CF_PCREL) {
+                    // No party with PCREL
+                    tb_add_jump(last_tb, tb_exit, tb);
+                } else {
+                    if (last_tb->jmp_reset_offset[1] != TB_JMP_OFFSET_INVALID) {
+                        mmap_lock();
+                        TranslationBlock *edge = libafl_gen_edge(cpu, last_tb_pc, pc, tb_exit, cs_base, flags, cflags);
+                        mmap_unlock();
 
-                    if (edge) {
-                        tb_add_jump(last_tb, tb_exit, edge);
-                        tb_add_jump(edge, 0, tb);
+                        if (edge) {
+                            tb_add_jump(last_tb, tb_exit, edge);
+                            tb_add_jump(edge, 0, tb);
+                        } else {
+                            tb_add_jump(last_tb, tb_exit, tb);
+                        }
                     } else {
                         tb_add_jump(last_tb, tb_exit, tb);
                     }
-                } else {
-                    tb_add_jump(last_tb, tb_exit, tb);
                 }
-#else
-                // No party if TARGET_TB_PCREL is 1
-                tb_add_jump(last_tb, tb_exit, tb);
-#endif
 
                 //// --- End LibAFL code ---
             }
 
-            cpu_loop_exec_tb(cpu, tb, pc, &last_tb, &tb_exit);
+            cpu_loop_exec_tb(cpu, tb, pc, &last_tb, &tb_exit, &last_tb_pc);
 
             /* Try to align the host and virtual clocks
                if the guest is in advance */

@@ -13525,10 +13525,7 @@ GSList * libafl_maps_next(GSList *map_info, struct libafl_mapinfo* ret);
 GSList * libafl_maps_next(GSList *map_info, struct libafl_mapinfo* ret) {
     if (!map_info || !ret)
         return NULL;
-    GSList *s = g_slist_next(map_info);
-    if (!s)
-        return NULL;
-    MapInfo *e = (MapInfo *) s->data;
+    MapInfo *e = (MapInfo *)map_info->data;
 
     if (h2g_valid(e->start)) {
         unsigned long min = e->start;
@@ -13539,7 +13536,7 @@ GSList * libafl_maps_next(GSList *map_info, struct libafl_mapinfo* ret) {
             max : (uintptr_t) g2h_untagged(GUEST_ADDR_MAX) + 1;
 
         if (page_check_range(h2g(min), max - min, flags) == -1) {
-            return libafl_maps_next(s, ret);
+            return libafl_maps_next(g_slist_next(map_info), ret);
         }
 
         int libafl_flags = 0;
@@ -13553,10 +13550,10 @@ GSList * libafl_maps_next(GSList *map_info, struct libafl_mapinfo* ret) {
         ret->path = e->path;
         ret->flags = libafl_flags;
         ret->is_priv = e->is_priv;
-        
-        return s;
+
+        return g_slist_next(map_info);
     } else {
-        return libafl_maps_next(s, ret);
+        return libafl_maps_next(g_slist_next(map_info), ret);
     }
 }
 

@@ -36,19 +36,11 @@ device_save_state_t* device_save_all(void) {
         if (se->is_ram) {
             continue;
         }
-        if ((!se->ops || !se->ops->save_state) && !se->vmsd) {
-            continue;
-        }
-        if (se->vmsd && !vmstate_save_needed(se->vmsd, se->opaque)) {
-            continue;
-        }
         if (!strcmp(se->idstr, "globalstate")) {
             continue;
         }
 
         // SYX_PRINTF("Saving section %s...\n", se->idstr);
-
-        save_section_header(f, se, QEMU_VM_SECTION_FULL);
 
         ret = vmstate_save(f, se, NULL);
 
@@ -56,8 +48,6 @@ device_save_state_t* device_save_all(void) {
             SYX_PRINTF("Device save all error: %d\n", ret);
             abort();
         }
-
-        save_section_footer(f, se);
     }
 
     printf("\n");

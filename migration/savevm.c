@@ -914,18 +914,10 @@ static void vmstate_save_old_style(QEMUFile *f, SaveStateEntry *se,
     }
 }
 
-//// --- Begin LibAFL code ---
-
-void save_section_header(QEMUFile *f, SaveStateEntry *se, uint8_t section_type);
-void save_section_footer(QEMUFile *f, SaveStateEntry *se);
-int vmstate_save(QEMUFile *f, SaveStateEntry *se, JSONWriter *vmdesc);
-
-//// --- End LibAFL code ---
-
 /*
  * Write the header for device section (QEMU_VM_SECTION START/END/PART/FULL)
  */
-/* static */ void save_section_header(QEMUFile *f, SaveStateEntry *se,
+static void save_section_header(QEMUFile *f, SaveStateEntry *se,
                                 uint8_t section_type)
 {
     qemu_put_byte(f, section_type);
@@ -947,13 +939,19 @@ int vmstate_save(QEMUFile *f, SaveStateEntry *se, JSONWriter *vmdesc);
  * Write a footer onto device sections that catches cases misformatted device
  * sections.
  */
-/* static */ void save_section_footer(QEMUFile *f, SaveStateEntry *se)
+static void save_section_footer(QEMUFile *f, SaveStateEntry *se)
 {
     if (migrate_get_current()->send_section_footer) {
         qemu_put_byte(f, QEMU_VM_SECTION_FOOTER);
         qemu_put_be32(f, se->section_id);
     }
 }
+
+//// --- Begin LibAFL code ---
+
+int vmstate_save(QEMUFile *f, SaveStateEntry *se, JSONWriter *vmdesc);
+
+//// --- End LibAFL code ---
 
 /* static */ int vmstate_save(QEMUFile *f, SaveStateEntry *se, JSONWriter *vmdesc)
 {

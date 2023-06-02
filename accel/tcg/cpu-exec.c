@@ -1045,24 +1045,19 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 
                 //// --- Begin LibAFL code ---
 
-                if (cflags & CF_PCREL) {
-                    // No party with PCREL
-                    tb_add_jump(last_tb, tb_exit, tb);
-                } else {
-                    if (last_tb->jmp_reset_offset[1] != TB_JMP_OFFSET_INVALID) {
-                        mmap_lock();
-                        TranslationBlock *edge = libafl_gen_edge(cpu, last_tb_pc, pc, tb_exit, cs_base, flags, cflags);
-                        mmap_unlock();
+                if (last_tb->jmp_reset_offset[1] != TB_JMP_OFFSET_INVALID) {
+                    mmap_lock();
+                    TranslationBlock *edge = libafl_gen_edge(cpu, last_tb_pc, pc, tb_exit, cs_base, flags, cflags);
+                    mmap_unlock();
 
-                        if (edge) {
-                            tb_add_jump(last_tb, tb_exit, edge);
-                            tb_add_jump(edge, 0, tb);
-                        } else {
-                            tb_add_jump(last_tb, tb_exit, tb);
-                        }
+                    if (edge) {
+                        tb_add_jump(last_tb, tb_exit, edge);
+                        tb_add_jump(edge, 0, tb);
                     } else {
                         tb_add_jump(last_tb, tb_exit, tb);
                     }
+                } else {
+                    tb_add_jump(last_tb, tb_exit, tb);
                 }
 
                 //// --- End LibAFL code ---

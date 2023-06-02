@@ -783,13 +783,13 @@ for opt do
   ;;
   --as-shared-lib)
       as_shared_lib="yes"
-      QEMU_CFLAGS="$QEMU_CFLAGS -fPIC -DAS_LIB=1"
-      QEMU_CXXFLAGS="$QEMU_CXXFLAGS -fPIC -DAS_LIB=1"
+      CFLAGS="$CFLAGS -fPIC -DAS_LIB=1"
+      CXXFLAGS="$CXXFLAGS -fPIC -DAS_LIB=1"
   ;;
   --as-static-lib)
       as_static_lib="yes"
-      QEMU_CFLAGS="$QEMU_CFLAGS -fPIC -DAS_LIB=1"
-      QEMU_CXXFLAGS="$QEMU_CXXFLAGS -fPIC -DAS_LIB=1"
+      CFLAGS="$CFLAGS -fPIC -DAS_LIB=1"
+      CXXFLAGS="$CXXFLAGS -fPIC -DAS_LIB=1"
   ;;
   # everything else has the same name in configure and meson
   --*) meson_option_parse "$opt" "$optarg"

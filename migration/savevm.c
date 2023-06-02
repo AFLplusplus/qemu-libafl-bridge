@@ -196,40 +196,11 @@ const VMStateInfo vmstate_info_timer = {
 };
 
 
-typedef struct CompatEntry {
-    char idstr[256];
-    int instance_id;
-} CompatEntry;
+//// --- Begin LibAFL code ---
 
-typedef struct SaveStateEntry {
-    QTAILQ_ENTRY(SaveStateEntry) entry;
-    char idstr[256];
-    uint32_t instance_id;
-    int alias_id;
-    int version_id;
-    /* version id read from the stream */
-    int load_version_id;
-    int section_id;
-    /* section id read from the stream */
-    int load_section_id;
-    const SaveVMHandlers *ops;
-    const VMStateDescription *vmsd;
-    void *opaque;
-    CompatEntry *compat;
-    int is_ram;
-} SaveStateEntry;
+// definitions of CompatEntry SaveStateEntry and SaveState were here
 
-typedef struct SaveState {
-    QTAILQ_HEAD(, SaveStateEntry) handlers;
-    SaveStateEntry *handler_pri_head[MIG_PRI_MAX + 1];
-    int global_section_id;
-    uint32_t len;
-    const char *name;
-    uint32_t target_page_bits;
-    uint32_t caps_count;
-    MigrationCapability *capabilities;
-    QemuUUID uuid;
-} SaveState;
+//// --- End LibAFL code ---
 
 /* static */ SaveState savevm_state = {
     .handlers = QTAILQ_HEAD_INITIALIZER(savevm_state.handlers),

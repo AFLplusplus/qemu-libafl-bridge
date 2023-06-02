@@ -1,5 +1,4 @@
 #include "qemu/osdep.h"
-//#include "qemu-common.h"
 #include "sysemu/sysemu.h"
 #include "cpu.h"
 #include "qemu/main-loop.h"
@@ -9,6 +8,7 @@
 #include "memory.h"
 
 #include "exec/ram_addr.h"
+/// Physical to host memory in system memory.
 #include "exec/ramlist.h"
 #include "exec/address-spaces.h"
 #include "exec/exec-all.h"
@@ -16,59 +16,21 @@
 #include "sysemu/block-backend.h"
 #include "migration/register.h"
 
+// #include "target/i386/cpu.h"
+
 #include "syx-snapshot.h"
+#include "channel-buffer-writeback.h"
 #include "device-save.h"
-
-///// From migration/savevm.c
-
-#include "qapi/qapi-commands-migration.h"
-#include "migration/vmstate.h"
-#include "migration/register.h"
-#include "qemu/uuid.h"
-
-typedef struct CompatEntry {
-    char idstr[256];
-    int instance_id;
-} CompatEntry;
-
-typedef struct SaveStateEntry {
-    QTAILQ_ENTRY(SaveStateEntry) entry;
-    char idstr[256];
-    uint32_t instance_id;
-    int alias_id;
-    int version_id;
-    /* version id read from the stream */
-    int load_version_id;
-    int section_id;
-    /* section id read from the stream */
-    int load_section_id;
-    const SaveVMHandlers *ops;
-    const VMStateDescription *vmsd;
-    void *opaque;
-    CompatEntry *compat;
-    int is_ram;
-} SaveStateEntry;
-
-typedef struct SaveState {
-    QTAILQ_HEAD(, SaveStateEntry) handlers;
-    SaveStateEntry *handler_pri_head[MIG_PRI_MAX + 1];
-    int global_section_id;
-    uint32_t len;
-    const char *name;
-    uint32_t target_page_bits;
-    uint32_t caps_count;
-    MigrationCapability *capabilities;
-    QemuUUID uuid;
-} SaveState;
-
-///// End migration/savevm.c
 
 #define SYX_SNAPSHOT_LIST_INIT_SIZE      4096
 #define SYX_SNAPSHOT_LIST_GROW_FACTOR    2
 
 syx_snapshot_state_t syx_snapshot_state = {0};
+static MemoryRegion* mr_to_enable = NULL;
 
 void syx_snapshot_init(void) {
+    //syx_snapshot_init_params_t* params = (syx_snapshot_init_params_t*) opaque;
+    //uint64_t page_size = params->page_size;
     uint64_t page_size = TARGET_PAGE_SIZE;
 
     syx_snapshot_state.page_size = page_size;
@@ -77,6 +39,10 @@ void syx_snapshot_init(void) {
     syx_snapshot_state.tracked_snapshots = syx_snapshot_tracker_init();
 
     syx_snapshot_state.is_enabled = false;
+}
+
+uint64_t syx_snapshot_handler(CPUState* cpu, uint32_t cmd, target_ulong target_opaque) {
+    return (uint64_t) -1;
 }
 
 syx_snapshot_t* syx_snapshot_create(bool track) {
@@ -184,7 +150,7 @@ void syx_snapshot_stop_track(syx_snapshot_tracker_t* tracker, syx_snapshot_t* sn
     abort();
 }
 
-void syx_snapshot_increment_push(syx_snapshot_t* snapshot) {
+void syx_snapshot_increment_push(syx_snapshot_t* snapshot, CPUState* cpu) {
     syx_snapshot_increment_t* increment = g_new0(syx_snapshot_increment_t, 1);
     increment->parent = snapshot->last_incremental_snapshot;
     snapshot->last_incremental_snapshot = increment;
@@ -220,12 +186,12 @@ static syx_snapshot_ramblock_t* find_ramblock(syx_snapshot_root_t* root, char* i
 }
 
 static void restore_page_from_root(syx_snapshot_root_t* root, MemoryRegion* mr, hwaddr addr) {
-    MemoryRegionSection mr_section = memory_region_find(mr, addr, syx_snapshot_state.page_size); // memory_region_find is quite slow
+    MemoryRegionSection mr_section = memory_region_find(mr, addr, syx_snapshot_state.page_size);
 
     if (mr_section.size == 0) {
         assert(mr_section.mr == NULL);
 
-        SYX_WARNING("Did not found a memory region while restoring the address %p from root snapshot.\n", (void*) addr);
+        SYX_PRINTF("Did not found a memory region while restoring the address %p from root snapshot.\n", (void*) addr);
         return;
     }
 
@@ -236,9 +202,18 @@ static void restore_page_from_root(syx_snapshot_root_t* root, MemoryRegion* mr, 
 
         memcpy(mr_section.mr->ram_block->host + mr_section.offset_within_region,
                 ram_block->ram + mr_section.offset_within_region, syx_snapshot_state.page_size);
+    } else {
+        if (!strcmp(mr_section.mr->name, "tseg-blackhole")) {
+            assert(mr_to_enable == NULL);
+            memory_region_set_enabled(mr_section.mr, false);
+            mr_to_enable = mr_section.mr;
+            restore_page_from_root(root, mr, addr);
+        } else {
+            // SYX_WARNING("[SYX SNAPSHOT RESTORE] Ram section not found for page @ 0x%lx (mr %s...)\n", addr, mr_section.mr->name);
+        }
     }
 }
-
+//
 static void restore_page(MemoryRegion* mr, syx_snapshot_dirty_page_t* page) {
     MemoryRegionSection mr_section = memory_region_find(mr, page->addr, syx_snapshot_state.page_size);
     assert(mr_section.size != 0 && mr_section.mr != NULL);
@@ -363,24 +338,51 @@ static inline void syx_snapshot_dirty_list_add_internal(hwaddr paddr) {
         // Avoid adding already marked addresses
         for (uint64_t j = 0; j < dirty_list->length; ++j) {
             if (dirty_list->dirty_addr[j] == paddr) {
-                continue;
+                goto next_snapshot_dirty_list;
             }
         }
 
         if (dirty_list->length == dirty_list->capacity) {
+            //SYX_PRINTF("[DL %lu] Reallocation %lu ---> %lu\n", i, dirty_list->length, dirty_list->length * SYX_SNAPSHOT_LIST_GROW_FACTOR);
             dirty_list->capacity *= SYX_SNAPSHOT_LIST_GROW_FACTOR;
             dirty_list->dirty_addr = g_realloc(dirty_list->dirty_addr, dirty_list->capacity * sizeof(hwaddr));
         }
 
         dirty_list->dirty_addr[dirty_list->length] = paddr;
-
         dirty_list->length++;
+
+        // SYX_PRINTF("[DL %lu] Added dirty page @addr 0x%lx. dirty list len: %lu\n", i, paddr, dirty_list->length);
+    next_snapshot_dirty_list:;
     }
 }
 
 bool syx_snapshot_is_enabled(void) {
     return syx_snapshot_state.is_enabled;
 }
+
+/*
+// The implementation is pretty bad, it would be nice to store host addr directly for
+// the memcopy happening later on.
+__attribute__((target("no-3dnow,no-sse,no-mmx"),no_caller_saved_registers)) void syx_snapshot_dirty_list_add_tcg_target(uint64_t dummy, void* host_addr) {
+    // early check to know whether we should log the page access or not
+    if (!syx_snapshot_is_enabled()) {
+        return;
+    }
+
+    ram_addr_t offset;
+    RAMBlock* rb = qemu_ram_block_from_host((void*) host_addr, true, &offset);
+
+    assert(rb);
+    
+    hwaddr paddr = rb->mr->addr + offset;
+    // If this assert is ever false, please understand why
+    // qemu_ram_block_from_host result with true as second
+    // param would not be host page aligned.
+    assert(paddr == (paddr & syx_snapshot_state.page_mask));
+
+    syx_snapshot_dirty_list_add_internal(paddr);
+}
+*/
 
 void syx_snapshot_dirty_list_add_hostaddr(void* host_addr) {
     // early check to know whether we should log the page access or not
@@ -403,6 +405,7 @@ void syx_snapshot_dirty_list_add_hostaddr(void* host_addr) {
 }
 
 
+
 void syx_snapshot_dirty_list_add(hwaddr paddr) {
     if (!syx_snapshot_is_enabled()) {
         return;
@@ -422,8 +425,23 @@ static void syx_snapshot_restore_root_from_dirty_list(syx_snapshot_root_t* root,
 }
 
 void syx_snapshot_root_restore(syx_snapshot_t* snapshot) {
+	bool must_unlock_iothread = false;
     MemoryRegion* system_mr = get_system_memory();
+
+	if (!qemu_mutex_iothread_locked()) {
+		qemu_mutex_lock_iothread();
+		must_unlock_iothread = true;
+	}
+
     syx_snapshot_restore_root_from_dirty_list(&snapshot->root_snapshot, system_mr, &snapshot->dirty_list);
+    if (mr_to_enable) {
+        memory_region_set_enabled(mr_to_enable, true);
+        mr_to_enable = NULL;
+    }
     device_restore_all(snapshot->root_snapshot.dss);
     syx_snapshot_dirty_list_flush(&snapshot->dirty_list);
+ 
+	if (must_unlock_iothread) {
+		qemu_mutex_unlock_iothread();
+	}
 }

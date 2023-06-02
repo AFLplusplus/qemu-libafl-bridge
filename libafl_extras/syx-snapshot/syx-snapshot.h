@@ -1,12 +1,16 @@
 #pragma once
-//#ifdef QEMU_SYX
-
 #include "qemu/osdep.h"
 #include "qom/object.h"
 #include "device-save.h"
-//#include "qemu-common.h"
 #include "sysemu/sysemu.h"
-#include "libafl_extras/syx-misc.h"
+#include "../syx-misc.h"
+
+/**
+ * SYX Snapshot parameters
+ */
+typedef struct syx_snapshot_init_params_s {
+    uint64_t page_size;
+} syx_snapshot_init_params_t;
 
 /**
  * Saved ramblock
@@ -99,7 +103,10 @@ typedef struct syx_snapshot_state_s {
 // Namespace API's functions
 //
 
+//void syx_snapshot_init(void* opaque);
 void syx_snapshot_init(void);
+uint64_t syx_snapshot_handler(CPUState* cpu, uint32_t cmd, target_ulong target_opaque);
+
 
 //
 // Snapshot API
@@ -132,7 +139,7 @@ void syx_snapshot_stop_track(syx_snapshot_tracker_t* tracker, syx_snapshot_t* sn
 // Snapshot increment API
 //
 
-void syx_snapshot_increment_push(syx_snapshot_t* snapshot);
+void syx_snapshot_increment_push(syx_snapshot_t* snapshot, CPUState* cpu);
 void syx_snapshot_increment_pop(syx_snapshot_t* snapshot);
 void syx_snapshot_increment_restore_last(syx_snapshot_t* snapshot);
 syx_snapshot_increment_t* syx_snapshot_increment_free(syx_snapshot_increment_t* increment);
@@ -154,6 +161,7 @@ void syx_snapshot_dirty_list_free(syx_snapshot_dirty_list_t* dirty_list);
 syx_snapshot_dirty_page_list_t syx_snapshot_dirty_list_to_dirty_page_list(syx_snapshot_dirty_list_t* dirty_list);
 void syx_snapshot_dirty_list_flush(syx_snapshot_dirty_list_t* dirty_list);
 
+void syx_snapshot_dirty_list_add_hostaddr(void* host_addr);
 
 /**
  * @brief Add a dirty physical address to the list
@@ -161,6 +169,17 @@ void syx_snapshot_dirty_list_flush(syx_snapshot_dirty_list_t* dirty_list);
  * @param paddr The physical address to add
  */
 void syx_snapshot_dirty_list_add(hwaddr paddr);
-void syx_snapshot_dirty_list_add_hostaddr(void* host_addr);
 
-//#endif
+/**
+ * @brief Same as syx_snapshot_dirty_list_add. The difference
+ * being that it has been specially compiled for full context
+ * saving so that it can be called from anywhere, even in
+ * extreme environments where SystemV ABI is not respected.
+ * It was created with tcg-target.inc.c environment in
+ * mind.
+ * 
+ * @param dummy A dummy argument. it is to comply with
+ *              tcg-target.inc.c specific environment.
+ * @param host_addr The host address where the dirty page is located.
+ */
+void syx_snapshot_dirty_list_add_tcg_target(uint64_t dummy, void* host_addr);

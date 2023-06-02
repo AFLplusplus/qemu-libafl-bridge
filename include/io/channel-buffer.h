@@ -42,6 +42,10 @@ struct QIOChannelBuffer {
     size_t usage;    /* Current size of data */
     size_t offset;   /* Offset for future I/O ops */
     uint8_t *data;
+    
+    //// --- Begin LibAFL code ---
+    bool internal_allocation;
+    //// --- End LibAFL code ---
 };
 
 
@@ -55,5 +59,12 @@ struct QIOChannelBuffer {
  */
 QIOChannelBuffer *
 qio_channel_buffer_new(size_t capacity);
+
+//// --- Begin LibAFL code ---
+
+QIOChannelBuffer *
+qio_channel_buffer_new_external(uint8_t* buf, size_t capacity, size_t usage);
+
+//// --- End LibAFL code ---
 
 #endif /* QIO_CHANNEL_BUFFER_H */

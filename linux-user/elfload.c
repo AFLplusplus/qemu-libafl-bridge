@@ -2213,7 +2213,25 @@ static void zero_bss(abi_ulong elf_bss, abi_ulong last_bss, int prot)
     }
 
     if (host_start < host_map_start) {
+        //// --- Begin LibAFL code ---
+        /* We are doing a memset to a destination that might not be writable.
+           Temporary change permissions and restore below. */
+        int tmp_prot = prot;
+        if(!(tmp_prot & PROT_WRITE)) {
+            tmp_prot ^= PROT_WRITE;
+            mprotect((void *)(host_map_start - qemu_real_host_page_size()),
+                              qemu_real_host_page_size(), tmp_prot);
+        }
+        //// --- End LibAFL code ---
+
         memset((void *)host_start, 0, host_map_start - host_start);
+
+        //// --- Begin LibAFL code ---
+        if(tmp_prot != prot) {
+            mprotect((void *)(host_map_start - qemu_real_host_page_size()),
+                              qemu_real_host_page_size(), prot);
+        }
+        //// --- End LibAFL code ---
     }
 }
 
@@ -3021,6 +3039,10 @@ static void load_elf_image(const char *image_name, int image_fd,
                 loaddr = a;
             }
             a = eppnt->p_vaddr + eppnt->p_memsz - 1;
+            //// --- Begin LibAFL code ---
+            /* Fix a case where eppnt->p_memsz is zero */
+            if(eppnt->p_memsz == 0) a++;
+            //// --- End LibAFL code ---
             if (a > hiaddr) {
                 hiaddr = a;
             }
@@ -3173,6 +3195,15 @@ static void load_elf_image(const char *image_name, int image_fd,
 
     for (i = 0; i < ehdr->e_phnum; i++) {
         struct elf_phdr *eppnt = phdr + i;
+
+        //// --- Begin LibAFL code ---
+        #ifdef TARGET_HEXAGON
+        /* Encountered cases where p_type was PT_NULL
+           but the segment should still be loaded. */
+        if((eppnt->p_type == PT_NULL) && eppnt->p_vaddr) eppnt->p_type = PT_LOAD;
+        #endif
+        //// --- End LibAFL code ---
+
         if (eppnt->p_type == PT_LOAD) {
             abi_ulong vaddr, vaddr_po, vaddr_ps, vaddr_ef, vaddr_em, vaddr_len;
             int elf_prot = 0;
@@ -3569,6 +3600,10 @@ int load_elf_binary(struct linux_binprm *bprm, struct image_info *info)
         fprintf(stderr, "%s: %s\n", bprm->filename, strerror(E2BIG));
         exit(-1);
     }
+
+    //// --- Begin LibAFL code ---
+    if(elf_interpreter && !elf_interpreter[0]) elf_interpreter = NULL;
+    //// --- End LibAFL code ---
 
     if (elf_interpreter) {
         load_elf_interp(elf_interpreter, &interp_info, bprm->buf);

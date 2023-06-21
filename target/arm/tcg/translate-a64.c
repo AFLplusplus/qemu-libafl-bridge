@@ -18,23 +18,13 @@
  */
 #include "qemu/osdep.h"
 
-#include "cpu.h"
-#include "exec/exec-all.h"
-#include "tcg/tcg-op.h"
-#include "tcg/tcg-op-gvec.h"
-#include "qemu/log.h"
-#include "arm_ldst.h"
 #include "translate.h"
-#include "internals.h"
-#include "qemu/host-utils.h"
-#include "semihosting/semihost.h"
-#include "exec/gen-icount.h"
-#include "exec/helper-proto.h"
-#include "exec/helper-gen.h"
-#include "exec/log.h"
-#include "cpregs.h"
 #include "translate-a64.h"
-#include "qemu/atomic128.h"
+#include "qemu/log.h"
+#include "disas/disas.h"
+#include "arm_ldst.h"
+#include "semihosting/semihost.h"
+#include "cpregs.h"
 
 static TCGv_i64 cpu_X[32];
 static TCGv_i64 cpu_pc;
@@ -55,6 +45,28 @@ enum a64_shift_type {
     A64_SHIFT_TYPE_ASR = 2,
     A64_SHIFT_TYPE_ROR = 3
 };
+
+/*
+ * Helpers for extracting complex instruction fields
+ */
+
+/*
+ * For load/store with an unsigned 12 bit immediate scaled by the element
+ * size. The input has the immediate field in bits [14:3] and the element
+ * size in [2:0].
+ */
+static int uimm_scaled(DisasContext *s, int x)
+{
+    unsigned imm = x >> 3;
+    unsigned scale = extract32(x, 0, 3);
+    return imm << scale;
+}
+
+/* For load/store memory tags: scale offset by LOG2_TAG_GRANULE */
+static int scale_by_log2_tag_granule(DisasContext *s, int x)
+{
+    return x << LOG2_TAG_GRANULE;
+}
 
 /*
  * Include the generated decoders.
@@ -263,7 +275,7 @@ static void gen_probe_access(DisasContext *s, TCGv_i64 ptr,
  */
 static TCGv_i64 gen_mte_check1_mmuidx(DisasContext *s, TCGv_i64 addr,
                                       bool is_write, bool tag_checked,
-                                      int log2_size, bool is_unpriv,
+                                      MemOp memop, bool is_unpriv,
                                       int core_idx)
 {
     if (tag_checked && s->mte_active[is_unpriv]) {
@@ -274,7 +286,8 @@ static TCGv_i64 gen_mte_check1_mmuidx(DisasContext *s, TCGv_i64 addr,
         desc = FIELD_DP32(desc, MTEDESC, TBI, s->tbid);
         desc = FIELD_DP32(desc, MTEDESC, TCMA, s->tcma);
         desc = FIELD_DP32(desc, MTEDESC, WRITE, is_write);
-        desc = FIELD_DP32(desc, MTEDESC, SIZEM1, (1 << log2_size) - 1);
+        desc = FIELD_DP32(desc, MTEDESC, ALIGN, get_alignment_bits(memop));
+        desc = FIELD_DP32(desc, MTEDESC, SIZEM1, memop_size(memop) - 1);
 
         ret = tcg_temp_new_i64();
         gen_helper_mte_check(ret, cpu_env, tcg_constant_i32(desc), addr);
@@ -285,9 +298,9 @@ static TCGv_i64 gen_mte_check1_mmuidx(DisasContext *s, TCGv_i64 addr,
 }
 
 TCGv_i64 gen_mte_check1(DisasContext *s, TCGv_i64 addr, bool is_write,
-                        bool tag_checked, int log2_size)
+                        bool tag_checked, MemOp memop)
 {
-    return gen_mte_check1_mmuidx(s, addr, is_write, tag_checked, log2_size,
+    return gen_mte_check1_mmuidx(s, addr, is_write, tag_checked, memop,
                                  false, get_mem_index(s));
 }
 
@@ -295,7 +308,7 @@ TCGv_i64 gen_mte_check1(DisasContext *s, TCGv_i64 addr, bool is_write,
  * For MTE, check multiple logical sequential accesses.
  */
 TCGv_i64 gen_mte_checkN(DisasContext *s, TCGv_i64 addr, bool is_write,
-                        bool tag_checked, int size)
+                        bool tag_checked, int total_size, MemOp single_mop)
 {
     if (tag_checked && s->mte_active[0]) {
         TCGv_i64 ret;
@@ -305,7 +318,8 @@ TCGv_i64 gen_mte_checkN(DisasContext *s, TCGv_i64 addr, bool is_write,
         desc = FIELD_DP32(desc, MTEDESC, TBI, s->tbid);
         desc = FIELD_DP32(desc, MTEDESC, TCMA, s->tcma);
         desc = FIELD_DP32(desc, MTEDESC, WRITE, is_write);
-        desc = FIELD_DP32(desc, MTEDESC, SIZEM1, size - 1);
+        desc = FIELD_DP32(desc, MTEDESC, ALIGN, get_alignment_bits(single_mop));
+        desc = FIELD_DP32(desc, MTEDESC, SIZEM1, total_size - 1);
 
         ret = tcg_temp_new_i64();
         gen_helper_mte_check(ret, cpu_env, tcg_constant_i32(desc), addr);
@@ -313,6 +327,89 @@ TCGv_i64 gen_mte_checkN(DisasContext *s, TCGv_i64 addr, bool is_write,
         return ret;
     }
     return clean_data_tbi(s, addr);
+}
+
+/*
+ * Generate the special alignment check that applies to AccType_ATOMIC
+ * and AccType_ORDERED insns under FEAT_LSE2: the access need not be
+ * naturally aligned, but it must not cross a 16-byte boundary.
+ * See AArch64.CheckAlignment().
+ */
+static void check_lse2_align(DisasContext *s, int rn, int imm,
+                             bool is_write, MemOp mop)
+{
+    TCGv_i32 tmp;
+    TCGv_i64 addr;
+    TCGLabel *over_label;
+    MMUAccessType type;
+    int mmu_idx;
+
+    tmp = tcg_temp_new_i32();
+    tcg_gen_extrl_i64_i32(tmp, cpu_reg_sp(s, rn));
+    tcg_gen_addi_i32(tmp, tmp, imm & 15);
+    tcg_gen_andi_i32(tmp, tmp, 15);
+    tcg_gen_addi_i32(tmp, tmp, memop_size(mop));
+
+    over_label = gen_new_label();
+    tcg_gen_brcondi_i32(TCG_COND_LEU, tmp, 16, over_label);
+
+    addr = tcg_temp_new_i64();
+    tcg_gen_addi_i64(addr, cpu_reg_sp(s, rn), imm);
+
+    type = is_write ? MMU_DATA_STORE : MMU_DATA_LOAD,
+    mmu_idx = get_mem_index(s);
+    gen_helper_unaligned_access(cpu_env, addr, tcg_constant_i32(type),
+                                tcg_constant_i32(mmu_idx));
+
+    gen_set_label(over_label);
+
+}
+
+/* Handle the alignment check for AccType_ATOMIC instructions. */
+static MemOp check_atomic_align(DisasContext *s, int rn, MemOp mop)
+{
+    MemOp size = mop & MO_SIZE;
+
+    if (size == MO_8) {
+        return mop;
+    }
+
+    /*
+     * If size == MO_128, this is a LDXP, and the operation is single-copy
+     * atomic for each doubleword, not the entire quadword; it still must
+     * be quadword aligned.
+     */
+    if (size == MO_128) {
+        return finalize_memop_atom(s, MO_128 | MO_ALIGN,
+                                   MO_ATOM_IFALIGN_PAIR);
+    }
+    if (dc_isar_feature(aa64_lse2, s)) {
+        check_lse2_align(s, rn, 0, true, mop);
+    } else {
+        mop |= MO_ALIGN;
+    }
+    return finalize_memop(s, mop);
+}
+
+/* Handle the alignment check for AccType_ORDERED instructions. */
+static MemOp check_ordered_align(DisasContext *s, int rn, int imm,
+                                 bool is_write, MemOp mop)
+{
+    MemOp size = mop & MO_SIZE;
+
+    if (size == MO_8) {
+        return mop;
+    }
+    if (size == MO_128) {
+        return finalize_memop_atom(s, MO_128 | MO_ALIGN,
+                                   MO_ATOM_IFALIGN_PAIR);
+    }
+    if (!dc_isar_feature(aa64_lse2, s)) {
+        mop |= MO_ALIGN;
+    } else if (!s->naa) {
+        check_lse2_align(s, rn, imm, is_write, mop);
+    }
+    return finalize_memop(s, mop);
 }
 
 typedef struct DisasCompare64 {
@@ -848,7 +945,6 @@ static void do_gpr_st_memidx(DisasContext *s, TCGv_i64 source,
                              unsigned int iss_srt,
                              bool iss_sf, bool iss_ar)
 {
-    memop = finalize_memop(s, memop);
     tcg_gen_qemu_st_i64(source, tcg_addr, memidx, memop);
 
     if (iss_valid) {
@@ -883,7 +979,6 @@ static void do_gpr_ld_memidx(DisasContext *s, TCGv_i64 dest, TCGv_i64 tcg_addr,
                              bool iss_valid, unsigned int iss_srt,
                              bool iss_sf, bool iss_ar)
 {
-    memop = finalize_memop(s, memop);
     tcg_gen_qemu_ld_i64(dest, tcg_addr, memidx, memop);
 
     if (extend && (memop & MO_SIGN)) {
@@ -917,59 +1012,44 @@ static void do_gpr_ld(DisasContext *s, TCGv_i64 dest, TCGv_i64 tcg_addr,
 /*
  * Store from FP register to memory
  */
-static void do_fp_st(DisasContext *s, int srcidx, TCGv_i64 tcg_addr, int size)
+static void do_fp_st(DisasContext *s, int srcidx, TCGv_i64 tcg_addr, MemOp mop)
 {
     /* This writes the bottom N bits of a 128 bit wide vector to memory */
     TCGv_i64 tmplo = tcg_temp_new_i64();
-    MemOp mop;
 
     tcg_gen_ld_i64(tmplo, cpu_env, fp_reg_offset(s, srcidx, MO_64));
 
-    if (size < 4) {
-        mop = finalize_memop(s, size);
+    if ((mop & MO_SIZE) < MO_128) {
         tcg_gen_qemu_st_i64(tmplo, tcg_addr, get_mem_index(s), mop);
     } else {
-        bool be = s->be_data == MO_BE;
-        TCGv_i64 tcg_hiaddr = tcg_temp_new_i64();
         TCGv_i64 tmphi = tcg_temp_new_i64();
+        TCGv_i128 t16 = tcg_temp_new_i128();
 
         tcg_gen_ld_i64(tmphi, cpu_env, fp_reg_hi_offset(s, srcidx));
+        tcg_gen_concat_i64_i128(t16, tmplo, tmphi);
 
-        mop = s->be_data | MO_UQ;
-        tcg_gen_qemu_st_i64(be ? tmphi : tmplo, tcg_addr, get_mem_index(s),
-                            mop | (s->align_mem ? MO_ALIGN_16 : 0));
-        tcg_gen_addi_i64(tcg_hiaddr, tcg_addr, 8);
-        tcg_gen_qemu_st_i64(be ? tmplo : tmphi, tcg_hiaddr,
-                            get_mem_index(s), mop);
+        tcg_gen_qemu_st_i128(t16, tcg_addr, get_mem_index(s), mop);
     }
 }
 
 /*
  * Load from memory to FP register
  */
-static void do_fp_ld(DisasContext *s, int destidx, TCGv_i64 tcg_addr, int size)
+static void do_fp_ld(DisasContext *s, int destidx, TCGv_i64 tcg_addr, MemOp mop)
 {
     /* This always zero-extends and writes to a full 128 bit wide vector */
     TCGv_i64 tmplo = tcg_temp_new_i64();
     TCGv_i64 tmphi = NULL;
-    MemOp mop;
 
-    if (size < 4) {
-        mop = finalize_memop(s, size);
+    if ((mop & MO_SIZE) < MO_128) {
         tcg_gen_qemu_ld_i64(tmplo, tcg_addr, get_mem_index(s), mop);
     } else {
-        bool be = s->be_data == MO_BE;
-        TCGv_i64 tcg_hiaddr;
+        TCGv_i128 t16 = tcg_temp_new_i128();
+
+        tcg_gen_qemu_ld_i128(t16, tcg_addr, get_mem_index(s), mop);
 
         tmphi = tcg_temp_new_i64();
-        tcg_hiaddr = tcg_temp_new_i64();
-
-        mop = s->be_data | MO_UQ;
-        tcg_gen_qemu_ld_i64(be ? tmphi : tmplo, tcg_addr, get_mem_index(s),
-                            mop | (s->align_mem ? MO_ALIGN_16 : 0));
-        tcg_gen_addi_i64(tcg_hiaddr, tcg_addr, 8);
-        tcg_gen_qemu_ld_i64(be ? tmplo : tmphi, tcg_hiaddr,
-                            get_mem_index(s), mop);
+        tcg_gen_extr_i128_i64(tmplo, tmphi, t16);
     }
 
     tcg_gen_st_i64(tmplo, cpu_env, fp_reg_offset(s, destidx, MO_64));
@@ -1554,9 +1634,7 @@ static bool trans_ERET(DisasContext *s, arg_ERET *a)
     tcg_gen_ld_i64(dst, cpu_env,
                    offsetof(CPUARMState, elr_el[s->current_el]));
 
-    if (tb_cflags(s->base.tb) & CF_USE_ICOUNT) {
-        gen_io_start();
-    }
+    translator_io_start(&s->base);
 
     gen_helper_exception_return(cpu_env, dst);
     /* Must exit loop to check un-masked IRQs */
@@ -1584,9 +1662,8 @@ static bool trans_ERETA(DisasContext *s, arg_reta *a)
                    offsetof(CPUARMState, elr_el[s->current_el]));
 
     dst = auth_branch_target(s, dst, cpu_X[31], !a->m);
-    if (tb_cflags(s->base.tb) & CF_USE_ICOUNT) {
-        gen_io_start();
-    }
+
+    translator_io_start(&s->base);
 
     gen_helper_exception_return(cpu_env, dst);
     /* Must exit loop to check un-masked IRQs */
@@ -1594,201 +1671,239 @@ static bool trans_ERETA(DisasContext *s, arg_reta *a)
     return true;
 }
 
-/* HINT instruction group, including various allocated HINTs */
-static void handle_hint(DisasContext *s, uint32_t insn,
-                        unsigned int op1, unsigned int op2, unsigned int crm)
+static bool trans_NOP(DisasContext *s, arg_NOP *a)
 {
-    unsigned int selector = crm << 3 | op2;
-
-    if (op1 != 3) {
-        unallocated_encoding(s);
-        return;
-    }
-
-    switch (selector) {
-    case 0b00000: /* NOP */
-        break;
-    case 0b00011: /* WFI */
-        s->base.is_jmp = DISAS_WFI;
-        break;
-    case 0b00001: /* YIELD */
-        /* When running in MTTCG we don't generate jumps to the yield and
-         * WFE helpers as it won't affect the scheduling of other vCPUs.
-         * If we wanted to more completely model WFE/SEV so we don't busy
-         * spin unnecessarily we would need to do something more involved.
-         */
-        if (!(tb_cflags(s->base.tb) & CF_PARALLEL)) {
-            s->base.is_jmp = DISAS_YIELD;
-        }
-        break;
-    case 0b00010: /* WFE */
-        if (!(tb_cflags(s->base.tb) & CF_PARALLEL)) {
-            s->base.is_jmp = DISAS_WFE;
-        }
-        break;
-    case 0b00100: /* SEV */
-    case 0b00101: /* SEVL */
-    case 0b00110: /* DGH */
-        /* we treat all as NOP at least for now */
-        break;
-    case 0b00111: /* XPACLRI */
-        if (s->pauth_active) {
-            gen_helper_xpaci(cpu_X[30], cpu_env, cpu_X[30]);
-        }
-        break;
-    case 0b01000: /* PACIA1716 */
-        if (s->pauth_active) {
-            gen_helper_pacia(cpu_X[17], cpu_env, cpu_X[17], cpu_X[16]);
-        }
-        break;
-    case 0b01010: /* PACIB1716 */
-        if (s->pauth_active) {
-            gen_helper_pacib(cpu_X[17], cpu_env, cpu_X[17], cpu_X[16]);
-        }
-        break;
-    case 0b01100: /* AUTIA1716 */
-        if (s->pauth_active) {
-            gen_helper_autia(cpu_X[17], cpu_env, cpu_X[17], cpu_X[16]);
-        }
-        break;
-    case 0b01110: /* AUTIB1716 */
-        if (s->pauth_active) {
-            gen_helper_autib(cpu_X[17], cpu_env, cpu_X[17], cpu_X[16]);
-        }
-        break;
-    case 0b10000: /* ESB */
-        /* Without RAS, we must implement this as NOP. */
-        if (dc_isar_feature(aa64_ras, s)) {
-            /*
-             * QEMU does not have a source of physical SErrors,
-             * so we are only concerned with virtual SErrors.
-             * The pseudocode in the ARM for this case is
-             *   if PSTATE.EL IN {EL0, EL1} && EL2Enabled() then
-             *      AArch64.vESBOperation();
-             * Most of the condition can be evaluated at translation time.
-             * Test for EL2 present, and defer test for SEL2 to runtime.
-             */
-            if (s->current_el <= 1 && arm_dc_feature(s, ARM_FEATURE_EL2)) {
-                gen_helper_vesb(cpu_env);
-            }
-        }
-        break;
-    case 0b11000: /* PACIAZ */
-        if (s->pauth_active) {
-            gen_helper_pacia(cpu_X[30], cpu_env, cpu_X[30],
-                             tcg_constant_i64(0));
-        }
-        break;
-    case 0b11001: /* PACIASP */
-        if (s->pauth_active) {
-            gen_helper_pacia(cpu_X[30], cpu_env, cpu_X[30], cpu_X[31]);
-        }
-        break;
-    case 0b11010: /* PACIBZ */
-        if (s->pauth_active) {
-            gen_helper_pacib(cpu_X[30], cpu_env, cpu_X[30],
-                             tcg_constant_i64(0));
-        }
-        break;
-    case 0b11011: /* PACIBSP */
-        if (s->pauth_active) {
-            gen_helper_pacib(cpu_X[30], cpu_env, cpu_X[30], cpu_X[31]);
-        }
-        break;
-    case 0b11100: /* AUTIAZ */
-        if (s->pauth_active) {
-            gen_helper_autia(cpu_X[30], cpu_env, cpu_X[30],
-                             tcg_constant_i64(0));
-        }
-        break;
-    case 0b11101: /* AUTIASP */
-        if (s->pauth_active) {
-            gen_helper_autia(cpu_X[30], cpu_env, cpu_X[30], cpu_X[31]);
-        }
-        break;
-    case 0b11110: /* AUTIBZ */
-        if (s->pauth_active) {
-            gen_helper_autib(cpu_X[30], cpu_env, cpu_X[30],
-                             tcg_constant_i64(0));
-        }
-        break;
-    case 0b11111: /* AUTIBSP */
-        if (s->pauth_active) {
-            gen_helper_autib(cpu_X[30], cpu_env, cpu_X[30], cpu_X[31]);
-        }
-        break;
-    default:
-        /* default specified as NOP equivalent */
-        break;
-    }
+    return true;
 }
 
-static void gen_clrex(DisasContext *s, uint32_t insn)
+static bool trans_YIELD(DisasContext *s, arg_YIELD *a)
+{
+    /*
+     * When running in MTTCG we don't generate jumps to the yield and
+     * WFE helpers as it won't affect the scheduling of other vCPUs.
+     * If we wanted to more completely model WFE/SEV so we don't busy
+     * spin unnecessarily we would need to do something more involved.
+     */
+    if (!(tb_cflags(s->base.tb) & CF_PARALLEL)) {
+        s->base.is_jmp = DISAS_YIELD;
+    }
+    return true;
+}
+
+static bool trans_WFI(DisasContext *s, arg_WFI *a)
+{
+    s->base.is_jmp = DISAS_WFI;
+    return true;
+}
+
+static bool trans_WFE(DisasContext *s, arg_WFI *a)
+{
+    /*
+     * When running in MTTCG we don't generate jumps to the yield and
+     * WFE helpers as it won't affect the scheduling of other vCPUs.
+     * If we wanted to more completely model WFE/SEV so we don't busy
+     * spin unnecessarily we would need to do something more involved.
+     */
+    if (!(tb_cflags(s->base.tb) & CF_PARALLEL)) {
+        s->base.is_jmp = DISAS_WFE;
+    }
+    return true;
+}
+
+static bool trans_XPACLRI(DisasContext *s, arg_XPACLRI *a)
+{
+    if (s->pauth_active) {
+        gen_helper_xpaci(cpu_X[30], cpu_env, cpu_X[30]);
+    }
+    return true;
+}
+
+static bool trans_PACIA1716(DisasContext *s, arg_PACIA1716 *a)
+{
+    if (s->pauth_active) {
+        gen_helper_pacia(cpu_X[17], cpu_env, cpu_X[17], cpu_X[16]);
+    }
+    return true;
+}
+
+static bool trans_PACIB1716(DisasContext *s, arg_PACIB1716 *a)
+{
+    if (s->pauth_active) {
+        gen_helper_pacib(cpu_X[17], cpu_env, cpu_X[17], cpu_X[16]);
+    }
+    return true;
+}
+
+static bool trans_AUTIA1716(DisasContext *s, arg_AUTIA1716 *a)
+{
+    if (s->pauth_active) {
+        gen_helper_autia(cpu_X[17], cpu_env, cpu_X[17], cpu_X[16]);
+    }
+    return true;
+}
+
+static bool trans_AUTIB1716(DisasContext *s, arg_AUTIB1716 *a)
+{
+    if (s->pauth_active) {
+        gen_helper_autib(cpu_X[17], cpu_env, cpu_X[17], cpu_X[16]);
+    }
+    return true;
+}
+
+static bool trans_ESB(DisasContext *s, arg_ESB *a)
+{
+    /* Without RAS, we must implement this as NOP. */
+    if (dc_isar_feature(aa64_ras, s)) {
+        /*
+         * QEMU does not have a source of physical SErrors,
+         * so we are only concerned with virtual SErrors.
+         * The pseudocode in the ARM for this case is
+         *   if PSTATE.EL IN {EL0, EL1} && EL2Enabled() then
+         *      AArch64.vESBOperation();
+         * Most of the condition can be evaluated at translation time.
+         * Test for EL2 present, and defer test for SEL2 to runtime.
+         */
+        if (s->current_el <= 1 && arm_dc_feature(s, ARM_FEATURE_EL2)) {
+            gen_helper_vesb(cpu_env);
+        }
+    }
+    return true;
+}
+
+static bool trans_PACIAZ(DisasContext *s, arg_PACIAZ *a)
+{
+    if (s->pauth_active) {
+        gen_helper_pacia(cpu_X[30], cpu_env, cpu_X[30], tcg_constant_i64(0));
+    }
+    return true;
+}
+
+static bool trans_PACIASP(DisasContext *s, arg_PACIASP *a)
+{
+    if (s->pauth_active) {
+        gen_helper_pacia(cpu_X[30], cpu_env, cpu_X[30], cpu_X[31]);
+    }
+    return true;
+}
+
+static bool trans_PACIBZ(DisasContext *s, arg_PACIBZ *a)
+{
+    if (s->pauth_active) {
+        gen_helper_pacib(cpu_X[30], cpu_env, cpu_X[30], tcg_constant_i64(0));
+    }
+    return true;
+}
+
+static bool trans_PACIBSP(DisasContext *s, arg_PACIBSP *a)
+{
+    if (s->pauth_active) {
+        gen_helper_pacib(cpu_X[30], cpu_env, cpu_X[30], cpu_X[31]);
+    }
+    return true;
+}
+
+static bool trans_AUTIAZ(DisasContext *s, arg_AUTIAZ *a)
+{
+    if (s->pauth_active) {
+        gen_helper_autia(cpu_X[30], cpu_env, cpu_X[30], tcg_constant_i64(0));
+    }
+    return true;
+}
+
+static bool trans_AUTIASP(DisasContext *s, arg_AUTIASP *a)
+{
+    if (s->pauth_active) {
+        gen_helper_autia(cpu_X[30], cpu_env, cpu_X[30], cpu_X[31]);
+    }
+    return true;
+}
+
+static bool trans_AUTIBZ(DisasContext *s, arg_AUTIBZ *a)
+{
+    if (s->pauth_active) {
+        gen_helper_autib(cpu_X[30], cpu_env, cpu_X[30], tcg_constant_i64(0));
+    }
+    return true;
+}
+
+static bool trans_AUTIBSP(DisasContext *s, arg_AUTIBSP *a)
+{
+    if (s->pauth_active) {
+        gen_helper_autib(cpu_X[30], cpu_env, cpu_X[30], cpu_X[31]);
+    }
+    return true;
+}
+
+static bool trans_CLREX(DisasContext *s, arg_CLREX *a)
 {
     tcg_gen_movi_i64(cpu_exclusive_addr, -1);
+    return true;
 }
 
-/* CLREX, DSB, DMB, ISB */
-static void handle_sync(DisasContext *s, uint32_t insn,
-                        unsigned int op1, unsigned int op2, unsigned int crm)
+static bool trans_DSB_DMB(DisasContext *s, arg_DSB_DMB *a)
 {
+    /* We handle DSB and DMB the same way */
     TCGBar bar;
 
-    if (op1 != 3) {
-        unallocated_encoding(s);
-        return;
+    switch (a->types) {
+    case 1: /* MBReqTypes_Reads */
+        bar = TCG_BAR_SC | TCG_MO_LD_LD | TCG_MO_LD_ST;
+        break;
+    case 2: /* MBReqTypes_Writes */
+        bar = TCG_BAR_SC | TCG_MO_ST_ST;
+        break;
+    default: /* MBReqTypes_All */
+        bar = TCG_BAR_SC | TCG_MO_ALL;
+        break;
     }
-
-    switch (op2) {
-    case 2: /* CLREX */
-        gen_clrex(s, insn);
-        return;
-    case 4: /* DSB */
-    case 5: /* DMB */
-        switch (crm & 3) {
-        case 1: /* MBReqTypes_Reads */
-            bar = TCG_BAR_SC | TCG_MO_LD_LD | TCG_MO_LD_ST;
-            break;
-        case 2: /* MBReqTypes_Writes */
-            bar = TCG_BAR_SC | TCG_MO_ST_ST;
-            break;
-        default: /* MBReqTypes_All */
-            bar = TCG_BAR_SC | TCG_MO_ALL;
-            break;
-        }
-        tcg_gen_mb(bar);
-        return;
-    case 6: /* ISB */
-        /* We need to break the TB after this insn to execute
-         * a self-modified code correctly and also to take
-         * any pending interrupts immediately.
-         */
-        reset_btype(s);
-        gen_goto_tb(s, 0, 4);
-        return;
-
-    case 7: /* SB */
-        if (crm != 0 || !dc_isar_feature(aa64_sb, s)) {
-            goto do_unallocated;
-        }
-        /*
-         * TODO: There is no speculation barrier opcode for TCG;
-         * MB and end the TB instead.
-         */
-        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_SC);
-        gen_goto_tb(s, 0, 4);
-        return;
-
-    default:
-    do_unallocated:
-        unallocated_encoding(s);
-        return;
-    }
+    tcg_gen_mb(bar);
+    return true;
 }
 
-static void gen_xaflag(void)
+static bool trans_ISB(DisasContext *s, arg_ISB *a)
 {
-    TCGv_i32 z = tcg_temp_new_i32();
+    /*
+     * We need to break the TB after this insn to execute
+     * self-modifying code correctly and also to take
+     * any pending interrupts immediately.
+     */
+    reset_btype(s);
+    gen_goto_tb(s, 0, 4);
+    return true;
+}
+
+static bool trans_SB(DisasContext *s, arg_SB *a)
+{
+    if (!dc_isar_feature(aa64_sb, s)) {
+        return false;
+    }
+    /*
+     * TODO: There is no speculation barrier opcode for TCG;
+     * MB and end the TB instead.
+     */
+    tcg_gen_mb(TCG_MO_ALL | TCG_BAR_SC);
+    gen_goto_tb(s, 0, 4);
+    return true;
+}
+
+static bool trans_CFINV(DisasContext *s, arg_CFINV *a)
+{
+    if (!dc_isar_feature(aa64_condm_4, s)) {
+        return false;
+    }
+    tcg_gen_xori_i32(cpu_CF, cpu_CF, 1);
+    return true;
+}
+
+static bool trans_XAFLAG(DisasContext *s, arg_XAFLAG *a)
+{
+    TCGv_i32 z;
+
+    if (!dc_isar_feature(aa64_condm_5, s)) {
+        return false;
+    }
+
+    z = tcg_temp_new_i32();
 
     tcg_gen_setcondi_i32(TCG_COND_EQ, z, cpu_ZF, 0);
 
@@ -1812,10 +1927,16 @@ static void gen_xaflag(void)
 
     /* C | Z */
     tcg_gen_or_i32(cpu_CF, cpu_CF, z);
+
+    return true;
 }
 
-static void gen_axflag(void)
+static bool trans_AXFLAG(DisasContext *s, arg_AXFLAG *a)
 {
+    if (!dc_isar_feature(aa64_condm_5, s)) {
+        return false;
+    }
+
     tcg_gen_sari_i32(cpu_VF, cpu_VF, 31);         /* V ? -1 : 0 */
     tcg_gen_andc_i32(cpu_CF, cpu_CF, cpu_VF);     /* C & !V */
 
@@ -1824,150 +1945,134 @@ static void gen_axflag(void)
 
     tcg_gen_movi_i32(cpu_NF, 0);
     tcg_gen_movi_i32(cpu_VF, 0);
+
+    return true;
 }
 
-/* MSR (immediate) - move immediate to processor state field */
-static void handle_msr_i(DisasContext *s, uint32_t insn,
-                         unsigned int op1, unsigned int op2, unsigned int crm)
+static bool trans_MSR_i_UAO(DisasContext *s, arg_i *a)
 {
-    int op = op1 << 3 | op2;
-
-    /* End the TB by default, chaining is ok.  */
-    s->base.is_jmp = DISAS_TOO_MANY;
-
-    switch (op) {
-    case 0x00: /* CFINV */
-        if (crm != 0 || !dc_isar_feature(aa64_condm_4, s)) {
-            goto do_unallocated;
-        }
-        tcg_gen_xori_i32(cpu_CF, cpu_CF, 1);
-        s->base.is_jmp = DISAS_NEXT;
-        break;
-
-    case 0x01: /* XAFlag */
-        if (crm != 0 || !dc_isar_feature(aa64_condm_5, s)) {
-            goto do_unallocated;
-        }
-        gen_xaflag();
-        s->base.is_jmp = DISAS_NEXT;
-        break;
-
-    case 0x02: /* AXFlag */
-        if (crm != 0 || !dc_isar_feature(aa64_condm_5, s)) {
-            goto do_unallocated;
-        }
-        gen_axflag();
-        s->base.is_jmp = DISAS_NEXT;
-        break;
-
-    case 0x03: /* UAO */
-        if (!dc_isar_feature(aa64_uao, s) || s->current_el == 0) {
-            goto do_unallocated;
-        }
-        if (crm & 1) {
-            set_pstate_bits(PSTATE_UAO);
-        } else {
-            clear_pstate_bits(PSTATE_UAO);
-        }
-        gen_rebuild_hflags(s);
-        break;
-
-    case 0x04: /* PAN */
-        if (!dc_isar_feature(aa64_pan, s) || s->current_el == 0) {
-            goto do_unallocated;
-        }
-        if (crm & 1) {
-            set_pstate_bits(PSTATE_PAN);
-        } else {
-            clear_pstate_bits(PSTATE_PAN);
-        }
-        gen_rebuild_hflags(s);
-        break;
-
-    case 0x05: /* SPSel */
-        if (s->current_el == 0) {
-            goto do_unallocated;
-        }
-        gen_helper_msr_i_spsel(cpu_env, tcg_constant_i32(crm & PSTATE_SP));
-        break;
-
-    case 0x19: /* SSBS */
-        if (!dc_isar_feature(aa64_ssbs, s)) {
-            goto do_unallocated;
-        }
-        if (crm & 1) {
-            set_pstate_bits(PSTATE_SSBS);
-        } else {
-            clear_pstate_bits(PSTATE_SSBS);
-        }
-        /* Don't need to rebuild hflags since SSBS is a nop */
-        break;
-
-    case 0x1a: /* DIT */
-        if (!dc_isar_feature(aa64_dit, s)) {
-            goto do_unallocated;
-        }
-        if (crm & 1) {
-            set_pstate_bits(PSTATE_DIT);
-        } else {
-            clear_pstate_bits(PSTATE_DIT);
-        }
-        /* There's no need to rebuild hflags because DIT is a nop */
-        break;
-
-    case 0x1e: /* DAIFSet */
-        gen_helper_msr_i_daifset(cpu_env, tcg_constant_i32(crm));
-        break;
-
-    case 0x1f: /* DAIFClear */
-        gen_helper_msr_i_daifclear(cpu_env, tcg_constant_i32(crm));
-        /* For DAIFClear, exit the cpu loop to re-evaluate pending IRQs.  */
-        s->base.is_jmp = DISAS_UPDATE_EXIT;
-        break;
-
-    case 0x1c: /* TCO */
-        if (dc_isar_feature(aa64_mte, s)) {
-            /* Full MTE is enabled -- set the TCO bit as directed. */
-            if (crm & 1) {
-                set_pstate_bits(PSTATE_TCO);
-            } else {
-                clear_pstate_bits(PSTATE_TCO);
-            }
-            gen_rebuild_hflags(s);
-            /* Many factors, including TCO, go into MTE_ACTIVE. */
-            s->base.is_jmp = DISAS_UPDATE_NOCHAIN;
-        } else if (dc_isar_feature(aa64_mte_insn_reg, s)) {
-            /* Only "instructions accessible at EL0" -- PSTATE.TCO is WI.  */
-            s->base.is_jmp = DISAS_NEXT;
-        } else {
-            goto do_unallocated;
-        }
-        break;
-
-    case 0x1b: /* SVCR* */
-        if (!dc_isar_feature(aa64_sme, s) || crm < 2 || crm > 7) {
-            goto do_unallocated;
-        }
-        if (sme_access_check(s)) {
-            int old = s->pstate_sm | (s->pstate_za << 1);
-            int new = (crm & 1) * 3;
-            int msk = (crm >> 1) & 3;
-
-            if ((old ^ new) & msk) {
-                /* At least one bit changes. */
-                gen_helper_set_svcr(cpu_env, tcg_constant_i32(new),
-                                    tcg_constant_i32(msk));
-            } else {
-                s->base.is_jmp = DISAS_NEXT;
-            }
-        }
-        break;
-
-    default:
-    do_unallocated:
-        unallocated_encoding(s);
-        return;
+    if (!dc_isar_feature(aa64_uao, s) || s->current_el == 0) {
+        return false;
     }
+    if (a->imm & 1) {
+        set_pstate_bits(PSTATE_UAO);
+    } else {
+        clear_pstate_bits(PSTATE_UAO);
+    }
+    gen_rebuild_hflags(s);
+    s->base.is_jmp = DISAS_TOO_MANY;
+    return true;
+}
+
+static bool trans_MSR_i_PAN(DisasContext *s, arg_i *a)
+{
+    if (!dc_isar_feature(aa64_pan, s) || s->current_el == 0) {
+        return false;
+    }
+    if (a->imm & 1) {
+        set_pstate_bits(PSTATE_PAN);
+    } else {
+        clear_pstate_bits(PSTATE_PAN);
+    }
+    gen_rebuild_hflags(s);
+    s->base.is_jmp = DISAS_TOO_MANY;
+    return true;
+}
+
+static bool trans_MSR_i_SPSEL(DisasContext *s, arg_i *a)
+{
+    if (s->current_el == 0) {
+        return false;
+    }
+    gen_helper_msr_i_spsel(cpu_env, tcg_constant_i32(a->imm & PSTATE_SP));
+    s->base.is_jmp = DISAS_TOO_MANY;
+    return true;
+}
+
+static bool trans_MSR_i_SBSS(DisasContext *s, arg_i *a)
+{
+    if (!dc_isar_feature(aa64_ssbs, s)) {
+        return false;
+    }
+    if (a->imm & 1) {
+        set_pstate_bits(PSTATE_SSBS);
+    } else {
+        clear_pstate_bits(PSTATE_SSBS);
+    }
+    /* Don't need to rebuild hflags since SSBS is a nop */
+    s->base.is_jmp = DISAS_TOO_MANY;
+    return true;
+}
+
+static bool trans_MSR_i_DIT(DisasContext *s, arg_i *a)
+{
+    if (!dc_isar_feature(aa64_dit, s)) {
+        return false;
+    }
+    if (a->imm & 1) {
+        set_pstate_bits(PSTATE_DIT);
+    } else {
+        clear_pstate_bits(PSTATE_DIT);
+    }
+    /* There's no need to rebuild hflags because DIT is a nop */
+    s->base.is_jmp = DISAS_TOO_MANY;
+    return true;
+}
+
+static bool trans_MSR_i_TCO(DisasContext *s, arg_i *a)
+{
+    if (dc_isar_feature(aa64_mte, s)) {
+        /* Full MTE is enabled -- set the TCO bit as directed. */
+        if (a->imm & 1) {
+            set_pstate_bits(PSTATE_TCO);
+        } else {
+            clear_pstate_bits(PSTATE_TCO);
+        }
+        gen_rebuild_hflags(s);
+        /* Many factors, including TCO, go into MTE_ACTIVE. */
+        s->base.is_jmp = DISAS_UPDATE_NOCHAIN;
+        return true;
+    } else if (dc_isar_feature(aa64_mte_insn_reg, s)) {
+        /* Only "instructions accessible at EL0" -- PSTATE.TCO is WI.  */
+        return true;
+    } else {
+        /* Insn not present */
+        return false;
+    }
+}
+
+static bool trans_MSR_i_DAIFSET(DisasContext *s, arg_i *a)
+{
+    gen_helper_msr_i_daifset(cpu_env, tcg_constant_i32(a->imm));
+    s->base.is_jmp = DISAS_TOO_MANY;
+    return true;
+}
+
+static bool trans_MSR_i_DAIFCLEAR(DisasContext *s, arg_i *a)
+{
+    gen_helper_msr_i_daifclear(cpu_env, tcg_constant_i32(a->imm));
+    /* Exit the cpu loop to re-evaluate pending IRQs. */
+    s->base.is_jmp = DISAS_UPDATE_EXIT;
+    return true;
+}
+
+static bool trans_MSR_i_SVCR(DisasContext *s, arg_MSR_i_SVCR *a)
+{
+    if (!dc_isar_feature(aa64_sme, s) || a->mask == 0) {
+        return false;
+    }
+    if (sme_access_check(s)) {
+        int old = s->pstate_sm | (s->pstate_za << 1);
+        int new = a->imm * 3;
+
+        if ((old ^ new) & a->mask) {
+            /* At least one bit changes. */
+            gen_helper_set_svcr(cpu_env, tcg_constant_i32(new),
+                                tcg_constant_i32(a->mask));
+            s->base.is_jmp = DISAS_TOO_MANY;
+        }
+    }
+    return true;
 }
 
 static void gen_get_nzcv(TCGv_i64 tcg_rt)
@@ -2039,13 +2144,14 @@ static void gen_sysreg_undef(DisasContext *s, bool isread,
  * These are all essentially the same insn in 'read' and 'write'
  * versions, with varying op0 fields.
  */
-static void handle_sys(DisasContext *s, uint32_t insn, bool isread,
+static void handle_sys(DisasContext *s, bool isread,
                        unsigned int op0, unsigned int op1, unsigned int op2,
                        unsigned int crn, unsigned int crm, unsigned int rt)
 {
     uint32_t key = ENCODE_AA64_CP_REG(CP_REG_ARM64_SYSREG_CP,
                                       crn, crm, op0, op1, op2);
     const ARMCPRegInfo *ri = get_arm_cp_reginfo(s->cp_regs, key);
+    bool need_exit_tb = false;
     TCGv_ptr tcg_ri = NULL;
     TCGv_i64 tcg_rt;
 
@@ -2173,8 +2279,9 @@ static void handle_sys(DisasContext *s, uint32_t insn, bool isread,
         return;
     }
 
-    if ((tb_cflags(s->base.tb) & CF_USE_ICOUNT) && (ri->type & ARM_CP_IO)) {
-        gen_io_start();
+    if (ri->type & ARM_CP_IO) {
+        /* I/O operations must end the TB here (whether read or write) */
+        need_exit_tb = translator_io_start(&s->base);
     }
 
     tcg_rt = cpu_reg(s, rt);
@@ -2204,10 +2311,6 @@ static void handle_sys(DisasContext *s, uint32_t insn, bool isread,
         }
     }
 
-    if ((tb_cflags(s->base.tb) & CF_USE_ICOUNT) && (ri->type & ARM_CP_IO)) {
-        /* I/O operations must end the TB here (whether read or write) */
-        s->base.is_jmp = DISAS_UPDATE_EXIT;
-    }
     if (!isread && !(ri->type & ARM_CP_SUPPRESS_TB_END)) {
         /*
          * A write to any coprocessor regiser that ends a TB
@@ -2219,168 +2322,90 @@ static void handle_sys(DisasContext *s, uint32_t insn, bool isread,
          * but allow this to be suppressed by the register definition
          * (usually only necessary to work around guest bugs).
          */
+        need_exit_tb = true;
+    }
+    if (need_exit_tb) {
         s->base.is_jmp = DISAS_UPDATE_EXIT;
     }
 }
 
-/* System
- *  31                 22 21  20 19 18 16 15   12 11    8 7   5 4    0
- * +---------------------+---+-----+-----+-------+-------+-----+------+
- * | 1 1 0 1 0 1 0 1 0 0 | L | op0 | op1 |  CRn  |  CRm  | op2 |  Rt  |
- * +---------------------+---+-----+-----+-------+-------+-----+------+
- */
-static void disas_system(DisasContext *s, uint32_t insn)
+static bool trans_SYS(DisasContext *s, arg_SYS *a)
 {
-    unsigned int l, op0, op1, crn, crm, op2, rt;
-    l = extract32(insn, 21, 1);
-    op0 = extract32(insn, 19, 2);
-    op1 = extract32(insn, 16, 3);
-    crn = extract32(insn, 12, 4);
-    crm = extract32(insn, 8, 4);
-    op2 = extract32(insn, 5, 3);
-    rt = extract32(insn, 0, 5);
-
-    if (op0 == 0) {
-        if (l || rt != 31) {
-            unallocated_encoding(s);
-            return;
-        }
-        switch (crn) {
-        case 2: /* HINT (including allocated hints like NOP, YIELD, etc) */
-            handle_hint(s, insn, op1, op2, crm);
-            break;
-        case 3: /* CLREX, DSB, DMB, ISB */
-            handle_sync(s, insn, op1, op2, crm);
-            break;
-        case 4: /* MSR (immediate) */
-            handle_msr_i(s, insn, op1, op2, crm);
-            break;
-        default:
-            unallocated_encoding(s);
-            break;
-        }
-        return;
-    }
-    handle_sys(s, insn, l, op0, op1, op2, crn, crm, rt);
+    handle_sys(s, a->l, a->op0, a->op1, a->op2, a->crn, a->crm, a->rt);
+    return true;
 }
 
-/* Exception generation
- *
- *  31             24 23 21 20                     5 4   2 1  0
- * +-----------------+-----+------------------------+-----+----+
- * | 1 1 0 1 0 1 0 0 | opc |          imm16         | op2 | LL |
- * +-----------------------+------------------------+----------+
- */
-static void disas_exc(DisasContext *s, uint32_t insn)
+static bool trans_SVC(DisasContext *s, arg_i *a)
 {
-    int opc = extract32(insn, 21, 3);
-    int op2_ll = extract32(insn, 0, 5);
-    int imm16 = extract32(insn, 5, 16);
-    uint32_t syndrome;
-
-    switch (opc) {
-    case 0:
-        /* For SVC, HVC and SMC we advance the single-step state
-         * machine before taking the exception. This is architecturally
-         * mandated, to ensure that single-stepping a system call
-         * instruction works properly.
-         */
-        switch (op2_ll) {
-        case 1:                                                     /* SVC */
-            syndrome = syn_aa64_svc(imm16);
-            if (s->fgt_svc) {
-                gen_exception_insn_el(s, 0, EXCP_UDEF, syndrome, 2);
-                break;
-            }
-            gen_ss_advance(s);
-            gen_exception_insn(s, 4, EXCP_SWI, syndrome);
-            break;
-        case 2:                                                     /* HVC */
-            if (s->current_el == 0) {
-                unallocated_encoding(s);
-                break;
-            }
-            /* The pre HVC helper handles cases when HVC gets trapped
-             * as an undefined insn by runtime configuration.
-             */
-            gen_a64_update_pc(s, 0);
-            gen_helper_pre_hvc(cpu_env);
-            gen_ss_advance(s);
-            gen_exception_insn_el(s, 4, EXCP_HVC, syn_aa64_hvc(imm16), 2);
-            break;
-        case 3:                                                     /* SMC */
-            if (s->current_el == 0) {
-                unallocated_encoding(s);
-                break;
-            }
-            gen_a64_update_pc(s, 0);
-            gen_helper_pre_smc(cpu_env, tcg_constant_i32(syn_aa64_smc(imm16)));
-            gen_ss_advance(s);
-            gen_exception_insn_el(s, 4, EXCP_SMC, syn_aa64_smc(imm16), 3);
-            break;
-        default:
-            unallocated_encoding(s);
-            break;
-        }
-        break;
-    case 1:
-        if (op2_ll != 0) {
-            unallocated_encoding(s);
-            break;
-        }
-        /* BRK */
-        gen_exception_bkpt_insn(s, syn_aa64_bkpt(imm16));
-        break;
-    case 2:
-        if (op2_ll != 0) {
-            unallocated_encoding(s);
-            break;
-        }
-        /* HLT. This has two purposes.
-         * Architecturally, it is an external halting debug instruction.
-         * Since QEMU doesn't implement external debug, we treat this as
-         * it is required for halting debug disabled: it will UNDEF.
-         * Secondly, "HLT 0xf000" is the A64 semihosting syscall instruction.
-         */
-        if (semihosting_enabled(s->current_el == 0) && imm16 == 0xf000) {
-            gen_exception_internal_insn(s, EXCP_SEMIHOST);
-        } else {
-            unallocated_encoding(s);
-        }
-        break;
-    case 5:
-        if (op2_ll < 1 || op2_ll > 3) {
-            unallocated_encoding(s);
-            break;
-        }
-        /* DCPS1, DCPS2, DCPS3 */
-        unallocated_encoding(s);
-        break;
-    default:
-        unallocated_encoding(s);
-        break;
+    /*
+     * For SVC, HVC and SMC we advance the single-step state
+     * machine before taking the exception. This is architecturally
+     * mandated, to ensure that single-stepping a system call
+     * instruction works properly.
+     */
+    uint32_t syndrome = syn_aa64_svc(a->imm);
+    if (s->fgt_svc) {
+        gen_exception_insn_el(s, 0, EXCP_UDEF, syndrome, 2);
+        return true;
     }
+    gen_ss_advance(s);
+    gen_exception_insn(s, 4, EXCP_SWI, syndrome);
+    return true;
 }
 
-/* Branches, exception generating and system instructions */
-static void disas_b_exc_sys(DisasContext *s, uint32_t insn)
+static bool trans_HVC(DisasContext *s, arg_i *a)
 {
-    switch (extract32(insn, 25, 7)) {
-    case 0x6a: /* Exception generation / System */
-        if (insn & (1 << 24)) {
-            if (extract32(insn, 22, 2) == 0) {
-                disas_system(s, insn);
-            } else {
-                unallocated_encoding(s);
-            }
-        } else {
-            disas_exc(s, insn);
-        }
-        break;
-    default:
+    if (s->current_el == 0) {
         unallocated_encoding(s);
-        break;
+        return true;
     }
+    /*
+     * The pre HVC helper handles cases when HVC gets trapped
+     * as an undefined insn by runtime configuration.
+     */
+    gen_a64_update_pc(s, 0);
+    gen_helper_pre_hvc(cpu_env);
+    /* Architecture requires ss advance before we do the actual work */
+    gen_ss_advance(s);
+    gen_exception_insn_el(s, 4, EXCP_HVC, syn_aa64_hvc(a->imm), 2);
+    return true;
+}
+
+static bool trans_SMC(DisasContext *s, arg_i *a)
+{
+    if (s->current_el == 0) {
+        unallocated_encoding(s);
+        return true;
+    }
+    gen_a64_update_pc(s, 0);
+    gen_helper_pre_smc(cpu_env, tcg_constant_i32(syn_aa64_smc(a->imm)));
+    /* Architecture requires ss advance before we do the actual work */
+    gen_ss_advance(s);
+    gen_exception_insn_el(s, 4, EXCP_SMC, syn_aa64_smc(a->imm), 3);
+    return true;
+}
+
+static bool trans_BRK(DisasContext *s, arg_i *a)
+{
+    gen_exception_bkpt_insn(s, syn_aa64_bkpt(a->imm));
+    return true;
+}
+
+static bool trans_HLT(DisasContext *s, arg_i *a)
+{
+    /*
+     * HLT. This has two purposes.
+     * Architecturally, it is an external halting debug instruction.
+     * Since QEMU doesn't implement external debug, we treat this as
+     * it is required for halting debug disabled: it will UNDEF.
+     * Secondly, "HLT 0xf000" is the A64 semihosting syscall instruction.
+     */
+    if (semihosting_enabled(s->current_el == 0) && a->imm == 0xf000) {
+        gen_exception_internal_insn(s, EXCP_SEMIHOST);
+    } else {
+        unallocated_encoding(s);
+    }
+    return true;
 }
 
 /*
@@ -2394,19 +2419,22 @@ static void disas_b_exc_sys(DisasContext *s, uint32_t insn)
  * races in multi-threaded linux-user and when MTTCG softmmu is
  * enabled.
  */
-static void gen_load_exclusive(DisasContext *s, int rt, int rt2,
-                               TCGv_i64 addr, int size, bool is_pair)
+static void gen_load_exclusive(DisasContext *s, int rt, int rt2, int rn,
+                               int size, bool is_pair)
 {
     int idx = get_mem_index(s);
-    MemOp memop = s->be_data;
+    TCGv_i64 dirty_addr, clean_addr;
+    MemOp memop = check_atomic_align(s, rn, size + is_pair);
+
+    s->is_ldex = true;
+    dirty_addr = cpu_reg_sp(s, rn);
+    clean_addr = gen_mte_check1(s, dirty_addr, false, rn != 31, memop);
 
     g_assert(size <= 3);
     if (is_pair) {
         g_assert(size >= 2);
         if (size == 2) {
-            /* The pair must be single-copy atomic for the doubleword.  */
-            memop |= MO_64 | MO_ALIGN;
-            tcg_gen_qemu_ld_i64(cpu_exclusive_val, addr, idx, memop);
+            tcg_gen_qemu_ld_i64(cpu_exclusive_val, clean_addr, idx, memop);
             if (s->be_data == MO_LE) {
                 tcg_gen_extract_i64(cpu_reg(s, rt), cpu_exclusive_val, 0, 32);
                 tcg_gen_extract_i64(cpu_reg(s, rt2), cpu_exclusive_val, 32, 32);
@@ -2415,29 +2443,29 @@ static void gen_load_exclusive(DisasContext *s, int rt, int rt2,
                 tcg_gen_extract_i64(cpu_reg(s, rt2), cpu_exclusive_val, 0, 32);
             }
         } else {
-            /* The pair must be single-copy atomic for *each* doubleword, not
-               the entire quadword, however it must be quadword aligned.  */
-            memop |= MO_64;
-            tcg_gen_qemu_ld_i64(cpu_exclusive_val, addr, idx,
-                                memop | MO_ALIGN_16);
+            TCGv_i128 t16 = tcg_temp_new_i128();
 
-            TCGv_i64 addr2 = tcg_temp_new_i64();
-            tcg_gen_addi_i64(addr2, addr, 8);
-            tcg_gen_qemu_ld_i64(cpu_exclusive_high, addr2, idx, memop);
+            tcg_gen_qemu_ld_i128(t16, clean_addr, idx, memop);
 
+            if (s->be_data == MO_LE) {
+                tcg_gen_extr_i128_i64(cpu_exclusive_val,
+                                      cpu_exclusive_high, t16);
+            } else {
+                tcg_gen_extr_i128_i64(cpu_exclusive_high,
+                                      cpu_exclusive_val, t16);
+            }
             tcg_gen_mov_i64(cpu_reg(s, rt), cpu_exclusive_val);
             tcg_gen_mov_i64(cpu_reg(s, rt2), cpu_exclusive_high);
         }
     } else {
-        memop |= size | MO_ALIGN;
-        tcg_gen_qemu_ld_i64(cpu_exclusive_val, addr, idx, memop);
+        tcg_gen_qemu_ld_i64(cpu_exclusive_val, clean_addr, idx, memop);
         tcg_gen_mov_i64(cpu_reg(s, rt), cpu_exclusive_val);
     }
-    tcg_gen_mov_i64(cpu_exclusive_addr, addr);
+    tcg_gen_mov_i64(cpu_exclusive_addr, clean_addr);
 }
 
 static void gen_store_exclusive(DisasContext *s, int rd, int rt, int rt2,
-                                TCGv_i64 addr, int size, int is_pair)
+                                int rn, int size, int is_pair)
 {
     /* if (env->exclusive_addr == addr && env->exclusive_val == [addr]
      *     && (!is_pair || env->exclusive_high == [addr + datasize])) {
@@ -2453,9 +2481,46 @@ static void gen_store_exclusive(DisasContext *s, int rd, int rt, int rt2,
      */
     TCGLabel *fail_label = gen_new_label();
     TCGLabel *done_label = gen_new_label();
-    TCGv_i64 tmp;
+    TCGv_i64 tmp, clean_addr;
+    MemOp memop;
 
-    tcg_gen_brcond_i64(TCG_COND_NE, addr, cpu_exclusive_addr, fail_label);
+    /*
+     * FIXME: We are out of spec here.  We have recorded only the address
+     * from load_exclusive, not the entire range, and we assume that the
+     * size of the access on both sides match.  The architecture allows the
+     * store to be smaller than the load, so long as the stored bytes are
+     * within the range recorded by the load.
+     */
+
+    /* See AArch64.ExclusiveMonitorsPass() and AArch64.IsExclusiveVA(). */
+    clean_addr = clean_data_tbi(s, cpu_reg_sp(s, rn));
+    tcg_gen_brcond_i64(TCG_COND_NE, clean_addr, cpu_exclusive_addr, fail_label);
+
+    /*
+     * The write, and any associated faults, only happen if the virtual
+     * and physical addresses pass the exclusive monitor check.  These
+     * faults are exceedingly unlikely, because normally the guest uses
+     * the exact same address register for the load_exclusive, and we
+     * would have recognized these faults there.
+     *
+     * It is possible to trigger an alignment fault pre-LSE2, e.g. with an
+     * unaligned 4-byte write within the range of an aligned 8-byte load.
+     * With LSE2, the store would need to cross a 16-byte boundary when the
+     * load did not, which would mean the store is outside the range
+     * recorded for the monitor, which would have failed a corrected monitor
+     * check above.  For now, we assume no size change and retain the
+     * MO_ALIGN to let tcg know what we checked in the load_exclusive.
+     *
+     * It is possible to trigger an MTE fault, by performing the load with
+     * a virtual address with a valid tag and performing the store with the
+     * same virtual address and a different invalid tag.
+     */
+    memop = size + is_pair;
+    if (memop == MO_128 || !dc_isar_feature(aa64_lse2, s)) {
+        memop |= MO_ALIGN;
+    }
+    memop = finalize_memop(s, memop);
+    gen_mte_check1(s, cpu_reg_sp(s, rn), true, rn != 31, memop);
 
     tmp = tcg_temp_new_i64();
     if (is_pair) {
@@ -2467,8 +2532,7 @@ static void gen_store_exclusive(DisasContext *s, int rd, int rt, int rt2,
             }
             tcg_gen_atomic_cmpxchg_i64(tmp, cpu_exclusive_addr,
                                        cpu_exclusive_val, tmp,
-                                       get_mem_index(s),
-                                       MO_64 | MO_ALIGN | s->be_data);
+                                       get_mem_index(s), memop);
             tcg_gen_setcond_i64(TCG_COND_NE, tmp, tmp, cpu_exclusive_val);
         } else {
             TCGv_i128 t16 = tcg_temp_new_i128();
@@ -2486,8 +2550,7 @@ static void gen_store_exclusive(DisasContext *s, int rd, int rt, int rt2,
             }
 
             tcg_gen_atomic_cmpxchg_i128(t16, cpu_exclusive_addr, c16, t16,
-                                        get_mem_index(s),
-                                        MO_128 | MO_ALIGN | s->be_data);
+                                        get_mem_index(s), memop);
 
             a = tcg_temp_new_i64();
             b = tcg_temp_new_i64();
@@ -2505,8 +2568,7 @@ static void gen_store_exclusive(DisasContext *s, int rd, int rt, int rt2,
         }
     } else {
         tcg_gen_atomic_cmpxchg_i64(tmp, cpu_exclusive_addr, cpu_exclusive_val,
-                                   cpu_reg(s, rt), get_mem_index(s),
-                                   size | MO_ALIGN | s->be_data);
+                                   cpu_reg(s, rt), get_mem_index(s), memop);
         tcg_gen_setcond_i64(TCG_COND_NE, tmp, tmp, cpu_exclusive_val);
     }
     tcg_gen_mov_i64(cpu_reg(s, rd), tmp);
@@ -2525,13 +2587,15 @@ static void gen_compare_and_swap(DisasContext *s, int rs, int rt,
     TCGv_i64 tcg_rt = cpu_reg(s, rt);
     int memidx = get_mem_index(s);
     TCGv_i64 clean_addr;
+    MemOp memop;
 
     if (rn == 31) {
         gen_check_sp_alignment(s);
     }
-    clean_addr = gen_mte_check1(s, cpu_reg_sp(s, rn), true, rn != 31, size);
-    tcg_gen_atomic_cmpxchg_i64(tcg_rs, clean_addr, tcg_rs, tcg_rt, memidx,
-                               size | MO_ALIGN | s->be_data);
+    memop = check_atomic_align(s, rn, size);
+    clean_addr = gen_mte_check1(s, cpu_reg_sp(s, rn), true, rn != 31, memop);
+    tcg_gen_atomic_cmpxchg_i64(tcg_rs, clean_addr, tcg_rs, tcg_rt,
+                               memidx, memop);
 }
 
 static void gen_compare_and_swap_pair(DisasContext *s, int rs, int rt,
@@ -2543,13 +2607,15 @@ static void gen_compare_and_swap_pair(DisasContext *s, int rs, int rt,
     TCGv_i64 t2 = cpu_reg(s, rt + 1);
     TCGv_i64 clean_addr;
     int memidx = get_mem_index(s);
+    MemOp memop;
 
     if (rn == 31) {
         gen_check_sp_alignment(s);
     }
 
     /* This is a single atomic access, despite the "pair". */
-    clean_addr = gen_mte_check1(s, cpu_reg_sp(s, rn), true, rn != 31, size + 1);
+    memop = check_atomic_align(s, rn, size + 1);
+    clean_addr = gen_mte_check1(s, cpu_reg_sp(s, rn), true, rn != 31, memop);
 
     if (size == 2) {
         TCGv_i64 cmp = tcg_temp_new_i64();
@@ -2563,8 +2629,7 @@ static void gen_compare_and_swap_pair(DisasContext *s, int rs, int rt,
             tcg_gen_concat32_i64(cmp, s2, s1);
         }
 
-        tcg_gen_atomic_cmpxchg_i64(cmp, clean_addr, cmp, val, memidx,
-                                   MO_64 | MO_ALIGN | s->be_data);
+        tcg_gen_atomic_cmpxchg_i64(cmp, clean_addr, cmp, val, memidx, memop);
 
         if (s->be_data == MO_LE) {
             tcg_gen_extr32_i64(s1, s2, cmp);
@@ -2583,8 +2648,7 @@ static void gen_compare_and_swap_pair(DisasContext *s, int rs, int rt,
             tcg_gen_concat_i64_i128(cmp, s2, s1);
         }
 
-        tcg_gen_atomic_cmpxchg_i128(cmp, clean_addr, cmp, val, memidx,
-                                    MO_128 | MO_ALIGN | s->be_data);
+        tcg_gen_atomic_cmpxchg_i128(cmp, clean_addr, cmp, val, memidx, memop);
 
         if (s->be_data == MO_LE) {
             tcg_gen_extr_i128_i64(s1, s2, cmp);
@@ -2594,854 +2658,685 @@ static void gen_compare_and_swap_pair(DisasContext *s, int rs, int rt,
     }
 }
 
-/* Update the Sixty-Four bit (SF) registersize. This logic is derived
+/*
+ * Compute the ISS.SF bit for syndrome information if an exception
+ * is taken on a load or store. This indicates whether the instruction
+ * is accessing a 32-bit or 64-bit register. This logic is derived
  * from the ARMv8 specs for LDR (Shared decode for all encodings).
  */
-static bool disas_ldst_compute_iss_sf(int size, bool is_signed, int opc)
+static bool ldst_iss_sf(int size, bool sign, bool ext)
 {
-    int opc0 = extract32(opc, 0, 1);
-    int regsize;
 
-    if (is_signed) {
-        regsize = opc0 ? 32 : 64;
-    } else {
-        regsize = size == 3 ? 64 : 32;
-    }
-    return regsize == 64;
-}
-
-/* Load/store exclusive
- *
- *  31 30 29         24  23  22   21  20  16  15  14   10 9    5 4    0
- * +-----+-------------+----+---+----+------+----+-------+------+------+
- * | sz  | 0 0 1 0 0 0 | o2 | L | o1 |  Rs  | o0 |  Rt2  |  Rn  | Rt   |
- * +-----+-------------+----+---+----+------+----+-------+------+------+
- *
- *  sz: 00 -> 8 bit, 01 -> 16 bit, 10 -> 32 bit, 11 -> 64 bit
- *   L: 0 -> store, 1 -> load
- *  o2: 0 -> exclusive, 1 -> not
- *  o1: 0 -> single register, 1 -> register pair
- *  o0: 1 -> load-acquire/store-release, 0 -> not
- */
-static void disas_ldst_excl(DisasContext *s, uint32_t insn)
-{
-    int rt = extract32(insn, 0, 5);
-    int rn = extract32(insn, 5, 5);
-    int rt2 = extract32(insn, 10, 5);
-    int rs = extract32(insn, 16, 5);
-    int is_lasr = extract32(insn, 15, 1);
-    int o2_L_o1_o0 = extract32(insn, 21, 3) * 2 | is_lasr;
-    int size = extract32(insn, 30, 2);
-    TCGv_i64 clean_addr;
-
-    switch (o2_L_o1_o0) {
-    case 0x0: /* STXR */
-    case 0x1: /* STLXR */
-        if (rn == 31) {
-            gen_check_sp_alignment(s);
-        }
-        if (is_lasr) {
-            tcg_gen_mb(TCG_MO_ALL | TCG_BAR_STRL);
-        }
-        clean_addr = gen_mte_check1(s, cpu_reg_sp(s, rn),
-                                    true, rn != 31, size);
-        gen_store_exclusive(s, rs, rt, rt2, clean_addr, size, false);
-        return;
-
-    case 0x4: /* LDXR */
-    case 0x5: /* LDAXR */
-        if (rn == 31) {
-            gen_check_sp_alignment(s);
-        }
-        clean_addr = gen_mte_check1(s, cpu_reg_sp(s, rn),
-                                    false, rn != 31, size);
-        s->is_ldex = true;
-        gen_load_exclusive(s, rt, rt2, clean_addr, size, false);
-        if (is_lasr) {
-            tcg_gen_mb(TCG_MO_ALL | TCG_BAR_LDAQ);
-        }
-        return;
-
-    case 0x8: /* STLLR */
-        if (!dc_isar_feature(aa64_lor, s)) {
-            break;
-        }
-        /* StoreLORelease is the same as Store-Release for QEMU.  */
-        /* fall through */
-    case 0x9: /* STLR */
-        /* Generate ISS for non-exclusive accesses including LASR.  */
-        if (rn == 31) {
-            gen_check_sp_alignment(s);
-        }
-        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_STRL);
-        clean_addr = gen_mte_check1(s, cpu_reg_sp(s, rn),
-                                    true, rn != 31, size);
-        /* TODO: ARMv8.4-LSE SCTLR.nAA */
-        do_gpr_st(s, cpu_reg(s, rt), clean_addr, size | MO_ALIGN, true, rt,
-                  disas_ldst_compute_iss_sf(size, false, 0), is_lasr);
-        return;
-
-    case 0xc: /* LDLAR */
-        if (!dc_isar_feature(aa64_lor, s)) {
-            break;
-        }
-        /* LoadLOAcquire is the same as Load-Acquire for QEMU.  */
-        /* fall through */
-    case 0xd: /* LDAR */
-        /* Generate ISS for non-exclusive accesses including LASR.  */
-        if (rn == 31) {
-            gen_check_sp_alignment(s);
-        }
-        clean_addr = gen_mte_check1(s, cpu_reg_sp(s, rn),
-                                    false, rn != 31, size);
-        /* TODO: ARMv8.4-LSE SCTLR.nAA */
-        do_gpr_ld(s, cpu_reg(s, rt), clean_addr, size | MO_ALIGN, false, true,
-                  rt, disas_ldst_compute_iss_sf(size, false, 0), is_lasr);
-        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_LDAQ);
-        return;
-
-    case 0x2: case 0x3: /* CASP / STXP */
-        if (size & 2) { /* STXP / STLXP */
-            if (rn == 31) {
-                gen_check_sp_alignment(s);
-            }
-            if (is_lasr) {
-                tcg_gen_mb(TCG_MO_ALL | TCG_BAR_STRL);
-            }
-            clean_addr = gen_mte_check1(s, cpu_reg_sp(s, rn),
-                                        true, rn != 31, size);
-            gen_store_exclusive(s, rs, rt, rt2, clean_addr, size, true);
-            return;
-        }
-        if (rt2 == 31
-            && ((rt | rs) & 1) == 0
-            && dc_isar_feature(aa64_atomics, s)) {
-            /* CASP / CASPL */
-            gen_compare_and_swap_pair(s, rs, rt, rn, size | 2);
-            return;
-        }
-        break;
-
-    case 0x6: case 0x7: /* CASPA / LDXP */
-        if (size & 2) { /* LDXP / LDAXP */
-            if (rn == 31) {
-                gen_check_sp_alignment(s);
-            }
-            clean_addr = gen_mte_check1(s, cpu_reg_sp(s, rn),
-                                        false, rn != 31, size);
-            s->is_ldex = true;
-            gen_load_exclusive(s, rt, rt2, clean_addr, size, true);
-            if (is_lasr) {
-                tcg_gen_mb(TCG_MO_ALL | TCG_BAR_LDAQ);
-            }
-            return;
-        }
-        if (rt2 == 31
-            && ((rt | rs) & 1) == 0
-            && dc_isar_feature(aa64_atomics, s)) {
-            /* CASPA / CASPAL */
-            gen_compare_and_swap_pair(s, rs, rt, rn, size | 2);
-            return;
-        }
-        break;
-
-    case 0xa: /* CAS */
-    case 0xb: /* CASL */
-    case 0xe: /* CASA */
-    case 0xf: /* CASAL */
-        if (rt2 == 31 && dc_isar_feature(aa64_atomics, s)) {
-            gen_compare_and_swap(s, rs, rt, rn, size);
-            return;
-        }
-        break;
-    }
-    unallocated_encoding(s);
-}
-
-/*
- * Load register (literal)
- *
- *  31 30 29   27  26 25 24 23                5 4     0
- * +-----+-------+---+-----+-------------------+-------+
- * | opc | 0 1 1 | V | 0 0 |     imm19         |  Rt   |
- * +-----+-------+---+-----+-------------------+-------+
- *
- * V: 1 -> vector (simd/fp)
- * opc (non-vector): 00 -> 32 bit, 01 -> 64 bit,
- *                   10-> 32 bit signed, 11 -> prefetch
- * opc (vector): 00 -> 32 bit, 01 -> 64 bit, 10 -> 128 bit (11 unallocated)
- */
-static void disas_ld_lit(DisasContext *s, uint32_t insn)
-{
-    int rt = extract32(insn, 0, 5);
-    int64_t imm = sextract32(insn, 5, 19) << 2;
-    bool is_vector = extract32(insn, 26, 1);
-    int opc = extract32(insn, 30, 2);
-    bool is_signed = false;
-    int size = 2;
-    TCGv_i64 tcg_rt, clean_addr;
-
-    if (is_vector) {
-        if (opc == 3) {
-            unallocated_encoding(s);
-            return;
-        }
-        size = 2 + opc;
-        if (!fp_access_check(s)) {
-            return;
-        }
-    } else {
-        if (opc == 3) {
-            /* PRFM (literal) : prefetch */
-            return;
-        }
-        size = 2 + extract32(opc, 0, 1);
-        is_signed = extract32(opc, 1, 1);
-    }
-
-    tcg_rt = cpu_reg(s, rt);
-
-    clean_addr = tcg_temp_new_i64();
-    gen_pc_plus_diff(s, clean_addr, imm);
-    if (is_vector) {
-        do_fp_ld(s, rt, clean_addr, size);
-    } else {
-        /* Only unsigned 32bit loads target 32bit registers.  */
-        bool iss_sf = opc != 0;
-
-        do_gpr_ld(s, tcg_rt, clean_addr, size + is_signed * MO_SIGN,
-                  false, true, rt, iss_sf, false);
-    }
-}
-
-/*
- * LDNP (Load Pair - non-temporal hint)
- * LDP (Load Pair - non vector)
- * LDPSW (Load Pair Signed Word - non vector)
- * STNP (Store Pair - non-temporal hint)
- * STP (Store Pair - non vector)
- * LDNP (Load Pair of SIMD&FP - non-temporal hint)
- * LDP (Load Pair of SIMD&FP)
- * STNP (Store Pair of SIMD&FP - non-temporal hint)
- * STP (Store Pair of SIMD&FP)
- *
- *  31 30 29   27  26  25 24   23  22 21   15 14   10 9    5 4    0
- * +-----+-------+---+---+-------+---+-----------------------------+
- * | opc | 1 0 1 | V | 0 | index | L |  imm7 |  Rt2  |  Rn  | Rt   |
- * +-----+-------+---+---+-------+---+-------+-------+------+------+
- *
- * opc: LDP/STP/LDNP/STNP        00 -> 32 bit, 10 -> 64 bit
- *      LDPSW/STGP               01
- *      LDP/STP/LDNP/STNP (SIMD) 00 -> 32 bit, 01 -> 64 bit, 10 -> 128 bit
- *   V: 0 -> GPR, 1 -> Vector
- * idx: 00 -> signed offset with non-temporal hint, 01 -> post-index,
- *      10 -> signed offset, 11 -> pre-index
- *   L: 0 -> Store 1 -> Load
- *
- * Rt, Rt2 = GPR or SIMD registers to be stored
- * Rn = general purpose register containing address
- * imm7 = signed offset (multiple of 4 or 8 depending on size)
- */
-static void disas_ldst_pair(DisasContext *s, uint32_t insn)
-{
-    int rt = extract32(insn, 0, 5);
-    int rn = extract32(insn, 5, 5);
-    int rt2 = extract32(insn, 10, 5);
-    uint64_t offset = sextract64(insn, 15, 7);
-    int index = extract32(insn, 23, 2);
-    bool is_vector = extract32(insn, 26, 1);
-    bool is_load = extract32(insn, 22, 1);
-    int opc = extract32(insn, 30, 2);
-
-    bool is_signed = false;
-    bool postindex = false;
-    bool wback = false;
-    bool set_tag = false;
-
-    TCGv_i64 clean_addr, dirty_addr;
-
-    int size;
-
-    if (opc == 3) {
-        unallocated_encoding(s);
-        return;
-    }
-
-    if (is_vector) {
-        size = 2 + opc;
-    } else if (opc == 1 && !is_load) {
-        /* STGP */
-        if (!dc_isar_feature(aa64_mte_insn_reg, s) || index == 0) {
-            unallocated_encoding(s);
-            return;
-        }
-        size = 3;
-        set_tag = true;
-    } else {
-        size = 2 + extract32(opc, 1, 1);
-        is_signed = extract32(opc, 0, 1);
-        if (!is_load && is_signed) {
-            unallocated_encoding(s);
-            return;
-        }
-    }
-
-    switch (index) {
-    case 1: /* post-index */
-        postindex = true;
-        wback = true;
-        break;
-    case 0:
-        /* signed offset with "non-temporal" hint. Since we don't emulate
-         * caches we don't care about hints to the cache system about
-         * data access patterns, and handle this identically to plain
-         * signed offset.
+    if (sign) {
+        /*
+         * Signed loads are 64 bit results if we are not going to
+         * do a zero-extend from 32 to 64 after the load.
+         * (For a store, sign and ext are always false.)
          */
-        if (is_signed) {
-            /* There is no non-temporal-hint version of LDPSW */
-            unallocated_encoding(s);
-            return;
-        }
-        postindex = false;
-        break;
-    case 2: /* signed offset, rn not updated */
-        postindex = false;
-        break;
-    case 3: /* pre-index */
-        postindex = false;
-        wback = true;
-        break;
+        return !ext;
+    } else {
+        /* Unsigned loads/stores work at the specified size */
+        return size == MO_64;
+    }
+}
+
+static bool trans_STXR(DisasContext *s, arg_stxr *a)
+{
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+    if (a->lasr) {
+        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_STRL);
+    }
+    gen_store_exclusive(s, a->rs, a->rt, a->rt2, a->rn, a->sz, false);
+    return true;
+}
+
+static bool trans_LDXR(DisasContext *s, arg_stxr *a)
+{
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+    gen_load_exclusive(s, a->rt, a->rt2, a->rn, a->sz, false);
+    if (a->lasr) {
+        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_LDAQ);
+    }
+    return true;
+}
+
+static bool trans_STLR(DisasContext *s, arg_stlr *a)
+{
+    TCGv_i64 clean_addr;
+    MemOp memop;
+    bool iss_sf = ldst_iss_sf(a->sz, false, false);
+
+    /*
+     * StoreLORelease is the same as Store-Release for QEMU, but
+     * needs the feature-test.
+     */
+    if (!a->lasr && !dc_isar_feature(aa64_lor, s)) {
+        return false;
+    }
+    /* Generate ISS for non-exclusive accesses including LASR.  */
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+    tcg_gen_mb(TCG_MO_ALL | TCG_BAR_STRL);
+    memop = check_ordered_align(s, a->rn, 0, true, a->sz);
+    clean_addr = gen_mte_check1(s, cpu_reg_sp(s, a->rn),
+                                true, a->rn != 31, memop);
+    do_gpr_st(s, cpu_reg(s, a->rt), clean_addr, memop, true, a->rt,
+              iss_sf, a->lasr);
+    return true;
+}
+
+static bool trans_LDAR(DisasContext *s, arg_stlr *a)
+{
+    TCGv_i64 clean_addr;
+    MemOp memop;
+    bool iss_sf = ldst_iss_sf(a->sz, false, false);
+
+    /* LoadLOAcquire is the same as Load-Acquire for QEMU.  */
+    if (!a->lasr && !dc_isar_feature(aa64_lor, s)) {
+        return false;
+    }
+    /* Generate ISS for non-exclusive accesses including LASR.  */
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+    memop = check_ordered_align(s, a->rn, 0, false, a->sz);
+    clean_addr = gen_mte_check1(s, cpu_reg_sp(s, a->rn),
+                                false, a->rn != 31, memop);
+    do_gpr_ld(s, cpu_reg(s, a->rt), clean_addr, memop, false, true,
+              a->rt, iss_sf, a->lasr);
+    tcg_gen_mb(TCG_MO_ALL | TCG_BAR_LDAQ);
+    return true;
+}
+
+static bool trans_STXP(DisasContext *s, arg_stxr *a)
+{
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+    if (a->lasr) {
+        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_STRL);
+    }
+    gen_store_exclusive(s, a->rs, a->rt, a->rt2, a->rn, a->sz, true);
+    return true;
+}
+
+static bool trans_LDXP(DisasContext *s, arg_stxr *a)
+{
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+    gen_load_exclusive(s, a->rt, a->rt2, a->rn, a->sz, true);
+    if (a->lasr) {
+        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_LDAQ);
+    }
+    return true;
+}
+
+static bool trans_CASP(DisasContext *s, arg_CASP *a)
+{
+    if (!dc_isar_feature(aa64_atomics, s)) {
+        return false;
+    }
+    if (((a->rt | a->rs) & 1) != 0) {
+        return false;
     }
 
-    if (is_vector && !fp_access_check(s)) {
-        return;
+    gen_compare_and_swap_pair(s, a->rs, a->rt, a->rn, a->sz);
+    return true;
+}
+
+static bool trans_CAS(DisasContext *s, arg_CAS *a)
+{
+    if (!dc_isar_feature(aa64_atomics, s)) {
+        return false;
     }
+    gen_compare_and_swap(s, a->rs, a->rt, a->rn, a->sz);
+    return true;
+}
 
-    offset <<= (set_tag ? LOG2_TAG_GRANULE : size);
+static bool trans_LD_lit(DisasContext *s, arg_ldlit *a)
+{
+    bool iss_sf = ldst_iss_sf(a->sz, a->sign, false);
+    TCGv_i64 tcg_rt = cpu_reg(s, a->rt);
+    TCGv_i64 clean_addr = tcg_temp_new_i64();
+    MemOp memop = finalize_memop(s, a->sz + a->sign * MO_SIGN);
 
-    if (rn == 31) {
+    gen_pc_plus_diff(s, clean_addr, a->imm);
+    do_gpr_ld(s, tcg_rt, clean_addr, memop,
+              false, true, a->rt, iss_sf, false);
+    return true;
+}
+
+static bool trans_LD_lit_v(DisasContext *s, arg_ldlit *a)
+{
+    /* Load register (literal), vector version */
+    TCGv_i64 clean_addr;
+    MemOp memop;
+
+    if (!fp_access_check(s)) {
+        return true;
+    }
+    memop = finalize_memop_asimd(s, a->sz);
+    clean_addr = tcg_temp_new_i64();
+    gen_pc_plus_diff(s, clean_addr, a->imm);
+    do_fp_ld(s, a->rt, clean_addr, memop);
+    return true;
+}
+
+static void op_addr_ldstpair_pre(DisasContext *s, arg_ldstpair *a,
+                                 TCGv_i64 *clean_addr, TCGv_i64 *dirty_addr,
+                                 uint64_t offset, bool is_store, MemOp mop)
+{
+    if (a->rn == 31) {
         gen_check_sp_alignment(s);
     }
 
-    dirty_addr = read_cpu_reg_sp(s, rn, 1);
-    if (!postindex) {
+    *dirty_addr = read_cpu_reg_sp(s, a->rn, 1);
+    if (!a->p) {
+        tcg_gen_addi_i64(*dirty_addr, *dirty_addr, offset);
+    }
+
+    *clean_addr = gen_mte_checkN(s, *dirty_addr, is_store,
+                                 (a->w || a->rn != 31), 2 << a->sz, mop);
+}
+
+static void op_addr_ldstpair_post(DisasContext *s, arg_ldstpair *a,
+                                  TCGv_i64 dirty_addr, uint64_t offset)
+{
+    if (a->w) {
+        if (a->p) {
+            tcg_gen_addi_i64(dirty_addr, dirty_addr, offset);
+        }
+        tcg_gen_mov_i64(cpu_reg_sp(s, a->rn), dirty_addr);
+    }
+}
+
+static bool trans_STP(DisasContext *s, arg_ldstpair *a)
+{
+    uint64_t offset = a->imm << a->sz;
+    TCGv_i64 clean_addr, dirty_addr, tcg_rt, tcg_rt2;
+    MemOp mop = finalize_memop(s, a->sz);
+
+    op_addr_ldstpair_pre(s, a, &clean_addr, &dirty_addr, offset, true, mop);
+    tcg_rt = cpu_reg(s, a->rt);
+    tcg_rt2 = cpu_reg(s, a->rt2);
+    /*
+     * We built mop above for the single logical access -- rebuild it
+     * now for the paired operation.
+     *
+     * With LSE2, non-sign-extending pairs are treated atomically if
+     * aligned, and if unaligned one of the pair will be completely
+     * within a 16-byte block and that element will be atomic.
+     * Otherwise each element is separately atomic.
+     * In all cases, issue one operation with the correct atomicity.
+     */
+    mop = a->sz + 1;
+    if (s->align_mem) {
+        mop |= (a->sz == 2 ? MO_ALIGN_4 : MO_ALIGN_8);
+    }
+    mop = finalize_memop_pair(s, mop);
+    if (a->sz == 2) {
+        TCGv_i64 tmp = tcg_temp_new_i64();
+
+        if (s->be_data == MO_LE) {
+            tcg_gen_concat32_i64(tmp, tcg_rt, tcg_rt2);
+        } else {
+            tcg_gen_concat32_i64(tmp, tcg_rt2, tcg_rt);
+        }
+        tcg_gen_qemu_st_i64(tmp, clean_addr, get_mem_index(s), mop);
+    } else {
+        TCGv_i128 tmp = tcg_temp_new_i128();
+
+        if (s->be_data == MO_LE) {
+            tcg_gen_concat_i64_i128(tmp, tcg_rt, tcg_rt2);
+        } else {
+            tcg_gen_concat_i64_i128(tmp, tcg_rt2, tcg_rt);
+        }
+        tcg_gen_qemu_st_i128(tmp, clean_addr, get_mem_index(s), mop);
+    }
+    op_addr_ldstpair_post(s, a, dirty_addr, offset);
+    return true;
+}
+
+static bool trans_LDP(DisasContext *s, arg_ldstpair *a)
+{
+    uint64_t offset = a->imm << a->sz;
+    TCGv_i64 clean_addr, dirty_addr, tcg_rt, tcg_rt2;
+    MemOp mop = finalize_memop(s, a->sz);
+
+    op_addr_ldstpair_pre(s, a, &clean_addr, &dirty_addr, offset, false, mop);
+    tcg_rt = cpu_reg(s, a->rt);
+    tcg_rt2 = cpu_reg(s, a->rt2);
+
+    /*
+     * We built mop above for the single logical access -- rebuild it
+     * now for the paired operation.
+     *
+     * With LSE2, non-sign-extending pairs are treated atomically if
+     * aligned, and if unaligned one of the pair will be completely
+     * within a 16-byte block and that element will be atomic.
+     * Otherwise each element is separately atomic.
+     * In all cases, issue one operation with the correct atomicity.
+     *
+     * This treats sign-extending loads like zero-extending loads,
+     * since that reuses the most code below.
+     */
+    mop = a->sz + 1;
+    if (s->align_mem) {
+        mop |= (a->sz == 2 ? MO_ALIGN_4 : MO_ALIGN_8);
+    }
+    mop = finalize_memop_pair(s, mop);
+    if (a->sz == 2) {
+        int o2 = s->be_data == MO_LE ? 32 : 0;
+        int o1 = o2 ^ 32;
+
+        tcg_gen_qemu_ld_i64(tcg_rt, clean_addr, get_mem_index(s), mop);
+        if (a->sign) {
+            tcg_gen_sextract_i64(tcg_rt2, tcg_rt, o2, 32);
+            tcg_gen_sextract_i64(tcg_rt, tcg_rt, o1, 32);
+        } else {
+            tcg_gen_extract_i64(tcg_rt2, tcg_rt, o2, 32);
+            tcg_gen_extract_i64(tcg_rt, tcg_rt, o1, 32);
+        }
+    } else {
+        TCGv_i128 tmp = tcg_temp_new_i128();
+
+        tcg_gen_qemu_ld_i128(tmp, clean_addr, get_mem_index(s), mop);
+        if (s->be_data == MO_LE) {
+            tcg_gen_extr_i128_i64(tcg_rt, tcg_rt2, tmp);
+        } else {
+            tcg_gen_extr_i128_i64(tcg_rt2, tcg_rt, tmp);
+        }
+    }
+    op_addr_ldstpair_post(s, a, dirty_addr, offset);
+    return true;
+}
+
+static bool trans_STP_v(DisasContext *s, arg_ldstpair *a)
+{
+    uint64_t offset = a->imm << a->sz;
+    TCGv_i64 clean_addr, dirty_addr;
+    MemOp mop;
+
+    if (!fp_access_check(s)) {
+        return true;
+    }
+
+    /* LSE2 does not merge FP pairs; leave these as separate operations. */
+    mop = finalize_memop_asimd(s, a->sz);
+    op_addr_ldstpair_pre(s, a, &clean_addr, &dirty_addr, offset, true, mop);
+    do_fp_st(s, a->rt, clean_addr, mop);
+    tcg_gen_addi_i64(clean_addr, clean_addr, 1 << a->sz);
+    do_fp_st(s, a->rt2, clean_addr, mop);
+    op_addr_ldstpair_post(s, a, dirty_addr, offset);
+    return true;
+}
+
+static bool trans_LDP_v(DisasContext *s, arg_ldstpair *a)
+{
+    uint64_t offset = a->imm << a->sz;
+    TCGv_i64 clean_addr, dirty_addr;
+    MemOp mop;
+
+    if (!fp_access_check(s)) {
+        return true;
+    }
+
+    /* LSE2 does not merge FP pairs; leave these as separate operations. */
+    mop = finalize_memop_asimd(s, a->sz);
+    op_addr_ldstpair_pre(s, a, &clean_addr, &dirty_addr, offset, false, mop);
+    do_fp_ld(s, a->rt, clean_addr, mop);
+    tcg_gen_addi_i64(clean_addr, clean_addr, 1 << a->sz);
+    do_fp_ld(s, a->rt2, clean_addr, mop);
+    op_addr_ldstpair_post(s, a, dirty_addr, offset);
+    return true;
+}
+
+static bool trans_STGP(DisasContext *s, arg_ldstpair *a)
+{
+    TCGv_i64 clean_addr, dirty_addr, tcg_rt, tcg_rt2;
+    uint64_t offset = a->imm << LOG2_TAG_GRANULE;
+    MemOp mop;
+    TCGv_i128 tmp;
+
+    if (!dc_isar_feature(aa64_mte_insn_reg, s)) {
+        return false;
+    }
+
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+
+    dirty_addr = read_cpu_reg_sp(s, a->rn, 1);
+    if (!a->p) {
         tcg_gen_addi_i64(dirty_addr, dirty_addr, offset);
     }
 
-    if (set_tag) {
-        if (!s->ata) {
-            /*
-             * TODO: We could rely on the stores below, at least for
-             * system mode, if we arrange to add MO_ALIGN_16.
-             */
-            gen_helper_stg_stub(cpu_env, dirty_addr);
-        } else if (tb_cflags(s->base.tb) & CF_PARALLEL) {
-            gen_helper_stg_parallel(cpu_env, dirty_addr, dirty_addr);
-        } else {
-            gen_helper_stg(cpu_env, dirty_addr, dirty_addr);
-        }
-    }
-
-    clean_addr = gen_mte_checkN(s, dirty_addr, !is_load,
-                                (wback || rn != 31) && !set_tag, 2 << size);
-
-    if (is_vector) {
-        if (is_load) {
-            do_fp_ld(s, rt, clean_addr, size);
-        } else {
-            do_fp_st(s, rt, clean_addr, size);
-        }
-        tcg_gen_addi_i64(clean_addr, clean_addr, 1 << size);
-        if (is_load) {
-            do_fp_ld(s, rt2, clean_addr, size);
-        } else {
-            do_fp_st(s, rt2, clean_addr, size);
-        }
+    if (!s->ata) {
+        /*
+         * TODO: We could rely on the stores below, at least for
+         * system mode, if we arrange to add MO_ALIGN_16.
+         */
+        gen_helper_stg_stub(cpu_env, dirty_addr);
+    } else if (tb_cflags(s->base.tb) & CF_PARALLEL) {
+        gen_helper_stg_parallel(cpu_env, dirty_addr, dirty_addr);
     } else {
-        TCGv_i64 tcg_rt = cpu_reg(s, rt);
-        TCGv_i64 tcg_rt2 = cpu_reg(s, rt2);
-
-        if (is_load) {
-            TCGv_i64 tmp = tcg_temp_new_i64();
-
-            /* Do not modify tcg_rt before recognizing any exception
-             * from the second load.
-             */
-            do_gpr_ld(s, tmp, clean_addr, size + is_signed * MO_SIGN,
-                      false, false, 0, false, false);
-            tcg_gen_addi_i64(clean_addr, clean_addr, 1 << size);
-            do_gpr_ld(s, tcg_rt2, clean_addr, size + is_signed * MO_SIGN,
-                      false, false, 0, false, false);
-
-            tcg_gen_mov_i64(tcg_rt, tmp);
-        } else {
-            do_gpr_st(s, tcg_rt, clean_addr, size,
-                      false, 0, false, false);
-            tcg_gen_addi_i64(clean_addr, clean_addr, 1 << size);
-            do_gpr_st(s, tcg_rt2, clean_addr, size,
-                      false, 0, false, false);
-        }
+        gen_helper_stg(cpu_env, dirty_addr, dirty_addr);
     }
 
-    if (wback) {
-        if (postindex) {
-            tcg_gen_addi_i64(dirty_addr, dirty_addr, offset);
-        }
-        tcg_gen_mov_i64(cpu_reg_sp(s, rn), dirty_addr);
+    mop = finalize_memop(s, a->sz);
+    clean_addr = gen_mte_checkN(s, dirty_addr, true, false, 2 << a->sz, mop);
+
+    tcg_rt = cpu_reg(s, a->rt);
+    tcg_rt2 = cpu_reg(s, a->rt2);
+
+    assert(a->sz == 3);
+
+    tmp = tcg_temp_new_i128();
+    if (s->be_data == MO_LE) {
+        tcg_gen_concat_i64_i128(tmp, tcg_rt, tcg_rt2);
+    } else {
+        tcg_gen_concat_i64_i128(tmp, tcg_rt2, tcg_rt);
     }
+    tcg_gen_qemu_st_i128(tmp, clean_addr, get_mem_index(s), mop);
+
+    op_addr_ldstpair_post(s, a, dirty_addr, offset);
+    return true;
 }
 
-/*
- * Load/store (immediate post-indexed)
- * Load/store (immediate pre-indexed)
- * Load/store (unscaled immediate)
- *
- * 31 30 29   27  26 25 24 23 22 21  20    12 11 10 9    5 4    0
- * +----+-------+---+-----+-----+---+--------+-----+------+------+
- * |size| 1 1 1 | V | 0 0 | opc | 0 |  imm9  | idx |  Rn  |  Rt  |
- * +----+-------+---+-----+-----+---+--------+-----+------+------+
- *
- * idx = 01 -> post-indexed, 11 pre-indexed, 00 unscaled imm. (no writeback)
-         10 -> unprivileged
- * V = 0 -> non-vector
- * size: 00 -> 8 bit, 01 -> 16 bit, 10 -> 32 bit, 11 -> 64bit
- * opc: 00 -> store, 01 -> loadu, 10 -> loads 64, 11 -> loads 32
- */
-static void disas_ldst_reg_imm9(DisasContext *s, uint32_t insn,
-                                int opc,
-                                int size,
-                                int rt,
-                                bool is_vector)
+static void op_addr_ldst_imm_pre(DisasContext *s, arg_ldst_imm *a,
+                                 TCGv_i64 *clean_addr, TCGv_i64 *dirty_addr,
+                                 uint64_t offset, bool is_store, MemOp mop)
 {
-    int rn = extract32(insn, 5, 5);
-    int imm9 = sextract32(insn, 12, 9);
-    int idx = extract32(insn, 10, 2);
-    bool is_signed = false;
-    bool is_store = false;
-    bool is_extended = false;
-    bool is_unpriv = (idx == 2);
-    bool iss_valid;
-    bool post_index;
-    bool writeback;
     int memidx;
 
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+
+    *dirty_addr = read_cpu_reg_sp(s, a->rn, 1);
+    if (!a->p) {
+        tcg_gen_addi_i64(*dirty_addr, *dirty_addr, offset);
+    }
+    memidx = a->unpriv ? get_a64_user_mem_index(s) : get_mem_index(s);
+    *clean_addr = gen_mte_check1_mmuidx(s, *dirty_addr, is_store,
+                                        a->w || a->rn != 31,
+                                        mop, a->unpriv, memidx);
+}
+
+static void op_addr_ldst_imm_post(DisasContext *s, arg_ldst_imm *a,
+                                  TCGv_i64 dirty_addr, uint64_t offset)
+{
+    if (a->w) {
+        if (a->p) {
+            tcg_gen_addi_i64(dirty_addr, dirty_addr, offset);
+        }
+        tcg_gen_mov_i64(cpu_reg_sp(s, a->rn), dirty_addr);
+    }
+}
+
+static bool trans_STR_i(DisasContext *s, arg_ldst_imm *a)
+{
+    bool iss_sf, iss_valid = !a->w;
+    TCGv_i64 clean_addr, dirty_addr, tcg_rt;
+    int memidx = a->unpriv ? get_a64_user_mem_index(s) : get_mem_index(s);
+    MemOp mop = finalize_memop(s, a->sz + a->sign * MO_SIGN);
+
+    op_addr_ldst_imm_pre(s, a, &clean_addr, &dirty_addr, a->imm, true, mop);
+
+    tcg_rt = cpu_reg(s, a->rt);
+    iss_sf = ldst_iss_sf(a->sz, a->sign, a->ext);
+
+    do_gpr_st_memidx(s, tcg_rt, clean_addr, mop, memidx,
+                     iss_valid, a->rt, iss_sf, false);
+    op_addr_ldst_imm_post(s, a, dirty_addr, a->imm);
+    return true;
+}
+
+static bool trans_LDR_i(DisasContext *s, arg_ldst_imm *a)
+{
+    bool iss_sf, iss_valid = !a->w;
+    TCGv_i64 clean_addr, dirty_addr, tcg_rt;
+    int memidx = a->unpriv ? get_a64_user_mem_index(s) : get_mem_index(s);
+    MemOp mop = finalize_memop(s, a->sz + a->sign * MO_SIGN);
+
+    op_addr_ldst_imm_pre(s, a, &clean_addr, &dirty_addr, a->imm, false, mop);
+
+    tcg_rt = cpu_reg(s, a->rt);
+    iss_sf = ldst_iss_sf(a->sz, a->sign, a->ext);
+
+    do_gpr_ld_memidx(s, tcg_rt, clean_addr, mop,
+                     a->ext, memidx, iss_valid, a->rt, iss_sf, false);
+    op_addr_ldst_imm_post(s, a, dirty_addr, a->imm);
+    return true;
+}
+
+static bool trans_STR_v_i(DisasContext *s, arg_ldst_imm *a)
+{
     TCGv_i64 clean_addr, dirty_addr;
+    MemOp mop;
 
-    if (is_vector) {
-        size |= (opc & 2) << 1;
-        if (size > 4 || is_unpriv) {
-            unallocated_encoding(s);
-            return;
-        }
-        is_store = ((opc & 1) == 0);
-        if (!fp_access_check(s)) {
-            return;
-        }
-    } else {
-        if (size == 3 && opc == 2) {
-            /* PRFM - prefetch */
-            if (idx != 0) {
-                unallocated_encoding(s);
-                return;
-            }
-            return;
-        }
-        if (opc == 3 && size > 1) {
-            unallocated_encoding(s);
-            return;
-        }
-        is_store = (opc == 0);
-        is_signed = extract32(opc, 1, 1);
-        is_extended = (size < 3) && extract32(opc, 0, 1);
+    if (!fp_access_check(s)) {
+        return true;
     }
-
-    switch (idx) {
-    case 0:
-    case 2:
-        post_index = false;
-        writeback = false;
-        break;
-    case 1:
-        post_index = true;
-        writeback = true;
-        break;
-    case 3:
-        post_index = false;
-        writeback = true;
-        break;
-    default:
-        g_assert_not_reached();
-    }
-
-    iss_valid = !is_vector && !writeback;
-
-    if (rn == 31) {
-        gen_check_sp_alignment(s);
-    }
-
-    dirty_addr = read_cpu_reg_sp(s, rn, 1);
-    if (!post_index) {
-        tcg_gen_addi_i64(dirty_addr, dirty_addr, imm9);
-    }
-
-    memidx = is_unpriv ? get_a64_user_mem_index(s) : get_mem_index(s);
-    clean_addr = gen_mte_check1_mmuidx(s, dirty_addr, is_store,
-                                       writeback || rn != 31,
-                                       size, is_unpriv, memidx);
-
-    if (is_vector) {
-        if (is_store) {
-            do_fp_st(s, rt, clean_addr, size);
-        } else {
-            do_fp_ld(s, rt, clean_addr, size);
-        }
-    } else {
-        TCGv_i64 tcg_rt = cpu_reg(s, rt);
-        bool iss_sf = disas_ldst_compute_iss_sf(size, is_signed, opc);
-
-        if (is_store) {
-            do_gpr_st_memidx(s, tcg_rt, clean_addr, size, memidx,
-                             iss_valid, rt, iss_sf, false);
-        } else {
-            do_gpr_ld_memidx(s, tcg_rt, clean_addr, size + is_signed * MO_SIGN,
-                             is_extended, memidx,
-                             iss_valid, rt, iss_sf, false);
-        }
-    }
-
-    if (writeback) {
-        TCGv_i64 tcg_rn = cpu_reg_sp(s, rn);
-        if (post_index) {
-            tcg_gen_addi_i64(dirty_addr, dirty_addr, imm9);
-        }
-        tcg_gen_mov_i64(tcg_rn, dirty_addr);
-    }
+    mop = finalize_memop_asimd(s, a->sz);
+    op_addr_ldst_imm_pre(s, a, &clean_addr, &dirty_addr, a->imm, true, mop);
+    do_fp_st(s, a->rt, clean_addr, mop);
+    op_addr_ldst_imm_post(s, a, dirty_addr, a->imm);
+    return true;
 }
 
-/*
- * Load/store (register offset)
- *
- * 31 30 29   27  26 25 24 23 22 21  20  16 15 13 12 11 10 9  5 4  0
- * +----+-------+---+-----+-----+---+------+-----+--+-----+----+----+
- * |size| 1 1 1 | V | 0 0 | opc | 1 |  Rm  | opt | S| 1 0 | Rn | Rt |
- * +----+-------+---+-----+-----+---+------+-----+--+-----+----+----+
- *
- * For non-vector:
- *   size: 00-> byte, 01 -> 16 bit, 10 -> 32bit, 11 -> 64bit
- *   opc: 00 -> store, 01 -> loadu, 10 -> loads 64, 11 -> loads 32
- * For vector:
- *   size is opc<1>:size<1:0> so 100 -> 128 bit; 110 and 111 unallocated
- *   opc<0>: 0 -> store, 1 -> load
- * V: 1 -> vector/simd
- * opt: extend encoding (see DecodeRegExtend)
- * S: if S=1 then scale (essentially index by sizeof(size))
- * Rt: register to transfer into/out of
- * Rn: address register or SP for base
- * Rm: offset register or ZR for offset
- */
-static void disas_ldst_reg_roffset(DisasContext *s, uint32_t insn,
-                                   int opc,
-                                   int size,
-                                   int rt,
-                                   bool is_vector)
+static bool trans_LDR_v_i(DisasContext *s, arg_ldst_imm *a)
 {
-    int rn = extract32(insn, 5, 5);
-    int shift = extract32(insn, 12, 1);
-    int rm = extract32(insn, 16, 5);
-    int opt = extract32(insn, 13, 3);
-    bool is_signed = false;
-    bool is_store = false;
-    bool is_extended = false;
-
-    TCGv_i64 tcg_rm, clean_addr, dirty_addr;
-
-    if (extract32(opt, 1, 1) == 0) {
-        unallocated_encoding(s);
-        return;
-    }
-
-    if (is_vector) {
-        size |= (opc & 2) << 1;
-        if (size > 4) {
-            unallocated_encoding(s);
-            return;
-        }
-        is_store = !extract32(opc, 0, 1);
-        if (!fp_access_check(s)) {
-            return;
-        }
-    } else {
-        if (size == 3 && opc == 2) {
-            /* PRFM - prefetch */
-            return;
-        }
-        if (opc == 3 && size > 1) {
-            unallocated_encoding(s);
-            return;
-        }
-        is_store = (opc == 0);
-        is_signed = extract32(opc, 1, 1);
-        is_extended = (size < 3) && extract32(opc, 0, 1);
-    }
-
-    if (rn == 31) {
-        gen_check_sp_alignment(s);
-    }
-    dirty_addr = read_cpu_reg_sp(s, rn, 1);
-
-    tcg_rm = read_cpu_reg(s, rm, 1);
-    ext_and_shift_reg(tcg_rm, tcg_rm, opt, shift ? size : 0);
-
-    tcg_gen_add_i64(dirty_addr, dirty_addr, tcg_rm);
-    clean_addr = gen_mte_check1(s, dirty_addr, is_store, true, size);
-
-    if (is_vector) {
-        if (is_store) {
-            do_fp_st(s, rt, clean_addr, size);
-        } else {
-            do_fp_ld(s, rt, clean_addr, size);
-        }
-    } else {
-        TCGv_i64 tcg_rt = cpu_reg(s, rt);
-        bool iss_sf = disas_ldst_compute_iss_sf(size, is_signed, opc);
-        if (is_store) {
-            do_gpr_st(s, tcg_rt, clean_addr, size,
-                      true, rt, iss_sf, false);
-        } else {
-            do_gpr_ld(s, tcg_rt, clean_addr, size + is_signed * MO_SIGN,
-                      is_extended, true, rt, iss_sf, false);
-        }
-    }
-}
-
-/*
- * Load/store (unsigned immediate)
- *
- * 31 30 29   27  26 25 24 23 22 21        10 9     5
- * +----+-------+---+-----+-----+------------+-------+------+
- * |size| 1 1 1 | V | 0 1 | opc |   imm12    |  Rn   |  Rt  |
- * +----+-------+---+-----+-----+------------+-------+------+
- *
- * For non-vector:
- *   size: 00-> byte, 01 -> 16 bit, 10 -> 32bit, 11 -> 64bit
- *   opc: 00 -> store, 01 -> loadu, 10 -> loads 64, 11 -> loads 32
- * For vector:
- *   size is opc<1>:size<1:0> so 100 -> 128 bit; 110 and 111 unallocated
- *   opc<0>: 0 -> store, 1 -> load
- * Rn: base address register (inc SP)
- * Rt: target register
- */
-static void disas_ldst_reg_unsigned_imm(DisasContext *s, uint32_t insn,
-                                        int opc,
-                                        int size,
-                                        int rt,
-                                        bool is_vector)
-{
-    int rn = extract32(insn, 5, 5);
-    unsigned int imm12 = extract32(insn, 10, 12);
-    unsigned int offset;
-
     TCGv_i64 clean_addr, dirty_addr;
+    MemOp mop;
 
-    bool is_store;
-    bool is_signed = false;
-    bool is_extended = false;
-
-    if (is_vector) {
-        size |= (opc & 2) << 1;
-        if (size > 4) {
-            unallocated_encoding(s);
-            return;
-        }
-        is_store = !extract32(opc, 0, 1);
-        if (!fp_access_check(s)) {
-            return;
-        }
-    } else {
-        if (size == 3 && opc == 2) {
-            /* PRFM - prefetch */
-            return;
-        }
-        if (opc == 3 && size > 1) {
-            unallocated_encoding(s);
-            return;
-        }
-        is_store = (opc == 0);
-        is_signed = extract32(opc, 1, 1);
-        is_extended = (size < 3) && extract32(opc, 0, 1);
+    if (!fp_access_check(s)) {
+        return true;
     }
-
-    if (rn == 31) {
-        gen_check_sp_alignment(s);
-    }
-    dirty_addr = read_cpu_reg_sp(s, rn, 1);
-    offset = imm12 << size;
-    tcg_gen_addi_i64(dirty_addr, dirty_addr, offset);
-    clean_addr = gen_mte_check1(s, dirty_addr, is_store, rn != 31, size);
-
-    if (is_vector) {
-        if (is_store) {
-            do_fp_st(s, rt, clean_addr, size);
-        } else {
-            do_fp_ld(s, rt, clean_addr, size);
-        }
-    } else {
-        TCGv_i64 tcg_rt = cpu_reg(s, rt);
-        bool iss_sf = disas_ldst_compute_iss_sf(size, is_signed, opc);
-        if (is_store) {
-            do_gpr_st(s, tcg_rt, clean_addr, size,
-                      true, rt, iss_sf, false);
-        } else {
-            do_gpr_ld(s, tcg_rt, clean_addr, size + is_signed * MO_SIGN,
-                      is_extended, true, rt, iss_sf, false);
-        }
-    }
+    mop = finalize_memop_asimd(s, a->sz);
+    op_addr_ldst_imm_pre(s, a, &clean_addr, &dirty_addr, a->imm, false, mop);
+    do_fp_ld(s, a->rt, clean_addr, mop);
+    op_addr_ldst_imm_post(s, a, dirty_addr, a->imm);
+    return true;
 }
 
-/* Atomic memory operations
- *
- *  31  30      27  26    24    22  21   16   15    12    10    5     0
- * +------+-------+---+-----+-----+---+----+----+-----+-----+----+-----+
- * | size | 1 1 1 | V | 0 0 | A R | 1 | Rs | o3 | opc | 0 0 | Rn |  Rt |
- * +------+-------+---+-----+-----+--------+----+-----+-----+----+-----+
- *
- * Rt: the result register
- * Rn: base address or SP
- * Rs: the source register for the operation
- * V: vector flag (always 0 as of v8.3)
- * A: acquire flag
- * R: release flag
- */
-static void disas_ldst_atomic(DisasContext *s, uint32_t insn,
-                              int size, int rt, bool is_vector)
+static void op_addr_ldst_pre(DisasContext *s, arg_ldst *a,
+                             TCGv_i64 *clean_addr, TCGv_i64 *dirty_addr,
+                             bool is_store, MemOp memop)
 {
-    int rs = extract32(insn, 16, 5);
-    int rn = extract32(insn, 5, 5);
-    int o3_opc = extract32(insn, 12, 4);
-    bool r = extract32(insn, 22, 1);
-    bool a = extract32(insn, 23, 1);
-    TCGv_i64 tcg_rs, tcg_rt, clean_addr;
-    AtomicThreeOpFn *fn = NULL;
-    MemOp mop = s->be_data | size | MO_ALIGN;
+    TCGv_i64 tcg_rm;
 
-    if (is_vector || !dc_isar_feature(aa64_atomics, s)) {
-        unallocated_encoding(s);
-        return;
-    }
-    switch (o3_opc) {
-    case 000: /* LDADD */
-        fn = tcg_gen_atomic_fetch_add_i64;
-        break;
-    case 001: /* LDCLR */
-        fn = tcg_gen_atomic_fetch_and_i64;
-        break;
-    case 002: /* LDEOR */
-        fn = tcg_gen_atomic_fetch_xor_i64;
-        break;
-    case 003: /* LDSET */
-        fn = tcg_gen_atomic_fetch_or_i64;
-        break;
-    case 004: /* LDSMAX */
-        fn = tcg_gen_atomic_fetch_smax_i64;
-        mop |= MO_SIGN;
-        break;
-    case 005: /* LDSMIN */
-        fn = tcg_gen_atomic_fetch_smin_i64;
-        mop |= MO_SIGN;
-        break;
-    case 006: /* LDUMAX */
-        fn = tcg_gen_atomic_fetch_umax_i64;
-        break;
-    case 007: /* LDUMIN */
-        fn = tcg_gen_atomic_fetch_umin_i64;
-        break;
-    case 010: /* SWP */
-        fn = tcg_gen_atomic_xchg_i64;
-        break;
-    case 014: /* LDAPR, LDAPRH, LDAPRB */
-        if (!dc_isar_feature(aa64_rcpc_8_3, s) ||
-            rs != 31 || a != 1 || r != 0) {
-            unallocated_encoding(s);
-            return;
-        }
-        break;
-    default:
-        unallocated_encoding(s);
-        return;
-    }
-
-    if (rn == 31) {
+    if (a->rn == 31) {
         gen_check_sp_alignment(s);
     }
-    clean_addr = gen_mte_check1(s, cpu_reg_sp(s, rn), false, rn != 31, size);
+    *dirty_addr = read_cpu_reg_sp(s, a->rn, 1);
 
-    if (o3_opc == 014) {
-        /*
-         * LDAPR* are a special case because they are a simple load, not a
-         * fetch-and-do-something op.
-         * The architectural consistency requirements here are weaker than
-         * full load-acquire (we only need "load-acquire processor consistent"),
-         * but we choose to implement them as full LDAQ.
-         */
-        do_gpr_ld(s, cpu_reg(s, rt), clean_addr, size, false,
-                  true, rt, disas_ldst_compute_iss_sf(size, false, 0), true);
-        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_LDAQ);
-        return;
+    tcg_rm = read_cpu_reg(s, a->rm, 1);
+    ext_and_shift_reg(tcg_rm, tcg_rm, a->opt, a->s ? a->sz : 0);
+
+    tcg_gen_add_i64(*dirty_addr, *dirty_addr, tcg_rm);
+    *clean_addr = gen_mte_check1(s, *dirty_addr, is_store, true, memop);
+}
+
+static bool trans_LDR(DisasContext *s, arg_ldst *a)
+{
+    TCGv_i64 clean_addr, dirty_addr, tcg_rt;
+    bool iss_sf = ldst_iss_sf(a->sz, a->sign, a->ext);
+    MemOp memop;
+
+    if (extract32(a->opt, 1, 1) == 0) {
+        return false;
     }
 
-    tcg_rs = read_cpu_reg(s, rs, true);
-    tcg_rt = cpu_reg(s, rt);
+    memop = finalize_memop(s, a->sz + a->sign * MO_SIGN);
+    op_addr_ldst_pre(s, a, &clean_addr, &dirty_addr, false, memop);
+    tcg_rt = cpu_reg(s, a->rt);
+    do_gpr_ld(s, tcg_rt, clean_addr, memop,
+              a->ext, true, a->rt, iss_sf, false);
+    return true;
+}
 
-    if (o3_opc == 1) { /* LDCLR */
+static bool trans_STR(DisasContext *s, arg_ldst *a)
+{
+    TCGv_i64 clean_addr, dirty_addr, tcg_rt;
+    bool iss_sf = ldst_iss_sf(a->sz, a->sign, a->ext);
+    MemOp memop;
+
+    if (extract32(a->opt, 1, 1) == 0) {
+        return false;
+    }
+
+    memop = finalize_memop(s, a->sz);
+    op_addr_ldst_pre(s, a, &clean_addr, &dirty_addr, true, memop);
+    tcg_rt = cpu_reg(s, a->rt);
+    do_gpr_st(s, tcg_rt, clean_addr, memop, true, a->rt, iss_sf, false);
+    return true;
+}
+
+static bool trans_LDR_v(DisasContext *s, arg_ldst *a)
+{
+    TCGv_i64 clean_addr, dirty_addr;
+    MemOp memop;
+
+    if (extract32(a->opt, 1, 1) == 0) {
+        return false;
+    }
+
+    if (!fp_access_check(s)) {
+        return true;
+    }
+
+    memop = finalize_memop_asimd(s, a->sz);
+    op_addr_ldst_pre(s, a, &clean_addr, &dirty_addr, false, memop);
+    do_fp_ld(s, a->rt, clean_addr, memop);
+    return true;
+}
+
+static bool trans_STR_v(DisasContext *s, arg_ldst *a)
+{
+    TCGv_i64 clean_addr, dirty_addr;
+    MemOp memop;
+
+    if (extract32(a->opt, 1, 1) == 0) {
+        return false;
+    }
+
+    if (!fp_access_check(s)) {
+        return true;
+    }
+
+    memop = finalize_memop_asimd(s, a->sz);
+    op_addr_ldst_pre(s, a, &clean_addr, &dirty_addr, true, memop);
+    do_fp_st(s, a->rt, clean_addr, memop);
+    return true;
+}
+
+
+static bool do_atomic_ld(DisasContext *s, arg_atomic *a, AtomicThreeOpFn *fn,
+                         int sign, bool invert)
+{
+    MemOp mop = a->sz | sign;
+    TCGv_i64 clean_addr, tcg_rs, tcg_rt;
+
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+    mop = check_atomic_align(s, a->rn, mop);
+    clean_addr = gen_mte_check1(s, cpu_reg_sp(s, a->rn), false,
+                                a->rn != 31, mop);
+    tcg_rs = read_cpu_reg(s, a->rs, true);
+    tcg_rt = cpu_reg(s, a->rt);
+    if (invert) {
         tcg_gen_not_i64(tcg_rs, tcg_rs);
     }
-
-    /* The tcg atomic primitives are all full barriers.  Therefore we
+    /*
+     * The tcg atomic primitives are all full barriers.  Therefore we
      * can ignore the Acquire and Release bits of this instruction.
      */
     fn(tcg_rt, clean_addr, tcg_rs, get_mem_index(s), mop);
 
-    if ((mop & MO_SIGN) && size != MO_64) {
-        tcg_gen_ext32u_i64(tcg_rt, tcg_rt);
+    if (mop & MO_SIGN) {
+        switch (a->sz) {
+        case MO_8:
+            tcg_gen_ext8u_i64(tcg_rt, tcg_rt);
+            break;
+        case MO_16:
+            tcg_gen_ext16u_i64(tcg_rt, tcg_rt);
+            break;
+        case MO_32:
+            tcg_gen_ext32u_i64(tcg_rt, tcg_rt);
+            break;
+        case MO_64:
+            break;
+        default:
+            g_assert_not_reached();
+        }
     }
+    return true;
 }
 
-/*
- * PAC memory operations
- *
- *  31  30      27  26    24    22  21       12  11  10    5     0
- * +------+-------+---+-----+-----+---+--------+---+---+----+-----+
- * | size | 1 1 1 | V | 0 0 | M S | 1 |  imm9  | W | 1 | Rn |  Rt |
- * +------+-------+---+-----+-----+---+--------+---+---+----+-----+
- *
- * Rt: the result register
- * Rn: base address or SP
- * V: vector flag (always 0 as of v8.3)
- * M: clear for key DA, set for key DB
- * W: pre-indexing flag
- * S: sign for imm9.
- */
-static void disas_ldst_pac(DisasContext *s, uint32_t insn,
-                           int size, int rt, bool is_vector)
+TRANS_FEAT(LDADD, aa64_atomics, do_atomic_ld, a, tcg_gen_atomic_fetch_add_i64, 0, false)
+TRANS_FEAT(LDCLR, aa64_atomics, do_atomic_ld, a, tcg_gen_atomic_fetch_and_i64, 0, true)
+TRANS_FEAT(LDEOR, aa64_atomics, do_atomic_ld, a, tcg_gen_atomic_fetch_xor_i64, 0, false)
+TRANS_FEAT(LDSET, aa64_atomics, do_atomic_ld, a, tcg_gen_atomic_fetch_or_i64, 0, false)
+TRANS_FEAT(LDSMAX, aa64_atomics, do_atomic_ld, a, tcg_gen_atomic_fetch_smax_i64, MO_SIGN, false)
+TRANS_FEAT(LDSMIN, aa64_atomics, do_atomic_ld, a, tcg_gen_atomic_fetch_smin_i64, MO_SIGN, false)
+TRANS_FEAT(LDUMAX, aa64_atomics, do_atomic_ld, a, tcg_gen_atomic_fetch_umax_i64, 0, false)
+TRANS_FEAT(LDUMIN, aa64_atomics, do_atomic_ld, a, tcg_gen_atomic_fetch_umin_i64, 0, false)
+TRANS_FEAT(SWP, aa64_atomics, do_atomic_ld, a, tcg_gen_atomic_xchg_i64, 0, false)
+
+static bool trans_LDAPR(DisasContext *s, arg_LDAPR *a)
 {
-    int rn = extract32(insn, 5, 5);
-    bool is_wback = extract32(insn, 11, 1);
-    bool use_key_a = !extract32(insn, 23, 1);
-    int offset;
-    TCGv_i64 clean_addr, dirty_addr, tcg_rt;
+    bool iss_sf = ldst_iss_sf(a->sz, false, false);
+    TCGv_i64 clean_addr;
+    MemOp mop;
 
-    if (size != 3 || is_vector || !dc_isar_feature(aa64_pauth, s)) {
-        unallocated_encoding(s);
-        return;
+    if (!dc_isar_feature(aa64_atomics, s) ||
+        !dc_isar_feature(aa64_rcpc_8_3, s)) {
+        return false;
     }
-
-    if (rn == 31) {
+    if (a->rn == 31) {
         gen_check_sp_alignment(s);
     }
-    dirty_addr = read_cpu_reg_sp(s, rn, 1);
+    mop = check_atomic_align(s, a->rn, a->sz);
+    clean_addr = gen_mte_check1(s, cpu_reg_sp(s, a->rn), false,
+                                a->rn != 31, mop);
+    /*
+     * LDAPR* are a special case because they are a simple load, not a
+     * fetch-and-do-something op.
+     * The architectural consistency requirements here are weaker than
+     * full load-acquire (we only need "load-acquire processor consistent"),
+     * but we choose to implement them as full LDAQ.
+     */
+    do_gpr_ld(s, cpu_reg(s, a->rt), clean_addr, mop, false,
+              true, a->rt, iss_sf, true);
+    tcg_gen_mb(TCG_MO_ALL | TCG_BAR_LDAQ);
+    return true;
+}
+
+static bool trans_LDRA(DisasContext *s, arg_LDRA *a)
+{
+    TCGv_i64 clean_addr, dirty_addr, tcg_rt;
+    MemOp memop;
+
+    /* Load with pointer authentication */
+    if (!dc_isar_feature(aa64_pauth, s)) {
+        return false;
+    }
+
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+    dirty_addr = read_cpu_reg_sp(s, a->rn, 1);
 
     if (s->pauth_active) {
-        if (use_key_a) {
+        if (!a->m) {
             gen_helper_autda(dirty_addr, cpu_env, dirty_addr,
                              tcg_constant_i64(0));
         } else {
@@ -3450,240 +3345,103 @@ static void disas_ldst_pac(DisasContext *s, uint32_t insn,
         }
     }
 
-    /* Form the 10-bit signed, scaled offset.  */
-    offset = (extract32(insn, 22, 1) << 9) | extract32(insn, 12, 9);
-    offset = sextract32(offset << size, 0, 10 + size);
-    tcg_gen_addi_i64(dirty_addr, dirty_addr, offset);
+    tcg_gen_addi_i64(dirty_addr, dirty_addr, a->imm);
+
+    memop = finalize_memop(s, MO_64);
 
     /* Note that "clean" and "dirty" here refer to TBI not PAC.  */
     clean_addr = gen_mte_check1(s, dirty_addr, false,
-                                is_wback || rn != 31, size);
+                                a->w || a->rn != 31, memop);
 
-    tcg_rt = cpu_reg(s, rt);
-    do_gpr_ld(s, tcg_rt, clean_addr, size,
-              /* extend */ false, /* iss_valid */ !is_wback,
-              /* iss_srt */ rt, /* iss_sf */ true, /* iss_ar */ false);
+    tcg_rt = cpu_reg(s, a->rt);
+    do_gpr_ld(s, tcg_rt, clean_addr, memop,
+              /* extend */ false, /* iss_valid */ !a->w,
+              /* iss_srt */ a->rt, /* iss_sf */ true, /* iss_ar */ false);
 
-    if (is_wback) {
-        tcg_gen_mov_i64(cpu_reg_sp(s, rn), dirty_addr);
+    if (a->w) {
+        tcg_gen_mov_i64(cpu_reg_sp(s, a->rn), dirty_addr);
     }
+    return true;
 }
 
-/*
- * LDAPR/STLR (unscaled immediate)
- *
- *  31  30            24    22  21       12    10    5     0
- * +------+-------------+-----+---+--------+-----+----+-----+
- * | size | 0 1 1 0 0 1 | opc | 0 |  imm9  | 0 0 | Rn |  Rt |
- * +------+-------------+-----+---+--------+-----+----+-----+
- *
- * Rt: source or destination register
- * Rn: base register
- * imm9: unscaled immediate offset
- * opc: 00: STLUR*, 01/10/11: various LDAPUR*
- * size: size of load/store
- */
-static void disas_ldst_ldapr_stlr(DisasContext *s, uint32_t insn)
+static bool trans_LDAPR_i(DisasContext *s, arg_ldapr_stlr_i *a)
 {
-    int rt = extract32(insn, 0, 5);
-    int rn = extract32(insn, 5, 5);
-    int offset = sextract32(insn, 12, 9);
-    int opc = extract32(insn, 22, 2);
-    int size = extract32(insn, 30, 2);
     TCGv_i64 clean_addr, dirty_addr;
-    bool is_store = false;
-    bool extend = false;
-    bool iss_sf;
-    MemOp mop;
+    MemOp mop = a->sz | (a->sign ? MO_SIGN : 0);
+    bool iss_sf = ldst_iss_sf(a->sz, a->sign, a->ext);
 
     if (!dc_isar_feature(aa64_rcpc_8_4, s)) {
-        unallocated_encoding(s);
-        return;
+        return false;
     }
 
-    /* TODO: ARMv8.4-LSE SCTLR.nAA */
-    mop = size | MO_ALIGN;
-
-    switch (opc) {
-    case 0: /* STLURB */
-        is_store = true;
-        break;
-    case 1: /* LDAPUR* */
-        break;
-    case 2: /* LDAPURS* 64-bit variant */
-        if (size == 3) {
-            unallocated_encoding(s);
-            return;
-        }
-        mop |= MO_SIGN;
-        break;
-    case 3: /* LDAPURS* 32-bit variant */
-        if (size > 1) {
-            unallocated_encoding(s);
-            return;
-        }
-        mop |= MO_SIGN;
-        extend = true; /* zero-extend 32->64 after signed load */
-        break;
-    default:
-        g_assert_not_reached();
-    }
-
-    iss_sf = disas_ldst_compute_iss_sf(size, (mop & MO_SIGN) != 0, opc);
-
-    if (rn == 31) {
+    if (a->rn == 31) {
         gen_check_sp_alignment(s);
     }
 
-    dirty_addr = read_cpu_reg_sp(s, rn, 1);
-    tcg_gen_addi_i64(dirty_addr, dirty_addr, offset);
+    mop = check_ordered_align(s, a->rn, a->imm, false, mop);
+    dirty_addr = read_cpu_reg_sp(s, a->rn, 1);
+    tcg_gen_addi_i64(dirty_addr, dirty_addr, a->imm);
     clean_addr = clean_data_tbi(s, dirty_addr);
 
-    if (is_store) {
-        /* Store-Release semantics */
-        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_STRL);
-        do_gpr_st(s, cpu_reg(s, rt), clean_addr, mop, true, rt, iss_sf, true);
-    } else {
-        /*
-         * Load-AcquirePC semantics; we implement as the slightly more
-         * restrictive Load-Acquire.
-         */
-        do_gpr_ld(s, cpu_reg(s, rt), clean_addr, mop,
-                  extend, true, rt, iss_sf, true);
-        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_LDAQ);
-    }
+    /*
+     * Load-AcquirePC semantics; we implement as the slightly more
+     * restrictive Load-Acquire.
+     */
+    do_gpr_ld(s, cpu_reg(s, a->rt), clean_addr, mop, a->ext, true,
+              a->rt, iss_sf, true);
+    tcg_gen_mb(TCG_MO_ALL | TCG_BAR_LDAQ);
+    return true;
 }
 
-/* Load/store register (all forms) */
-static void disas_ldst_reg(DisasContext *s, uint32_t insn)
+static bool trans_STLR_i(DisasContext *s, arg_ldapr_stlr_i *a)
 {
-    int rt = extract32(insn, 0, 5);
-    int opc = extract32(insn, 22, 2);
-    bool is_vector = extract32(insn, 26, 1);
-    int size = extract32(insn, 30, 2);
+    TCGv_i64 clean_addr, dirty_addr;
+    MemOp mop = a->sz;
+    bool iss_sf = ldst_iss_sf(a->sz, a->sign, a->ext);
 
-    switch (extract32(insn, 24, 2)) {
-    case 0:
-        if (extract32(insn, 21, 1) == 0) {
-            /* Load/store register (unscaled immediate)
-             * Load/store immediate pre/post-indexed
-             * Load/store register unprivileged
-             */
-            disas_ldst_reg_imm9(s, insn, opc, size, rt, is_vector);
-            return;
-        }
-        switch (extract32(insn, 10, 2)) {
-        case 0:
-            disas_ldst_atomic(s, insn, size, rt, is_vector);
-            return;
-        case 2:
-            disas_ldst_reg_roffset(s, insn, opc, size, rt, is_vector);
-            return;
-        default:
-            disas_ldst_pac(s, insn, size, rt, is_vector);
-            return;
-        }
-        break;
-    case 1:
-        disas_ldst_reg_unsigned_imm(s, insn, opc, size, rt, is_vector);
-        return;
+    if (!dc_isar_feature(aa64_rcpc_8_4, s)) {
+        return false;
     }
-    unallocated_encoding(s);
+
+    /* TODO: ARMv8.4-LSE SCTLR.nAA */
+
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+
+    mop = check_ordered_align(s, a->rn, a->imm, true, mop);
+    dirty_addr = read_cpu_reg_sp(s, a->rn, 1);
+    tcg_gen_addi_i64(dirty_addr, dirty_addr, a->imm);
+    clean_addr = clean_data_tbi(s, dirty_addr);
+
+    /* Store-Release semantics */
+    tcg_gen_mb(TCG_MO_ALL | TCG_BAR_STRL);
+    do_gpr_st(s, cpu_reg(s, a->rt), clean_addr, mop, true, a->rt, iss_sf, true);
+    return true;
 }
 
-/* AdvSIMD load/store multiple structures
- *
- *  31  30  29           23 22  21         16 15    12 11  10 9    5 4    0
- * +---+---+---------------+---+-------------+--------+------+------+------+
- * | 0 | Q | 0 0 1 1 0 0 0 | L | 0 0 0 0 0 0 | opcode | size |  Rn  |  Rt  |
- * +---+---+---------------+---+-------------+--------+------+------+------+
- *
- * AdvSIMD load/store multiple structures (post-indexed)
- *
- *  31  30  29           23 22  21  20     16 15    12 11  10 9    5 4    0
- * +---+---+---------------+---+---+---------+--------+------+------+------+
- * | 0 | Q | 0 0 1 1 0 0 1 | L | 0 |   Rm    | opcode | size |  Rn  |  Rt  |
- * +---+---+---------------+---+---+---------+--------+------+------+------+
- *
- * Rt: first (or only) SIMD&FP register to be transferred
- * Rn: base address or SP
- * Rm (post-index only): post-index register (when !31) or size dependent #imm
- */
-static void disas_ldst_multiple_struct(DisasContext *s, uint32_t insn)
+static bool trans_LD_mult(DisasContext *s, arg_ldst_mult *a)
 {
-    int rt = extract32(insn, 0, 5);
-    int rn = extract32(insn, 5, 5);
-    int rm = extract32(insn, 16, 5);
-    int size = extract32(insn, 10, 2);
-    int opcode = extract32(insn, 12, 4);
-    bool is_store = !extract32(insn, 22, 1);
-    bool is_postidx = extract32(insn, 23, 1);
-    bool is_q = extract32(insn, 30, 1);
     TCGv_i64 clean_addr, tcg_rn, tcg_ebytes;
     MemOp endian, align, mop;
 
     int total;    /* total bytes */
     int elements; /* elements per vector */
-    int rpt;    /* num iterations */
-    int selem;  /* structure elements */
     int r;
+    int size = a->sz;
 
-    if (extract32(insn, 31, 1) || extract32(insn, 21, 1)) {
-        unallocated_encoding(s);
-        return;
+    if (!a->p && a->rm != 0) {
+        /* For non-postindexed accesses the Rm field must be 0 */
+        return false;
     }
-
-    if (!is_postidx && rm != 0) {
-        unallocated_encoding(s);
-        return;
+    if (size == 3 && !a->q && a->selem != 1) {
+        return false;
     }
-
-    /* From the shared decode logic */
-    switch (opcode) {
-    case 0x0:
-        rpt = 1;
-        selem = 4;
-        break;
-    case 0x2:
-        rpt = 4;
-        selem = 1;
-        break;
-    case 0x4:
-        rpt = 1;
-        selem = 3;
-        break;
-    case 0x6:
-        rpt = 3;
-        selem = 1;
-        break;
-    case 0x7:
-        rpt = 1;
-        selem = 1;
-        break;
-    case 0x8:
-        rpt = 1;
-        selem = 2;
-        break;
-    case 0xa:
-        rpt = 2;
-        selem = 1;
-        break;
-    default:
-        unallocated_encoding(s);
-        return;
-    }
-
-    if (size == 3 && !is_q && selem != 1) {
-        /* reserved */
-        unallocated_encoding(s);
-        return;
-    }
-
     if (!fp_access_check(s)) {
-        return;
+        return true;
     }
 
-    if (rn == 31) {
+    if (a->rn == 31) {
         gen_check_sp_alignment(s);
     }
 
@@ -3693,22 +3451,22 @@ static void disas_ldst_multiple_struct(DisasContext *s, uint32_t insn)
         endian = MO_LE;
     }
 
-    total = rpt * selem * (is_q ? 16 : 8);
-    tcg_rn = cpu_reg_sp(s, rn);
+    total = a->rpt * a->selem * (a->q ? 16 : 8);
+    tcg_rn = cpu_reg_sp(s, a->rn);
 
     /*
      * Issue the MTE check vs the logical repeat count, before we
      * promote consecutive little-endian elements below.
      */
-    clean_addr = gen_mte_checkN(s, tcg_rn, is_store, is_postidx || rn != 31,
-                                total);
+    clean_addr = gen_mte_checkN(s, tcg_rn, false, a->p || a->rn != 31, total,
+                                finalize_memop_asimd(s, size));
 
     /*
      * Consecutive little-endian elements from a single register
      * can be promoted to a larger little-endian operation.
      */
     align = MO_ALIGN;
-    if (selem == 1 && endian == MO_LE) {
+    if (a->selem == 1 && endian == MO_LE) {
         align = pow2_align(size);
         size = 3;
     }
@@ -3717,423 +3475,459 @@ static void disas_ldst_multiple_struct(DisasContext *s, uint32_t insn)
     }
     mop = endian | size | align;
 
-    elements = (is_q ? 16 : 8) >> size;
+    elements = (a->q ? 16 : 8) >> size;
     tcg_ebytes = tcg_constant_i64(1 << size);
-    for (r = 0; r < rpt; r++) {
+    for (r = 0; r < a->rpt; r++) {
         int e;
         for (e = 0; e < elements; e++) {
             int xs;
-            for (xs = 0; xs < selem; xs++) {
-                int tt = (rt + r + xs) % 32;
-                if (is_store) {
-                    do_vec_st(s, tt, e, clean_addr, mop);
-                } else {
-                    do_vec_ld(s, tt, e, clean_addr, mop);
-                }
+            for (xs = 0; xs < a->selem; xs++) {
+                int tt = (a->rt + r + xs) % 32;
+                do_vec_ld(s, tt, e, clean_addr, mop);
                 tcg_gen_add_i64(clean_addr, clean_addr, tcg_ebytes);
             }
         }
     }
 
-    if (!is_store) {
-        /* For non-quad operations, setting a slice of the low
-         * 64 bits of the register clears the high 64 bits (in
-         * the ARM ARM pseudocode this is implicit in the fact
-         * that 'rval' is a 64 bit wide variable).
-         * For quad operations, we might still need to zero the
-         * high bits of SVE.
-         */
-        for (r = 0; r < rpt * selem; r++) {
-            int tt = (rt + r) % 32;
-            clear_vec_high(s, is_q, tt);
-        }
+    /*
+     * For non-quad operations, setting a slice of the low 64 bits of
+     * the register clears the high 64 bits (in the ARM ARM pseudocode
+     * this is implicit in the fact that 'rval' is a 64 bit wide
+     * variable).  For quad operations, we might still need to zero
+     * the high bits of SVE.
+     */
+    for (r = 0; r < a->rpt * a->selem; r++) {
+        int tt = (a->rt + r) % 32;
+        clear_vec_high(s, a->q, tt);
     }
 
-    if (is_postidx) {
-        if (rm == 31) {
+    if (a->p) {
+        if (a->rm == 31) {
             tcg_gen_addi_i64(tcg_rn, tcg_rn, total);
         } else {
-            tcg_gen_add_i64(tcg_rn, tcg_rn, cpu_reg(s, rm));
+            tcg_gen_add_i64(tcg_rn, tcg_rn, cpu_reg(s, a->rm));
         }
     }
+    return true;
 }
 
-/* AdvSIMD load/store single structure
- *
- *  31  30  29           23 22 21 20       16 15 13 12  11  10 9    5 4    0
- * +---+---+---------------+-----+-----------+-----+---+------+------+------+
- * | 0 | Q | 0 0 1 1 0 1 0 | L R | 0 0 0 0 0 | opc | S | size |  Rn  |  Rt  |
- * +---+---+---------------+-----+-----------+-----+---+------+------+------+
- *
- * AdvSIMD load/store single structure (post-indexed)
- *
- *  31  30  29           23 22 21 20       16 15 13 12  11  10 9    5 4    0
- * +---+---+---------------+-----+-----------+-----+---+------+------+------+
- * | 0 | Q | 0 0 1 1 0 1 1 | L R |     Rm    | opc | S | size |  Rn  |  Rt  |
- * +---+---+---------------+-----+-----------+-----+---+------+------+------+
- *
- * Rt: first (or only) SIMD&FP register to be transferred
- * Rn: base address or SP
- * Rm (post-index only): post-index register (when !31) or size dependent #imm
- * index = encoded in Q:S:size dependent on size
- *
- * lane_size = encoded in R, opc
- * transfer width = encoded in opc, S, size
- */
-static void disas_ldst_single_struct(DisasContext *s, uint32_t insn)
+static bool trans_ST_mult(DisasContext *s, arg_ldst_mult *a)
 {
-    int rt = extract32(insn, 0, 5);
-    int rn = extract32(insn, 5, 5);
-    int rm = extract32(insn, 16, 5);
-    int size = extract32(insn, 10, 2);
-    int S = extract32(insn, 12, 1);
-    int opc = extract32(insn, 13, 3);
-    int R = extract32(insn, 21, 1);
-    int is_load = extract32(insn, 22, 1);
-    int is_postidx = extract32(insn, 23, 1);
-    int is_q = extract32(insn, 30, 1);
+    TCGv_i64 clean_addr, tcg_rn, tcg_ebytes;
+    MemOp endian, align, mop;
 
-    int scale = extract32(opc, 1, 2);
-    int selem = (extract32(opc, 0, 1) << 1 | R) + 1;
-    bool replicate = false;
-    int index = is_q << 3 | S << 2 | size;
-    int xs, total;
+    int total;    /* total bytes */
+    int elements; /* elements per vector */
+    int r;
+    int size = a->sz;
+
+    if (!a->p && a->rm != 0) {
+        /* For non-postindexed accesses the Rm field must be 0 */
+        return false;
+    }
+    if (size == 3 && !a->q && a->selem != 1) {
+        return false;
+    }
+    if (!fp_access_check(s)) {
+        return true;
+    }
+
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+
+    /* For our purposes, bytes are always little-endian.  */
+    endian = s->be_data;
+    if (size == 0) {
+        endian = MO_LE;
+    }
+
+    total = a->rpt * a->selem * (a->q ? 16 : 8);
+    tcg_rn = cpu_reg_sp(s, a->rn);
+
+    /*
+     * Issue the MTE check vs the logical repeat count, before we
+     * promote consecutive little-endian elements below.
+     */
+    clean_addr = gen_mte_checkN(s, tcg_rn, true, a->p || a->rn != 31, total,
+                                finalize_memop_asimd(s, size));
+
+    /*
+     * Consecutive little-endian elements from a single register
+     * can be promoted to a larger little-endian operation.
+     */
+    align = MO_ALIGN;
+    if (a->selem == 1 && endian == MO_LE) {
+        align = pow2_align(size);
+        size = 3;
+    }
+    if (!s->align_mem) {
+        align = 0;
+    }
+    mop = endian | size | align;
+
+    elements = (a->q ? 16 : 8) >> size;
+    tcg_ebytes = tcg_constant_i64(1 << size);
+    for (r = 0; r < a->rpt; r++) {
+        int e;
+        for (e = 0; e < elements; e++) {
+            int xs;
+            for (xs = 0; xs < a->selem; xs++) {
+                int tt = (a->rt + r + xs) % 32;
+                do_vec_st(s, tt, e, clean_addr, mop);
+                tcg_gen_add_i64(clean_addr, clean_addr, tcg_ebytes);
+            }
+        }
+    }
+
+    if (a->p) {
+        if (a->rm == 31) {
+            tcg_gen_addi_i64(tcg_rn, tcg_rn, total);
+        } else {
+            tcg_gen_add_i64(tcg_rn, tcg_rn, cpu_reg(s, a->rm));
+        }
+    }
+    return true;
+}
+
+static bool trans_ST_single(DisasContext *s, arg_ldst_single *a)
+{
+    int xs, total, rt;
     TCGv_i64 clean_addr, tcg_rn, tcg_ebytes;
     MemOp mop;
 
-    if (extract32(insn, 31, 1)) {
-        unallocated_encoding(s);
-        return;
+    if (!a->p && a->rm != 0) {
+        return false;
     }
-    if (!is_postidx && rm != 0) {
-        unallocated_encoding(s);
-        return;
-    }
-
-    switch (scale) {
-    case 3:
-        if (!is_load || S) {
-            unallocated_encoding(s);
-            return;
-        }
-        scale = size;
-        replicate = true;
-        break;
-    case 0:
-        break;
-    case 1:
-        if (extract32(size, 0, 1)) {
-            unallocated_encoding(s);
-            return;
-        }
-        index >>= 1;
-        break;
-    case 2:
-        if (extract32(size, 1, 1)) {
-            unallocated_encoding(s);
-            return;
-        }
-        if (!extract32(size, 0, 1)) {
-            index >>= 2;
-        } else {
-            if (S) {
-                unallocated_encoding(s);
-                return;
-            }
-            index >>= 3;
-            scale = 3;
-        }
-        break;
-    default:
-        g_assert_not_reached();
-    }
-
     if (!fp_access_check(s)) {
-        return;
+        return true;
     }
 
-    if (rn == 31) {
+    if (a->rn == 31) {
         gen_check_sp_alignment(s);
     }
 
-    total = selem << scale;
-    tcg_rn = cpu_reg_sp(s, rn);
+    total = a->selem << a->scale;
+    tcg_rn = cpu_reg_sp(s, a->rn);
 
-    clean_addr = gen_mte_checkN(s, tcg_rn, !is_load, is_postidx || rn != 31,
-                                total);
-    mop = finalize_memop(s, scale);
+    mop = finalize_memop_asimd(s, a->scale);
+    clean_addr = gen_mte_checkN(s, tcg_rn, true, a->p || a->rn != 31,
+                                total, mop);
 
-    tcg_ebytes = tcg_constant_i64(1 << scale);
-    for (xs = 0; xs < selem; xs++) {
-        if (replicate) {
-            /* Load and replicate to all elements */
-            TCGv_i64 tcg_tmp = tcg_temp_new_i64();
-
-            tcg_gen_qemu_ld_i64(tcg_tmp, clean_addr, get_mem_index(s), mop);
-            tcg_gen_gvec_dup_i64(scale, vec_full_reg_offset(s, rt),
-                                 (is_q + 1) * 8, vec_full_reg_size(s),
-                                 tcg_tmp);
-        } else {
-            /* Load/store one element per register */
-            if (is_load) {
-                do_vec_ld(s, rt, index, clean_addr, mop);
-            } else {
-                do_vec_st(s, rt, index, clean_addr, mop);
-            }
-        }
+    tcg_ebytes = tcg_constant_i64(1 << a->scale);
+    for (xs = 0, rt = a->rt; xs < a->selem; xs++, rt = (rt + 1) % 32) {
+        do_vec_st(s, rt, a->index, clean_addr, mop);
         tcg_gen_add_i64(clean_addr, clean_addr, tcg_ebytes);
-        rt = (rt + 1) % 32;
     }
 
-    if (is_postidx) {
-        if (rm == 31) {
+    if (a->p) {
+        if (a->rm == 31) {
             tcg_gen_addi_i64(tcg_rn, tcg_rn, total);
         } else {
-            tcg_gen_add_i64(tcg_rn, tcg_rn, cpu_reg(s, rm));
+            tcg_gen_add_i64(tcg_rn, tcg_rn, cpu_reg(s, a->rm));
         }
     }
+    return true;
 }
 
-/*
- * Load/Store memory tags
- *
- *  31 30 29         24     22  21     12    10      5      0
- * +-----+-------------+-----+---+------+-----+------+------+
- * | 1 1 | 0 1 1 0 0 1 | op1 | 1 | imm9 | op2 |  Rn  |  Rt  |
- * +-----+-------------+-----+---+------+-----+------+------+
- */
-static void disas_ldst_tag(DisasContext *s, uint32_t insn)
+static bool trans_LD_single(DisasContext *s, arg_ldst_single *a)
 {
-    int rt = extract32(insn, 0, 5);
-    int rn = extract32(insn, 5, 5);
-    uint64_t offset = sextract64(insn, 12, 9) << LOG2_TAG_GRANULE;
-    int op2 = extract32(insn, 10, 2);
-    int op1 = extract32(insn, 22, 2);
-    bool is_load = false, is_pair = false, is_zero = false, is_mult = false;
-    int index = 0;
-    TCGv_i64 addr, clean_addr, tcg_rt;
+    int xs, total, rt;
+    TCGv_i64 clean_addr, tcg_rn, tcg_ebytes;
+    MemOp mop;
 
-    /* We checked insn bits [29:24,21] in the caller.  */
-    if (extract32(insn, 30, 2) != 3) {
-        goto do_unallocated;
+    if (!a->p && a->rm != 0) {
+        return false;
+    }
+    if (!fp_access_check(s)) {
+        return true;
     }
 
-    /*
-     * @index is a tri-state variable which has 3 states:
-     * < 0 : post-index, writeback
-     * = 0 : signed offset
-     * > 0 : pre-index, writeback
-     */
-    switch (op1) {
-    case 0:
-        if (op2 != 0) {
-            /* STG */
-            index = op2 - 2;
-        } else {
-            /* STZGM */
-            if (s->current_el == 0 || offset != 0) {
-                goto do_unallocated;
-            }
-            is_mult = is_zero = true;
-        }
-        break;
-    case 1:
-        if (op2 != 0) {
-            /* STZG */
-            is_zero = true;
-            index = op2 - 2;
-        } else {
-            /* LDG */
-            is_load = true;
-        }
-        break;
-    case 2:
-        if (op2 != 0) {
-            /* ST2G */
-            is_pair = true;
-            index = op2 - 2;
-        } else {
-            /* STGM */
-            if (s->current_el == 0 || offset != 0) {
-                goto do_unallocated;
-            }
-            is_mult = true;
-        }
-        break;
-    case 3:
-        if (op2 != 0) {
-            /* STZ2G */
-            is_pair = is_zero = true;
-            index = op2 - 2;
-        } else {
-            /* LDGM */
-            if (s->current_el == 0 || offset != 0) {
-                goto do_unallocated;
-            }
-            is_mult = is_load = true;
-        }
-        break;
-
-    default:
-    do_unallocated:
-        unallocated_encoding(s);
-        return;
-    }
-
-    if (is_mult
-        ? !dc_isar_feature(aa64_mte, s)
-        : !dc_isar_feature(aa64_mte_insn_reg, s)) {
-        goto do_unallocated;
-    }
-
-    if (rn == 31) {
+    if (a->rn == 31) {
         gen_check_sp_alignment(s);
     }
 
-    addr = read_cpu_reg_sp(s, rn, true);
-    if (index >= 0) {
-        /* pre-index or signed offset */
-        tcg_gen_addi_i64(addr, addr, offset);
+    total = a->selem << a->scale;
+    tcg_rn = cpu_reg_sp(s, a->rn);
+
+    mop = finalize_memop_asimd(s, a->scale);
+    clean_addr = gen_mte_checkN(s, tcg_rn, false, a->p || a->rn != 31,
+                                total, mop);
+
+    tcg_ebytes = tcg_constant_i64(1 << a->scale);
+    for (xs = 0, rt = a->rt; xs < a->selem; xs++, rt = (rt + 1) % 32) {
+        do_vec_ld(s, rt, a->index, clean_addr, mop);
+        tcg_gen_add_i64(clean_addr, clean_addr, tcg_ebytes);
     }
 
-    if (is_mult) {
-        tcg_rt = cpu_reg(s, rt);
-
-        if (is_zero) {
-            int size = 4 << s->dcz_blocksize;
-
-            if (s->ata) {
-                gen_helper_stzgm_tags(cpu_env, addr, tcg_rt);
-            }
-            /*
-             * The non-tags portion of STZGM is mostly like DC_ZVA,
-             * except the alignment happens before the access.
-             */
-            clean_addr = clean_data_tbi(s, addr);
-            tcg_gen_andi_i64(clean_addr, clean_addr, -size);
-            gen_helper_dc_zva(cpu_env, clean_addr);
-        } else if (s->ata) {
-            if (is_load) {
-                gen_helper_ldgm(tcg_rt, cpu_env, addr);
-            } else {
-                gen_helper_stgm(cpu_env, addr, tcg_rt);
-            }
+    if (a->p) {
+        if (a->rm == 31) {
+            tcg_gen_addi_i64(tcg_rn, tcg_rn, total);
         } else {
-            MMUAccessType acc = is_load ? MMU_DATA_LOAD : MMU_DATA_STORE;
-            int size = 4 << GMID_EL1_BS;
-
-            clean_addr = clean_data_tbi(s, addr);
-            tcg_gen_andi_i64(clean_addr, clean_addr, -size);
-            gen_probe_access(s, clean_addr, acc, size);
-
-            if (is_load) {
-                /* The result tags are zeros.  */
-                tcg_gen_movi_i64(tcg_rt, 0);
-            }
+            tcg_gen_add_i64(tcg_rn, tcg_rn, cpu_reg(s, a->rm));
         }
-        return;
+    }
+    return true;
+}
+
+static bool trans_LD_single_repl(DisasContext *s, arg_LD_single_repl *a)
+{
+    int xs, total, rt;
+    TCGv_i64 clean_addr, tcg_rn, tcg_ebytes;
+    MemOp mop;
+
+    if (!a->p && a->rm != 0) {
+        return false;
+    }
+    if (!fp_access_check(s)) {
+        return true;
     }
 
-    if (is_load) {
-        tcg_gen_andi_i64(addr, addr, -TAG_GRANULE);
-        tcg_rt = cpu_reg(s, rt);
-        if (s->ata) {
-            gen_helper_ldg(tcg_rt, cpu_env, addr, tcg_rt);
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+
+    total = a->selem << a->scale;
+    tcg_rn = cpu_reg_sp(s, a->rn);
+
+    mop = finalize_memop_asimd(s, a->scale);
+    clean_addr = gen_mte_checkN(s, tcg_rn, false, a->p || a->rn != 31,
+                                total, mop);
+
+    tcg_ebytes = tcg_constant_i64(1 << a->scale);
+    for (xs = 0, rt = a->rt; xs < a->selem; xs++, rt = (rt + 1) % 32) {
+        /* Load and replicate to all elements */
+        TCGv_i64 tcg_tmp = tcg_temp_new_i64();
+
+        tcg_gen_qemu_ld_i64(tcg_tmp, clean_addr, get_mem_index(s), mop);
+        tcg_gen_gvec_dup_i64(a->scale, vec_full_reg_offset(s, rt),
+                             (a->q + 1) * 8, vec_full_reg_size(s), tcg_tmp);
+        tcg_gen_add_i64(clean_addr, clean_addr, tcg_ebytes);
+    }
+
+    if (a->p) {
+        if (a->rm == 31) {
+            tcg_gen_addi_i64(tcg_rn, tcg_rn, total);
         } else {
-            clean_addr = clean_data_tbi(s, addr);
-            gen_probe_access(s, clean_addr, MMU_DATA_LOAD, MO_8);
-            gen_address_with_allocation_tag0(tcg_rt, addr);
+            tcg_gen_add_i64(tcg_rn, tcg_rn, cpu_reg(s, a->rm));
+        }
+    }
+    return true;
+}
+
+static bool trans_STZGM(DisasContext *s, arg_ldst_tag *a)
+{
+    TCGv_i64 addr, clean_addr, tcg_rt;
+    int size = 4 << s->dcz_blocksize;
+
+    if (!dc_isar_feature(aa64_mte, s)) {
+        return false;
+    }
+    if (s->current_el == 0) {
+        return false;
+    }
+
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+
+    addr = read_cpu_reg_sp(s, a->rn, true);
+    tcg_gen_addi_i64(addr, addr, a->imm);
+    tcg_rt = cpu_reg(s, a->rt);
+
+    if (s->ata) {
+        gen_helper_stzgm_tags(cpu_env, addr, tcg_rt);
+    }
+    /*
+     * The non-tags portion of STZGM is mostly like DC_ZVA,
+     * except the alignment happens before the access.
+     */
+    clean_addr = clean_data_tbi(s, addr);
+    tcg_gen_andi_i64(clean_addr, clean_addr, -size);
+    gen_helper_dc_zva(cpu_env, clean_addr);
+    return true;
+}
+
+static bool trans_STGM(DisasContext *s, arg_ldst_tag *a)
+{
+    TCGv_i64 addr, clean_addr, tcg_rt;
+
+    if (!dc_isar_feature(aa64_mte, s)) {
+        return false;
+    }
+    if (s->current_el == 0) {
+        return false;
+    }
+
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+
+    addr = read_cpu_reg_sp(s, a->rn, true);
+    tcg_gen_addi_i64(addr, addr, a->imm);
+    tcg_rt = cpu_reg(s, a->rt);
+
+    if (s->ata) {
+        gen_helper_stgm(cpu_env, addr, tcg_rt);
+    } else {
+        MMUAccessType acc = MMU_DATA_STORE;
+        int size = 4 << GMID_EL1_BS;
+
+        clean_addr = clean_data_tbi(s, addr);
+        tcg_gen_andi_i64(clean_addr, clean_addr, -size);
+        gen_probe_access(s, clean_addr, acc, size);
+    }
+    return true;
+}
+
+static bool trans_LDGM(DisasContext *s, arg_ldst_tag *a)
+{
+    TCGv_i64 addr, clean_addr, tcg_rt;
+
+    if (!dc_isar_feature(aa64_mte, s)) {
+        return false;
+    }
+    if (s->current_el == 0) {
+        return false;
+    }
+
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+
+    addr = read_cpu_reg_sp(s, a->rn, true);
+    tcg_gen_addi_i64(addr, addr, a->imm);
+    tcg_rt = cpu_reg(s, a->rt);
+
+    if (s->ata) {
+        gen_helper_ldgm(tcg_rt, cpu_env, addr);
+    } else {
+        MMUAccessType acc = MMU_DATA_LOAD;
+        int size = 4 << GMID_EL1_BS;
+
+        clean_addr = clean_data_tbi(s, addr);
+        tcg_gen_andi_i64(clean_addr, clean_addr, -size);
+        gen_probe_access(s, clean_addr, acc, size);
+        /* The result tags are zeros.  */
+        tcg_gen_movi_i64(tcg_rt, 0);
+    }
+    return true;
+}
+
+static bool trans_LDG(DisasContext *s, arg_ldst_tag *a)
+{
+    TCGv_i64 addr, clean_addr, tcg_rt;
+
+    if (!dc_isar_feature(aa64_mte_insn_reg, s)) {
+        return false;
+    }
+
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+
+    addr = read_cpu_reg_sp(s, a->rn, true);
+    if (!a->p) {
+        /* pre-index or signed offset */
+        tcg_gen_addi_i64(addr, addr, a->imm);
+    }
+
+    tcg_gen_andi_i64(addr, addr, -TAG_GRANULE);
+    tcg_rt = cpu_reg(s, a->rt);
+    if (s->ata) {
+        gen_helper_ldg(tcg_rt, cpu_env, addr, tcg_rt);
+    } else {
+        /*
+         * Tag access disabled: we must check for aborts on the load
+         * load from [rn+offset], and then insert a 0 tag into rt.
+         */
+        clean_addr = clean_data_tbi(s, addr);
+        gen_probe_access(s, clean_addr, MMU_DATA_LOAD, MO_8);
+        gen_address_with_allocation_tag0(tcg_rt, tcg_rt);
+    }
+
+    if (a->w) {
+        /* pre-index or post-index */
+        if (a->p) {
+            /* post-index */
+            tcg_gen_addi_i64(addr, addr, a->imm);
+        }
+        tcg_gen_mov_i64(cpu_reg_sp(s, a->rn), addr);
+    }
+    return true;
+}
+
+static bool do_STG(DisasContext *s, arg_ldst_tag *a, bool is_zero, bool is_pair)
+{
+    TCGv_i64 addr, tcg_rt;
+
+    if (a->rn == 31) {
+        gen_check_sp_alignment(s);
+    }
+
+    addr = read_cpu_reg_sp(s, a->rn, true);
+    if (!a->p) {
+        /* pre-index or signed offset */
+        tcg_gen_addi_i64(addr, addr, a->imm);
+    }
+    tcg_rt = cpu_reg_sp(s, a->rt);
+    if (!s->ata) {
+        /*
+         * For STG and ST2G, we need to check alignment and probe memory.
+         * TODO: For STZG and STZ2G, we could rely on the stores below,
+         * at least for system mode; user-only won't enforce alignment.
+         */
+        if (is_pair) {
+            gen_helper_st2g_stub(cpu_env, addr);
+        } else {
+            gen_helper_stg_stub(cpu_env, addr);
+        }
+    } else if (tb_cflags(s->base.tb) & CF_PARALLEL) {
+        if (is_pair) {
+            gen_helper_st2g_parallel(cpu_env, addr, tcg_rt);
+        } else {
+            gen_helper_stg_parallel(cpu_env, addr, tcg_rt);
         }
     } else {
-        tcg_rt = cpu_reg_sp(s, rt);
-        if (!s->ata) {
-            /*
-             * For STG and ST2G, we need to check alignment and probe memory.
-             * TODO: For STZG and STZ2G, we could rely on the stores below,
-             * at least for system mode; user-only won't enforce alignment.
-             */
-            if (is_pair) {
-                gen_helper_st2g_stub(cpu_env, addr);
-            } else {
-                gen_helper_stg_stub(cpu_env, addr);
-            }
-        } else if (tb_cflags(s->base.tb) & CF_PARALLEL) {
-            if (is_pair) {
-                gen_helper_st2g_parallel(cpu_env, addr, tcg_rt);
-            } else {
-                gen_helper_stg_parallel(cpu_env, addr, tcg_rt);
-            }
+        if (is_pair) {
+            gen_helper_st2g(cpu_env, addr, tcg_rt);
         } else {
-            if (is_pair) {
-                gen_helper_st2g(cpu_env, addr, tcg_rt);
-            } else {
-                gen_helper_stg(cpu_env, addr, tcg_rt);
-            }
+            gen_helper_stg(cpu_env, addr, tcg_rt);
         }
     }
 
     if (is_zero) {
         TCGv_i64 clean_addr = clean_data_tbi(s, addr);
-        TCGv_i64 tcg_zero = tcg_constant_i64(0);
+        TCGv_i64 zero64 = tcg_constant_i64(0);
+        TCGv_i128 zero128 = tcg_temp_new_i128();
         int mem_index = get_mem_index(s);
-        int i, n = (1 + is_pair) << LOG2_TAG_GRANULE;
+        MemOp mop = finalize_memop(s, MO_128 | MO_ALIGN);
 
-        tcg_gen_qemu_st_i64(tcg_zero, clean_addr, mem_index,
-                            MO_UQ | MO_ALIGN_16);
-        for (i = 8; i < n; i += 8) {
-            tcg_gen_addi_i64(clean_addr, clean_addr, 8);
-            tcg_gen_qemu_st_i64(tcg_zero, clean_addr, mem_index, MO_UQ);
+        tcg_gen_concat_i64_i128(zero128, zero64, zero64);
+
+        /* This is 1 or 2 atomic 16-byte operations. */
+        tcg_gen_qemu_st_i128(zero128, clean_addr, mem_index, mop);
+        if (is_pair) {
+            tcg_gen_addi_i64(clean_addr, clean_addr, 16);
+            tcg_gen_qemu_st_i128(zero128, clean_addr, mem_index, mop);
         }
     }
 
-    if (index != 0) {
+    if (a->w) {
         /* pre-index or post-index */
-        if (index < 0) {
+        if (a->p) {
             /* post-index */
-            tcg_gen_addi_i64(addr, addr, offset);
+            tcg_gen_addi_i64(addr, addr, a->imm);
         }
-        tcg_gen_mov_i64(cpu_reg_sp(s, rn), addr);
+        tcg_gen_mov_i64(cpu_reg_sp(s, a->rn), addr);
     }
+    return true;
 }
 
-/* Loads and stores */
-static void disas_ldst(DisasContext *s, uint32_t insn)
-{
-    switch (extract32(insn, 24, 6)) {
-    case 0x08: /* Load/store exclusive */
-        disas_ldst_excl(s, insn);
-        break;
-    case 0x18: case 0x1c: /* Load register (literal) */
-        disas_ld_lit(s, insn);
-        break;
-    case 0x28: case 0x29:
-    case 0x2c: case 0x2d: /* Load/store pair (all forms) */
-        disas_ldst_pair(s, insn);
-        break;
-    case 0x38: case 0x39:
-    case 0x3c: case 0x3d: /* Load/store register (all forms) */
-        disas_ldst_reg(s, insn);
-        break;
-    case 0x0c: /* AdvSIMD load/store multiple structures */
-        disas_ldst_multiple_struct(s, insn);
-        break;
-    case 0x0d: /* AdvSIMD load/store single structure */
-        disas_ldst_single_struct(s, insn);
-        break;
-    case 0x19:
-        if (extract32(insn, 21, 1) != 0) {
-            disas_ldst_tag(s, insn);
-        } else if (extract32(insn, 10, 2) == 0) {
-            disas_ldst_ldapr_stlr(s, insn);
-        } else {
-            unallocated_encoding(s);
-        }
-        break;
-    default:
-        unallocated_encoding(s);
-        break;
-    }
-}
+TRANS_FEAT(STG, aa64_mte_insn_reg, do_STG, a, false, false)
+TRANS_FEAT(STZG, aa64_mte_insn_reg, do_STG, a, true, false)
+TRANS_FEAT(ST2G, aa64_mte_insn_reg, do_STG, a, false, true)
+TRANS_FEAT(STZ2G, aa64_mte_insn_reg, do_STG, a, true, true)
 
 typedef void ArithTwoOp(TCGv_i64, TCGv_i64, TCGv_i64);
 
@@ -14062,15 +13856,6 @@ static bool btype_destination_ok(uint32_t insn, bool bt, int btype)
 static void disas_a64_legacy(DisasContext *s, uint32_t insn)
 {
     switch (extract32(insn, 25, 4)) {
-    case 0xa: case 0xb: /* Branch, exception generation and system insns */
-        disas_b_exc_sys(s, insn);
-        break;
-    case 0x4:
-    case 0x6:
-    case 0xc:
-    case 0xe:      /* Loads and stores */
-        disas_ldst(s, insn);
-        break;
     case 0x5:
     case 0xd:      /* Data processing - register */
         disas_data_proc_reg(s, insn);
@@ -14132,6 +13917,7 @@ static void aarch64_tr_init_disas_context(DisasContextBase *dcbase,
     dc->pstate_sm = EX_TBFLAG_A64(tb_flags, PSTATE_SM);
     dc->pstate_za = EX_TBFLAG_A64(tb_flags, PSTATE_ZA);
     dc->sme_trap_nonstreaming = EX_TBFLAG_A64(tb_flags, SME_TRAP_NONSTREAMING);
+    dc->naa = EX_TBFLAG_A64(tb_flags, NAA);
     dc->vec_len = 0;
     dc->vec_stride = 0;
     dc->cp_regs = arm_cpu->cp_regs;
@@ -14142,6 +13928,8 @@ static void aarch64_tr_init_disas_context(DisasContextBase *dcbase,
     /* In sve_probe_page, we assume TBI is enabled. */
     tcg_debug_assert(dc->tbid & 1);
 #endif
+
+    dc->lse2 = dc_isar_feature(aa64_lse2, dc);
 
     /* Single step state. The code-generation logic here is:
      *  SS_ACTIVE == 0:

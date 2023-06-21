@@ -60,16 +60,11 @@
  */
 #define NB_MMU_MODES 16
 
-#if !defined(CONFIG_USER_ONLY) && defined(CONFIG_TCG)
+#if defined(CONFIG_SOFTMMU) && defined(CONFIG_TCG)
+#include "exec/tlb-common.h"
 
 /* use a fully associative victim tlb of 8 entries */
 #define CPU_VTLB_SIZE 8
-
-#if HOST_LONG_BITS == 32 && TARGET_LONG_BITS == 32
-#define CPU_TLB_ENTRY_BITS 4
-#else
-#define CPU_TLB_ENTRY_BITS 5
-#endif
 
 #define CPU_TLB_DYN_MIN_BITS 6
 #define CPU_TLB_DYN_DEFAULT_BITS 8
@@ -94,37 +89,9 @@
 #  endif
 # endif
 
-/* Minimalized TLB entry for use by TCG fast path. */
-typedef struct CPUTLBEntry {
-    /* bit TARGET_LONG_BITS to TARGET_PAGE_BITS : virtual address
-       bit TARGET_PAGE_BITS-1..4  : Nonzero for accesses that should not
-                                    go directly to ram.
-       bit 3                      : indicates that the entry is invalid
-       bit 2..0                   : zero
-    */
-    union {
-        struct {
-            target_ulong addr_read;
-            target_ulong addr_write;
-            target_ulong addr_code;
-            /* Addend to virtual address to get host address.  IO accesses
-               use the corresponding iotlb value.  */
-            uintptr_t addend;
-        };
-        /*
-         * Padding to get a power of two size, as well as index
-         * access to addr_{read,write,code}.
-         */
-        target_ulong addr_idx[(1 << CPU_TLB_ENTRY_BITS) / TARGET_LONG_SIZE];
-    };
-} CPUTLBEntry;
+#endif /* CONFIG_SOFTMMU && CONFIG_TCG */
 
-QEMU_BUILD_BUG_ON(sizeof(CPUTLBEntry) != (1 << CPU_TLB_ENTRY_BITS));
-
-
-#endif  /* !CONFIG_USER_ONLY && CONFIG_TCG */
-
-#if !defined(CONFIG_USER_ONLY)
+#if defined(CONFIG_SOFTMMU)
 /*
  * The full TLB entry, which is not accessed by generated TCG code,
  * so the layout is not as critical as that of CPUTLBEntry. This is
@@ -166,9 +133,9 @@ typedef struct CPUTLBEntryFull {
     TARGET_PAGE_ENTRY_EXTRA
 #endif
 } CPUTLBEntryFull;
-#endif  /* !CONFIG_USER_ONLY */
+#endif /* CONFIG_SOFTMMU */
 
-#if !defined(CONFIG_USER_ONLY) && defined(CONFIG_TCG)
+#if defined(CONFIG_SOFTMMU) && defined(CONFIG_TCG)
 /*
  * Data elements that are per MMU mode, minus the bits accessed by
  * the TCG fast path.
@@ -194,17 +161,6 @@ typedef struct CPUTLBDesc {
     CPUTLBEntryFull vfulltlb[CPU_VTLB_SIZE];
     CPUTLBEntryFull *fulltlb;
 } CPUTLBDesc;
-
-/*
- * Data elements that are per MMU mode, accessed by the fast path.
- * The structure is aligned to aid loading the pair with one insn.
- */
-typedef struct CPUTLBDescFast {
-    /* Contains (n_entries - 1) << CPU_TLB_ENTRY_BITS */
-    uintptr_t mask;
-    /* The array of tlb entries itself. */
-    CPUTLBEntry *table;
-} CPUTLBDescFast QEMU_ALIGNED(2 * sizeof(void *));
 
 /*
  * Data elements that are shared between all MMU modes.
@@ -241,15 +197,11 @@ typedef struct CPUTLB {
     CPUTLBDescFast f[NB_MMU_MODES];
 } CPUTLB;
 
-/* This will be used by TCG backends to compute offsets.  */
-#define TLB_MASK_TABLE_OFS(IDX) \
-    ((int)offsetof(ArchCPU, neg.tlb.f[IDX]) - (int)offsetof(ArchCPU, env))
-
 #else
 
 typedef struct CPUTLB { } CPUTLB;
 
-#endif  /* !CONFIG_USER_ONLY && CONFIG_TCG */
+#endif /* CONFIG_SOFTMMU && CONFIG_TCG */
 
 /*
  * This structure must be placed in ArchCPU immediately

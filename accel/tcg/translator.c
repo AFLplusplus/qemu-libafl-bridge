@@ -122,28 +122,11 @@ static void gen_tb_end(const TranslationBlock *tb, uint32_t cflags,
 #include "tcg/tcg-internal.h"
 #include "tcg/tcg-temp-internal.h"
 
-// reintroduce this in QEMU
-static TCGv_i64 tcg_const_i64(int64_t val)
-{
-    TCGv_i64 t0;
-    t0 = tcg_temp_new_i64();
-    tcg_gen_movi_i64(t0, val);
-    return t0;
-}
-
-#if TARGET_LONG_BITS == 32
-static TCGv_i32 tcg_const_i32(int32_t val)
-{
-    TCGv_i32 t0;
-    t0 = tcg_temp_new_i32();
-    tcg_gen_movi_i32(t0, val);
-    return t0;
-}
-
-#define tcg_const_tl tcg_const_i32
-#else
-#define tcg_const_tl tcg_const_i64
+#ifndef TARGET_LONG_BITS
+#error "TARGET_LONG_BITS not defined"
 #endif
+
+void tcg_gen_callN(TCGHelperInfo *info, TCGTemp *ret, TCGTemp **args);
 
 extern target_ulong libafl_gen_cur_pc;
 
@@ -234,14 +217,16 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 
         struct libafl_hook* hk = libafl_search_hook(db->pc_next);
         if (hk) {
-            TCGv tmp0 = tcg_const_tl(db->pc_next);
-            TCGv_i64 tmp1 = tcg_const_i64(hk->data);
+            TCGv_i64 tmp1 = tcg_constant_i64(hk->data);
 #if TARGET_LONG_BITS == 32
+            TCGv_i32 tmp0 = tcg_constant_i32(db->pc_next);
             TCGTemp *tmp2[2] = { tcgv_i32_temp(tmp0), tcgv_i64_temp(tmp1) };
 #else
+            TCGv_i64 tmp0 = tcg_constant_i64(db->pc_next);
             TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
 #endif
-            tcg_gen_callN(hk->callback, NULL, 2, tmp2);
+            // tcg_gen_callN(hk->callback, NULL, 2, tmp2);
+            tcg_gen_callN(&hk->helper_info, NULL, tmp2);
 #if TARGET_LONG_BITS == 32
             tcg_temp_free_i32(tmp0);
 #else
@@ -253,13 +238,9 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
         struct libafl_breakpoint* bp = libafl_qemu_breakpoints;
         while (bp) {
             if (bp->addr == db->pc_next) {
-                TCGv tmp0 = tcg_const_tl(db->pc_next);
+                TCGv_i64 tmp0 = tcg_constant_i64((uint64_t)db->pc_next);
                 gen_helper_libafl_qemu_handle_breakpoint(cpu_env, tmp0);
-#if TARGET_LONG_BITS == 32
-                tcg_temp_free_i32(tmp0);
-#else
                 tcg_temp_free_i64(tmp0);
-#endif
             }
             bp = bp->next;
         }
@@ -277,14 +258,16 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
                     if (backdoor == 0x44) {
                         struct libafl_backdoor_hook* hk = libafl_backdoor_hooks;
                         while (hk) {
-                            TCGv tmp0 = tcg_const_tl(db->pc_next);
-                            TCGv_i64 tmp1 = tcg_const_i64(hk->data);
+                            TCGv_i64 tmp1 = tcg_constant_i64(hk->data);
 #if TARGET_LONG_BITS == 32
+                            TCGv_i32 tmp0 = tcg_constant_i32(db->pc_next);
                             TCGTemp *tmp2[2] = { tcgv_i32_temp(tmp0), tcgv_i64_temp(tmp1) };
 #else
+                            TCGv_i64 tmp0 = tcg_constant_i64(db->pc_next);
                             TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
 #endif
-                            tcg_gen_callN(hk->exec, NULL, 2, tmp2);
+                            // tcg_gen_callN(hk->exec, NULL, 2, tmp2);
+                            tcg_gen_callN(&hk->helper_info, NULL, tmp2);
 #if TARGET_LONG_BITS == 32
                             tcg_temp_free_i32(tmp0);
 #else

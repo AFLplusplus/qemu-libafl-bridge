@@ -1273,17 +1273,6 @@ static void process_op_defs(TCGContext *s);
 static TCGTemp *tcg_global_reg_new_internal(TCGContext *s, TCGType type,
                                             TCGReg reg, const char *name);
 
-//// --- Begin LibAFL code ---
-
-void libafl_helper_table_add(TCGHelperInfo* info);
-void libafl_helper_table_add(TCGHelperInfo* info) {
-    init_call_layout(info);
-    g_hash_table_insert(helper_table, (gpointer)info->func,
-                        (gpointer)info);
-}
-
-//// --- End LibAFL code ---
-
 static void tcg_context_init(unsigned max_cpus)
 {
     TCGContext *s = &tcg_init_ctx;
@@ -2134,7 +2123,13 @@ bool tcg_op_supported(TCGOpcode op)
 
 static TCGOp *tcg_op_alloc(TCGOpcode opc, unsigned nargs);
 
-static void tcg_gen_callN(TCGHelperInfo *info, TCGTemp *ret, TCGTemp **args)
+//// --- Begin LibAFL code ---
+
+void tcg_gen_callN(TCGHelperInfo *info, TCGTemp *ret, TCGTemp **args);
+
+//// --- End LibAFL code ---
+
+/* static */ void tcg_gen_callN(TCGHelperInfo *info, TCGTemp *ret, TCGTemp **args)
 {
     TCGv_i64 extend_free[MAX_CALL_IARGS];
     int n_extend = 0;

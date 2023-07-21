@@ -74,8 +74,6 @@ size_t libafl_qemu_hooks_num = 0;
 
 __thread int libafl_valid_current_cpu = 0;
 
-void libafl_helper_table_add(TCGHelperInfo* info);
-
 static __thread GByteArray *libafl_qemu_mem_buf = NULL;
 
 target_ulong libafl_page_from_addr(target_ulong addr);
@@ -252,7 +250,6 @@ size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(target_ulong, uint
     hk->num = libafl_qemu_hooks_num++;
     hk->next = libafl_qemu_hooks[idx];
     libafl_qemu_hooks[idx] = hk;
-    libafl_helper_table_add(&hk->helper_info);
     return hk->num;
 }
 

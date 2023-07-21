@@ -171,10 +171,10 @@ void libafl_qemu_trigger_breakpoint(CPUState* cpu)
     }
 }
 
-void HELPER(libafl_qemu_handle_breakpoint)(CPUArchState *env, target_ulong pc)
+void HELPER(libafl_qemu_handle_breakpoint)(CPUArchState *env, uint64_t pc)
 {
     CPUState* cpu = env_cpu(env);
-    libafl_breakpoint_pc = pc;
+    libafl_breakpoint_pc = (target_ulong)pc;
     libafl_qemu_trigger_breakpoint(cpu);
 }
 

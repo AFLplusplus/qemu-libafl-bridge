@@ -24,12 +24,16 @@
 #include "qemu/osdep.h"
 #include "qemu/host-utils.h"
 #include "cpu.h"
-#include "exec/helper-proto.h"
+#include "exec/helper-proto-common.h"
 #include "exec/cpu_ldst.h"
 #include "exec/exec-all.h"
 #include "disas/disas.h"
 #include "exec/log.h"
 #include "tcg/tcg.h"
+
+#define HELPER_H  "accel/tcg/tcg-runtime.h"
+#include "exec/helper-info.c.inc"
+#undef  HELPER_H
 
 //// --- Begin LibAFL code ---
 
@@ -167,10 +171,10 @@ void libafl_qemu_trigger_breakpoint(CPUState* cpu)
     }
 }
 
-void HELPER(libafl_qemu_handle_breakpoint)(CPUArchState *env, target_ulong pc)
+void HELPER(libafl_qemu_handle_breakpoint)(CPUArchState *env, uint64_t pc)
 {
     CPUState* cpu = env_cpu(env);
-    libafl_breakpoint_pc = pc;
+    libafl_breakpoint_pc = (target_ulong)pc;
     libafl_qemu_trigger_breakpoint(cpu);
 }
 

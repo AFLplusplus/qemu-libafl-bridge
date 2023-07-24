@@ -38,13 +38,16 @@
 #include "qemu/log.h"
 #include "qemu/host-utils.h"
 #include "exec/cpu_ldst.h"
-#include "exec/gen-icount.h"
 #include "exec/helper-proto.h"
 #include "exec/helper-gen.h"
 
 #include "exec/translator.h"
 #include "exec/log.h"
 #include "qemu/atomic128.h"
+
+#define HELPER_H "helper.h"
+#include "exec/helper-info.c.inc"
+#undef  HELPER_H
 
 
 /* Information that (most) every instruction needs to manipulate.  */
@@ -3421,7 +3424,7 @@ static DisasJumpType op_mxb(DisasContext *s, DisasOps *o)
 
 static DisasJumpType op_mxdb(DisasContext *s, DisasOps *o)
 {
-    gen_helper_mxdb(o->out_128, cpu_env, o->in1_128, o->in2);
+    gen_helper_mxdb(o->out_128, cpu_env, o->in1, o->in2);
     return DISAS_NEXT;
 }
 
@@ -5183,12 +5186,6 @@ static void prep_r1_P(DisasContext *s, DisasOps *o)
 }
 #define SPEC_prep_r1_P SPEC_r1_even
 
-static void prep_x1(DisasContext *s, DisasOps *o)
-{
-    o->out_128 = load_freg_128(get_field(s, r1));
-}
-#define SPEC_prep_x1 SPEC_r1_f128
-
 /* ====================================================================== */
 /* The "Write OUTput" generators.  These generally perform some non-trivial
    copy of data to TCG globals, or to main memory.  The trivial cases are
@@ -6350,10 +6347,7 @@ static DisasJumpType translate_one(CPUS390XState *env, DisasContext *s)
 
         /* input/output is the special case for icount mode */
         if (unlikely(insn->flags & IF_IO)) {
-            icount = tb_cflags(s->base.tb) & CF_USE_ICOUNT;
-            if (icount) {
-                gen_io_start();
-            }
+            icount = translator_io_start(&s->base);
         }
     }
 

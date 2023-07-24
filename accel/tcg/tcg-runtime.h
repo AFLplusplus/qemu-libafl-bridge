@@ -302,6 +302,6 @@ DEF_HELPER_FLAGS_5(gvec_bitsel, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, ptr, i32)
 //// --- Begin LibAFL code ---
 
 DEF_HELPER_FLAGS_2(libafl_qemu_handle_breakpoint, TCG_CALL_NO_RWG,
-                   void, env, tl)
+                   void, env, i64)
 
 //// --- End LibAFL code ---

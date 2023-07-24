@@ -8,43 +8,125 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/log.h"
 #include "qemu/error-report.h"
-#include "tcg/tcg.h"
-#include "tcg/tcg-op.h"
 #include "exec/exec-all.h"
-#include "exec/gen-icount.h"
-#include "exec/log.h"
 #include "exec/translator.h"
+#include "exec/translate-all.h"
 #include "exec/plugin-gen.h"
-#include "exec/replay-core.h"
+#include "tcg/tcg-op-common.h"
+
+static void gen_io_start(void)
+{
+    tcg_gen_st_i32(tcg_constant_i32(1), cpu_env,
+                   offsetof(ArchCPU, parent_obj.can_do_io) -
+                   offsetof(ArchCPU, env));
+}
+
+bool translator_io_start(DisasContextBase *db)
+{
+    uint32_t cflags = tb_cflags(db->tb);
+
+    if (!(cflags & CF_USE_ICOUNT)) {
+        return false;
+    }
+    if (db->num_insns == db->max_insns && (cflags & CF_LAST_IO)) {
+        /* Already started in translator_loop. */
+        return true;
+    }
+
+    gen_io_start();
+
+    /*
+     * Ensure that this instruction will be the last in the TB.
+     * The target may override this to something more forceful.
+     */
+    if (db->is_jmp == DISAS_NEXT) {
+        db->is_jmp = DISAS_TOO_MANY;
+    }
+    return true;
+}
+
+static TCGOp *gen_tb_start(uint32_t cflags)
+{
+    TCGv_i32 count = tcg_temp_new_i32();
+    TCGOp *icount_start_insn = NULL;
+
+    tcg_gen_ld_i32(count, cpu_env,
+                   offsetof(ArchCPU, neg.icount_decr.u32) -
+                   offsetof(ArchCPU, env));
+
+    if (cflags & CF_USE_ICOUNT) {
+        /*
+         * We emit a sub with a dummy immediate argument. Keep the insn index
+         * of the sub so that we later (when we know the actual insn count)
+         * can update the argument with the actual insn count.
+         */
+        tcg_gen_sub_i32(count, count, tcg_constant_i32(0));
+        icount_start_insn = tcg_last_op();
+    }
+
+    /*
+     * Emit the check against icount_decr.u32 to see if we should exit
+     * unless we suppress the check with CF_NOIRQ. If we are using
+     * icount and have suppressed interruption the higher level code
+     * should have ensured we don't run more instructions than the
+     * budget.
+     */
+    if (cflags & CF_NOIRQ) {
+        tcg_ctx->exitreq_label = NULL;
+    } else {
+        tcg_ctx->exitreq_label = gen_new_label();
+        tcg_gen_brcondi_i32(TCG_COND_LT, count, 0, tcg_ctx->exitreq_label);
+    }
+
+    if (cflags & CF_USE_ICOUNT) {
+        tcg_gen_st16_i32(count, cpu_env,
+                         offsetof(ArchCPU, neg.icount_decr.u16.low) -
+                         offsetof(ArchCPU, env));
+        /*
+         * cpu->can_do_io is cleared automatically here at the beginning of
+         * each translation block.  The cost is minimal and only paid for
+         * -icount, plus it would be very easy to forget doing it in the
+         * translator. Doing it here means we don't need a gen_io_end() to
+         * go with gen_io_start().
+         */
+        tcg_gen_st_i32(tcg_constant_i32(0), cpu_env,
+                       offsetof(ArchCPU, parent_obj.can_do_io) -
+                       offsetof(ArchCPU, env));
+    }
+
+    return icount_start_insn;
+}
+
+static void gen_tb_end(const TranslationBlock *tb, uint32_t cflags,
+                       TCGOp *icount_start_insn, int num_insns)
+{
+    if (cflags & CF_USE_ICOUNT) {
+        /*
+         * Update the num_insn immediate parameter now that we know
+         * the actual insn count.
+         */
+        tcg_set_insn_param(icount_start_insn, 2,
+                           tcgv_i32_arg(tcg_constant_i32(num_insns)));
+    }
+
+    if (tcg_ctx->exitreq_label) {
+        gen_set_label(tcg_ctx->exitreq_label);
+        tcg_gen_exit_tb(tb, TB_EXIT_REQUESTED);
+    }
+}
 
 //// --- Begin LibAFL code ---
 
 #include "tcg/tcg-internal.h"
 #include "tcg/tcg-temp-internal.h"
 
-// reintroduce this in QEMU
-static TCGv_i64 tcg_const_i64(int64_t val)
-{
-    TCGv_i64 t0;
-    t0 = tcg_temp_new_i64();
-    tcg_gen_movi_i64(t0, val);
-    return t0;
-}
-
-#if TARGET_LONG_BITS == 32
-static TCGv_i32 tcg_const_i32(int32_t val)
-{
-    TCGv_i32 t0;
-    t0 = tcg_temp_new_i32();
-    tcg_gen_movi_i32(t0, val);
-    return t0;
-}
-
-#define tcg_const_tl tcg_const_i32
-#else
-#define tcg_const_tl tcg_const_i64
+#ifndef TARGET_LONG_BITS
+#error "TARGET_LONG_BITS not defined"
 #endif
+
+void tcg_gen_callN(TCGHelperInfo *info, TCGTemp *ret, TCGTemp **args);
 
 extern target_ulong libafl_gen_cur_pc;
 
@@ -94,6 +176,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
                      const TranslatorOps *ops, DisasContextBase *db)
 {
     uint32_t cflags = tb_cflags(tb);
+    TCGOp *icount_start_insn;
     bool plugin_enabled;
 
     /* Initialize DisasContext */
@@ -115,7 +198,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
 
     /* Start translating.  */
-    gen_tb_start(db->tb);
+    icount_start_insn = gen_tb_start(cflags);
     ops->tb_start(db, cpu);
     tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
 
@@ -134,14 +217,16 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 
         struct libafl_hook* hk = libafl_search_hook(db->pc_next);
         if (hk) {
-            TCGv tmp0 = tcg_const_tl(db->pc_next);
-            TCGv_i64 tmp1 = tcg_const_i64(hk->data);
+            TCGv_i64 tmp1 = tcg_constant_i64(hk->data);
 #if TARGET_LONG_BITS == 32
+            TCGv_i32 tmp0 = tcg_constant_i32(db->pc_next);
             TCGTemp *tmp2[2] = { tcgv_i32_temp(tmp0), tcgv_i64_temp(tmp1) };
 #else
+            TCGv_i64 tmp0 = tcg_constant_i64(db->pc_next);
             TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
 #endif
-            tcg_gen_callN(hk->callback, NULL, 2, tmp2);
+            // tcg_gen_callN(hk->callback, NULL, 2, tmp2);
+            tcg_gen_callN(&hk->helper_info, NULL, tmp2);
 #if TARGET_LONG_BITS == 32
             tcg_temp_free_i32(tmp0);
 #else
@@ -153,13 +238,9 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
         struct libafl_breakpoint* bp = libafl_qemu_breakpoints;
         while (bp) {
             if (bp->addr == db->pc_next) {
-                TCGv tmp0 = tcg_const_tl(db->pc_next);
+                TCGv_i64 tmp0 = tcg_constant_i64((uint64_t)db->pc_next);
                 gen_helper_libafl_qemu_handle_breakpoint(cpu_env, tmp0);
-#if TARGET_LONG_BITS == 32
-                tcg_temp_free_i32(tmp0);
-#else
                 tcg_temp_free_i64(tmp0);
-#endif
             }
             bp = bp->next;
         }
@@ -177,14 +258,16 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
                     if (backdoor == 0x44) {
                         struct libafl_backdoor_hook* hk = libafl_backdoor_hooks;
                         while (hk) {
-                            TCGv tmp0 = tcg_const_tl(db->pc_next);
-                            TCGv_i64 tmp1 = tcg_const_i64(hk->data);
+                            TCGv_i64 tmp1 = tcg_constant_i64(hk->data);
 #if TARGET_LONG_BITS == 32
+                            TCGv_i32 tmp0 = tcg_constant_i32(db->pc_next);
                             TCGTemp *tmp2[2] = { tcgv_i32_temp(tmp0), tcgv_i64_temp(tmp1) };
 #else
+                            TCGv_i64 tmp0 = tcg_constant_i64(db->pc_next);
                             TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
 #endif
-                            tcg_gen_callN(hk->exec, NULL, 2, tmp2);
+                            // tcg_gen_callN(hk->exec, NULL, 2, tmp2);
+                            tcg_gen_callN(&hk->helper_info, NULL, tmp2);
 #if TARGET_LONG_BITS == 32
                             tcg_temp_free_i32(tmp0);
 #else
@@ -246,7 +329,7 @@ post_translate_insn:
 
     /* Emit code to exit the TB, as indicated by db->is_jmp.  */
     ops->tb_stop(db, cpu);
-    gen_tb_end(db->tb, db->num_insns);
+    gen_tb_end(tb, cflags, icount_start_insn, db->num_insns);
 
     if (plugin_enabled) {
         plugin_gen_tb_end(cpu);
@@ -319,6 +402,27 @@ static void *translator_access(CPUArchState *env, DisasContextBase *db,
     return host + (pc - base);
 }
 
+static void plugin_insn_append(abi_ptr pc, const void *from, size_t size)
+{
+#ifdef CONFIG_PLUGIN
+    struct qemu_plugin_insn *insn = tcg_ctx->plugin_insn;
+    abi_ptr off;
+
+    if (insn == NULL) {
+        return;
+    }
+    off = pc - insn->vaddr;
+    if (off < insn->data->len) {
+        g_byte_array_set_size(insn->data, off);
+    } else if (off > insn->data->len) {
+        /* we have an unexpected gap */
+        g_assert_not_reached();
+    }
+
+    insn->data = g_byte_array_append(insn->data, from, size);
+#endif
+}
+
 uint8_t translator_ldub(CPUArchState *env, DisasContextBase *db, abi_ptr pc)
 {
     uint8_t ret;
@@ -376,4 +480,9 @@ uint64_t translator_ldq(CPUArchState *env, DisasContextBase *db, abi_ptr pc)
     plug = tswap64(ret);
     plugin_insn_append(pc, &plug, sizeof(ret));
     return ret;
+}
+
+void translator_fake_ldb(uint8_t insn8, abi_ptr pc)
+{
+    plugin_insn_append(pc, &insn8, sizeof(insn8));
 }

@@ -560,6 +560,7 @@ void pci_bus_irqs(PCIBus *bus, pci_set_irq_fn set_irq,
     bus->set_irq = set_irq;
     bus->irq_opaque = irq_opaque;
     bus->nirq = nirq;
+    g_free(bus->irq_count);
     bus->irq_count = g_malloc0(nirq * sizeof(bus->irq_count[0]));
 }
 
@@ -575,6 +576,7 @@ void pci_bus_irqs_cleanup(PCIBus *bus)
     bus->irq_opaque = NULL;
     bus->nirq = 0;
     g_free(bus->irq_count);
+    bus->irq_count = NULL;
 }
 
 PCIBus *pci_register_root_bus(DeviceState *parent, const char *name,
@@ -1444,9 +1446,7 @@ pcibus_t pci_bar_address(PCIDevice *d,
 {
     pcibus_t new_addr, last_addr;
     uint16_t cmd = pci_get_word(d->config + PCI_COMMAND);
-    Object *machine = qdev_get_machine();
-    ObjectClass *oc = object_get_class(machine);
-    MachineClass *mc = MACHINE_CLASS(oc);
+    MachineClass *mc = MACHINE_GET_CLASS(qdev_get_machine());
     bool allow_0_address = mc->pci_allow_0_address;
 
     if (type & PCI_BASE_ADDRESS_SPACE_IO) {

@@ -136,7 +136,7 @@ endif
 if cpu in ['x86', 'x86_64', 'arm', 'aarch64']
   # i386 emulator provides xenpv machine type for multiple architectures
   accelerator_targets += {
-    'CONFIG_XEN': ['i386-softmmu', 'x86_64-softmmu'],
+    'CONFIG_XEN': ['i386-softmmu', 'x86_64-softmmu', 'aarch64-softmmu'],
   }
 endif
 if cpu in ['x86', 'x86_64']
@@ -1092,9 +1092,8 @@ endif
 
 mpathlibs = [libudev]
 mpathpersist = not_found
-mpathpersist_new_api = false
 if targetos == 'linux' and have_tools and get_option('mpath').allowed()
-  mpath_test_source_new = '''
+  mpath_test_source = '''
     #include <libudev.h>
     #include <mpath_persist.h>
     unsigned mpath_mx_alloc_len = 1024;
@@ -1111,16 +1110,6 @@ if targetos == 'linux' and have_tools and get_option('mpath').allowed()
         multipath_conf = mpath_lib_init();
         return 0;
     }'''
-  mpath_test_source_old = '''
-      #include <libudev.h>
-      #include <mpath_persist.h>
-      unsigned mpath_mx_alloc_len = 1024;
-      int logsink;
-      int main(void) {
-          struct udev *udev = udev_new();
-          mpath_lib_init(udev);
-          return 0;
-      }'''
   libmpathpersist = cc.find_library('mpathpersist',
                                     required: get_option('mpath'))
   if libmpathpersist.found()
@@ -1139,10 +1128,7 @@ if targetos == 'linux' and have_tools and get_option('mpath').allowed()
     endforeach
     if mpathlibs.length() == 0
       msg = 'Dependencies missing for libmpathpersist'
-    elif cc.links(mpath_test_source_new, dependencies: mpathlibs)
-      mpathpersist = declare_dependency(dependencies: mpathlibs)
-      mpathpersist_new_api = true
-    elif cc.links(mpath_test_source_old, dependencies: mpathlibs)
+    elif cc.links(mpath_test_source, dependencies: mpathlibs)
       mpathpersist = declare_dependency(dependencies: mpathlibs)
     else
       msg = 'Cannot detect libmpathpersist API'
@@ -1273,10 +1259,16 @@ if not get_option('sdl').auto() or have_system
   sdl_image = not_found
 endif
 if sdl.found()
-  # work around 2.0.8 bug
-  sdl = declare_dependency(compile_args: '-Wno-undef',
-                           dependencies: sdl,
-                           version: sdl.version())
+  # Some versions of SDL have problems with -Wundef
+  if not cc.compiles('''
+                     #include <SDL.h>
+                     #include <SDL_syswm.h>
+                     int main(int argc, char *argv[]) { return 0; }
+                     ''', dependencies: sdl, args: '-Werror=undef')
+    sdl = declare_dependency(compile_args: '-Wno-undef',
+                             dependencies: sdl,
+                             version: sdl.version())
+  endif
   sdl_image = dependency('SDL2_image', required: get_option('sdl_image'),
                          method: 'pkg-config')
 else
@@ -1691,16 +1683,13 @@ if get_option('xen').enabled() or (get_option('xen').auto() and have_system)
     endif
   endif
   if not xen.found()
-    xen_tests = [ '4.11.0', '4.10.0', '4.9.0', '4.8.0', '4.7.1', '4.6.0', '4.5.0', '4.2.0' ]
+    xen_tests = [ '4.11.0', '4.10.0', '4.9.0', '4.8.0', '4.7.1' ]
     xen_libs = {
       '4.11.0': [ 'xenstore', 'xenctrl', 'xendevicemodel', 'xenforeignmemory', 'xengnttab', 'xenevtchn', 'xentoolcore' ],
       '4.10.0': [ 'xenstore', 'xenctrl', 'xendevicemodel', 'xenforeignmemory', 'xengnttab', 'xenevtchn', 'xentoolcore' ],
       '4.9.0': [ 'xenstore', 'xenctrl', 'xendevicemodel', 'xenforeignmemory', 'xengnttab', 'xenevtchn' ],
       '4.8.0': [ 'xenstore', 'xenctrl', 'xenforeignmemory', 'xengnttab', 'xenevtchn' ],
       '4.7.1': [ 'xenstore', 'xenctrl', 'xenforeignmemory', 'xengnttab', 'xenevtchn' ],
-      '4.6.0': [ 'xenstore', 'xenctrl' ],
-      '4.5.0': [ 'xenstore', 'xenctrl' ],
-      '4.2.0': [ 'xenstore', 'xenctrl' ],
     }
     xen_deps = {}
     foreach ver: xen_tests
@@ -1736,6 +1725,8 @@ have_xen_pci_passthrough = get_option('xen_pci_passthrough') \
   .require(xen.found(),
            error_message: 'Xen PCI passthrough requested but Xen not enabled') \
   .require(targetos == 'linux',
+           error_message: 'Xen PCI passthrough not available on this platform') \
+  .require(cpu == 'x86'  or cpu == 'x86_64',
            error_message: 'Xen PCI passthrough not available on this platform') \
   .allowed()
 
@@ -1781,8 +1772,10 @@ if gnutls.found()
   tasn1 = dependency('libtasn1',
                      method: 'pkg-config')
 endif
-keyutils = dependency('libkeyutils', required: false,
-                      method: 'pkg-config')
+keyutils = not_found
+if get_option('keyring').enabled()
+  keyutils = dependency('libkeyutils', required: false, method: 'pkg-config')
+endif
 
 has_gettid = cc.has_function('gettid')
 
@@ -1797,8 +1790,7 @@ malloc = []
 if get_option('malloc') == 'system'
   has_malloc_trim = \
     get_option('malloc_trim').allowed() and \
-    cc.links('''#include <malloc.h>
-                int main(void) { malloc_trim(0); return 0; }''')
+    cc.has_function('malloc_trim', prefix: '#include <malloc.h>')
 else
   has_malloc_trim = false
   malloc = cc.find_library(get_option('malloc'), required: true)
@@ -1811,34 +1803,19 @@ if not has_malloc_trim and get_option('malloc_trim').enabled()
   endif
 endif
 
-# Check whether the glibc provides statx()
-
 gnu_source_prefix = '''
   #ifndef _GNU_SOURCE
   #define _GNU_SOURCE
   #endif
 '''
-statx_test = gnu_source_prefix + '''
-  #include <sys/stat.h>
-  int main(void) {
-    struct statx statxbuf;
-    statx(0, "", 0, STATX_BASIC_STATS, &statxbuf);
-    return 0;
-  }'''
 
-has_statx = cc.links(statx_test)
+# Check whether the glibc provides STATX_BASIC_STATS
+
+has_statx = cc.has_header_symbol('sys/stat.h', 'STATX_BASIC_STATS', prefix: gnu_source_prefix)
 
 # Check whether statx() provides mount ID information
 
-statx_mnt_id_test = gnu_source_prefix + '''
-  #include <sys/stat.h>
-  int main(void) {
-    struct statx statxbuf;
-    statx(0, "", 0, STATX_BASIC_STATS | STATX_MNT_ID, &statxbuf);
-    return statxbuf.stx_mnt_id;
-  }'''
-
-has_statx_mnt_id = cc.links(statx_mnt_id_test)
+has_statx_mnt_id = cc.has_header_symbol('sys/stat.h', 'STATX_MNT_ID', prefix: gnu_source_prefix)
 
 have_vhost_user_blk_server = get_option('vhost_user_blk_server') \
   .require(targetos == 'linux',
@@ -2104,7 +2081,6 @@ config_host_data.set('CONFIG_GCOV', get_option('b_coverage'))
 config_host_data.set('CONFIG_LIBUDEV', libudev.found())
 config_host_data.set('CONFIG_LZO', lzo.found())
 config_host_data.set('CONFIG_MPATH', mpathpersist.found())
-config_host_data.set('CONFIG_MPATH_NEW_API', mpathpersist_new_api)
 config_host_data.set('CONFIG_BLKIO', blkio.found())
 if blkio.found()
   config_host_data.set('CONFIG_BLKIO_VHOST_VDPA_FD',
@@ -2888,6 +2864,7 @@ foreach target : target_dirs
     endif
     config_target += { 'CONFIG_BSD_USER': 'y' }
   elif target.endswith('softmmu')
+    config_target += { 'CONFIG_SYSTEM_ONLY': 'y' }
     config_target += { 'CONFIG_SOFTMMU': 'y' }
   endif
   if target.endswith('-user')
@@ -3014,7 +2991,7 @@ config_all += config_host
 config_all += config_all_disas
 config_all += {
   'CONFIG_XEN': xen.found(),
-  'CONFIG_SOFTMMU': have_system,
+  'CONFIG_SYSTEM_ONLY': have_system,
   'CONFIG_USER_ONLY': have_user,
   'CONFIG_ALL': true,
 }
@@ -3056,14 +3033,7 @@ endif
 
 libvfio_user_dep = not_found
 if have_system and vfio_user_server_allowed
-  have_internal = fs.exists(meson.current_source_dir() / 'subprojects/libvfio-user/meson.build')
-
-  if not have_internal
-    error('libvfio-user source not found - please pull git submodule')
-  endif
-
-  libvfio_user_proj = subproject('libvfio-user')
-
+  libvfio_user_proj = subproject('libvfio-user', required: true)
   libvfio_user_dep = libvfio_user_proj.get_variable('libvfio_user_dep')
 endif
 
@@ -3091,12 +3061,6 @@ if fdt_required.length() > 0 or fdt_opt == 'enabled'
   endif
   if not fdt.found()
     assert(fdt_opt == 'internal')
-    have_internal = fs.exists(meson.current_source_dir() / 'subprojects/dtc/meson.build')
-
-    if not have_internal
-      error('libfdt source not found - please pull git submodule')
-    endif
-
     libfdt_proj = subproject('dtc', required: true,
                              default_options: ['tools=false',  'yaml=disabled',
                                                'python=disabled', 'default_library=static'])
@@ -3207,7 +3171,7 @@ hwcore_ss = ss.source_set()
 io_ss = ss.source_set()
 qmp_ss = ss.source_set()
 qom_ss = ss.source_set()
-softmmu_ss = ss.source_set()
+system_ss = ss.source_set()
 specific_fuzz_ss = ss.source_set()
 specific_ss = ss.source_set()
 stub_ss = ss.source_set()
@@ -3439,7 +3403,7 @@ if have_block
   # os-posix.c contains POSIX-specific functions used by qemu-storage-daemon,
   # os-win32.c does not
   blockdev_ss.add(when: 'CONFIG_POSIX', if_true: files('os-posix.c'))
-  softmmu_ss.add(when: 'CONFIG_WIN32', if_true: [files('os-win32.c')])
+  system_ss.add(when: 'CONFIG_WIN32', if_true: [files('os-win32.c')])
 endif
 
 common_ss.add(files('cpus-common.c'))
@@ -3540,7 +3504,7 @@ foreach d, list : modules
       if d == 'block'
         block_ss.add_all(module_ss)
       else
-        softmmu_ss.add_all(module_ss)
+        system_ss.add_all(module_ss)
       endif
     endif
   endforeach
@@ -3649,7 +3613,7 @@ libmigration = static_library('migration', sources: migration_files + genh,
                               pic: 'AS_SHARED_LIB' in config_host)
 migration = declare_dependency(link_with: libmigration,
                                dependencies: [zlib, qom, io])
-softmmu_ss.add(migration)
+system_ss.add(migration)
 
 block_ss = block_ss.apply(config_host, strict: false)
 libblock = static_library('block', block_ss.sources() + genh,
@@ -3715,10 +3679,10 @@ if emulator_modules.length() > 0
   alias_target('modules', emulator_modules)
 endif
 
-softmmu_ss.add(authz, blockdev, chardev, crypto, io, qmp)
+system_ss.add(authz, blockdev, chardev, crypto, io, qmp)
 common_ss.add(qom, qemuutil)
 
-common_ss.add_all(when: 'CONFIG_SOFTMMU', if_true: [softmmu_ss])
+common_ss.add_all(when: 'CONFIG_SYSTEM_ONLY', if_true: [system_ss])
 common_ss.add_all(when: 'CONFIG_USER_ONLY', if_true: user_ss)
 
 common_all = common_ss.apply(config_all, strict: false)
@@ -4048,8 +4012,14 @@ endif
 # Configuration summary #
 #########################
 
-# Directories
+# Build environment
 summary_info = {}
+summary_info += {'Build directory':   meson.current_build_dir()}
+summary_info += {'Source path':       meson.current_source_dir()}
+summary_info += {'Download dependencies': get_option('wrap_mode') != 'nodownload'}
+summary(summary_info, bool_yn: true, section: 'Build environment')
+
+# Directories
 summary_info += {'Install prefix':    get_option('prefix')}
 summary_info += {'BIOS directory':    qemu_datadir}
 pathsep = targetos == 'windows' ? ';' : ':'
@@ -4067,14 +4037,10 @@ else
   summary_info += {'local state directory': 'queried at runtime'}
 endif
 summary_info += {'Doc directory':     get_option('prefix') / get_option('docdir')}
-summary_info += {'Build directory':   meson.current_build_dir()}
-summary_info += {'Source path':       meson.current_source_dir()}
-summary_info += {'GIT submodules':    config_host['GIT_SUBMODULES']}
 summary(summary_info, bool_yn: true, section: 'Directories')
 
 # Host binaries
 summary_info = {}
-summary_info += {'git':               config_host['GIT']}
 summary_info += {'python':            '@0@ (version: @1@)'.format(python.full_path(), python.language_version())}
 summary_info += {'sphinx-build':      sphinx_build}
 if config_host.has_key('HAVE_GDB_BIN')
@@ -4160,7 +4126,7 @@ summary_info += {'QEMU_LDFLAGS':      ' '.join(qemu_ldflags)}
 summary_info += {'profiler':          get_option('profiler')}
 summary_info += {'link-time optimization (LTO)': get_option('b_lto')}
 summary_info += {'PIE':               get_option('b_pie')}
-summary_info += {'static build':      config_host.has_key('CONFIG_STATIC')}
+summary_info += {'static build':      get_option('prefer_static')}
 summary_info += {'malloc trim support': has_malloc_trim}
 summary_info += {'membarrier':        have_membarrier}
 summary_info += {'debug graph lock':  get_option('debug_graph_lock')}
@@ -4281,32 +4247,32 @@ summary_info += {'rng-none':          get_option('rng_none')}
 summary_info += {'Linux keyring':     have_keyring}
 summary(summary_info, bool_yn: true, section: 'Crypto')
 
-# Libraries
+# UI
 summary_info = {}
 if targetos == 'darwin'
   summary_info += {'Cocoa support':           cocoa}
-  summary_info += {'vmnet.framework support': vmnet}
 endif
 summary_info += {'SDL support':       sdl}
 summary_info += {'SDL image support': sdl_image}
 summary_info += {'GTK support':       gtk}
 summary_info += {'pixman':            pixman}
 summary_info += {'VTE support':       vte}
-summary_info += {'slirp support':     slirp}
-summary_info += {'libtasn1':          tasn1}
-summary_info += {'PAM':               pam}
-summary_info += {'iconv support':     iconv}
-summary_info += {'curses support':    curses}
-summary_info += {'virgl support':     virgl}
-summary_info += {'blkio support':     blkio}
-summary_info += {'curl support':      curl}
-summary_info += {'Multipath support': mpathpersist}
 summary_info += {'PNG support':       png}
 summary_info += {'VNC support':       vnc}
 if vnc.found()
   summary_info += {'VNC SASL support':  sasl}
   summary_info += {'VNC JPEG support':  jpeg}
 endif
+summary_info += {'spice protocol support': spice_protocol}
+if spice_protocol.found()
+  summary_info += {'  spice server support': spice}
+endif
+summary_info += {'curses support':    curses}
+summary_info += {'brlapi support':    brlapi}
+summary(summary_info, bool_yn: true, section: 'User interface')
+
+# Audio backends
+summary_info = {}
 if targetos not in ['darwin', 'haiku', 'windows']
   summary_info += {'OSS support':     oss}
   summary_info += {'sndio support':   sndio}
@@ -4319,12 +4285,30 @@ if targetos == 'linux'
   summary_info += {'ALSA support':    alsa}
   summary_info += {'PulseAudio support': pulse}
 endif
-summary_info += {'Pipewire support':   pipewire}
+summary_info += {'Pipewire support':  pipewire}
 summary_info += {'JACK support':      jack}
-summary_info += {'brlapi support':    brlapi}
+summary(summary_info, bool_yn: true, section: 'Audio backends')
+
+# Network backends
+summary_info = {}
+if targetos == 'darwin'
+  summary_info += {'vmnet.framework support': vmnet}
+endif
+summary_info += {'slirp support':     slirp}
 summary_info += {'vde support':       vde}
 summary_info += {'netmap support':    have_netmap}
 summary_info += {'l2tpv3 support':    have_l2tpv3}
+summary(summary_info, bool_yn: true, section: 'Network backends')
+
+# Libraries
+summary_info = {}
+summary_info += {'libtasn1':          tasn1}
+summary_info += {'PAM':               pam}
+summary_info += {'iconv support':     iconv}
+summary_info += {'virgl support':     virgl}
+summary_info += {'blkio support':     blkio}
+summary_info += {'curl support':      curl}
+summary_info += {'Multipath support': mpathpersist}
 summary_info += {'Linux AIO support': libaio}
 summary_info += {'Linux io_uring support': linux_io_uring}
 summary_info += {'ATTR/XATTR support': libattr}
@@ -4333,10 +4317,6 @@ summary_info += {'PVRDMA support':    have_pvrdma}
 summary_info += {'fdt support':       fdt_opt == 'disabled' ? false : fdt_opt}
 summary_info += {'libcap-ng support': libcap_ng}
 summary_info += {'bpf support':       libbpf}
-summary_info += {'spice protocol support': spice_protocol}
-if spice_protocol.found()
-  summary_info += {'  spice server support': spice}
-endif
 summary_info += {'rbd support':       rbd}
 summary_info += {'smartcard support': cacard}
 summary_info += {'U2F support':       u2f}

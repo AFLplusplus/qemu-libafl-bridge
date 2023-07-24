@@ -22,5 +22,3 @@ GTAGS
 *.swp
 *.patch
 *.gcov
-
-/subprojects/slirp

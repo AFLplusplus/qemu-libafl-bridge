@@ -1570,6 +1570,11 @@ void qemu_ram_unset_migratable(RAMBlock *rb)
     rb->flags &= ~RAM_MIGRATABLE;
 }
 
+bool qemu_ram_is_named_file(RAMBlock *rb)
+{
+    return rb->flags & RAM_NAMED_FILE;
+}
+
 int qemu_ram_get_fd(RAMBlock *rb)
 {
     return rb->fd;
@@ -1880,7 +1885,7 @@ RAMBlock *qemu_ram_alloc_from_fd(ram_addr_t size, MemoryRegion *mr,
 
     /* Just support these ram flags by now. */
     assert((ram_flags & ~(RAM_SHARED | RAM_PMEM | RAM_NORESERVE |
-                          RAM_PROTECTED)) == 0);
+                          RAM_PROTECTED | RAM_NAMED_FILE)) == 0);
 
     if (xen_enabled()) {
         error_setg(errp, "-mem-path not supported with Xen");
@@ -3132,7 +3137,7 @@ void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
     bounce.buffer = NULL;
     memory_region_unref(bounce.mr);
     /* Clear in_use before reading map_client_list.  */
-    qatomic_mb_set(&bounce.in_use, false);
+    qatomic_set_mb(&bounce.in_use, false);
     cpu_notify_map_clients();
 }
 

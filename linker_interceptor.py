@@ -11,6 +11,7 @@ args = sys.argv[1:]
 
 out_args = []
 shareds = []
+search = []
 prev_o = False
 for i in range(len(args)):
     if prev_o:
@@ -19,16 +20,20 @@ for i in range(len(args)):
     elif args[i] in FILTER:
         continue
     elif args[i].endswith('.so') and not args[i].startswith('-'):
-        shareds.append(args[i])
+        name = os.path.basename(args[i])[3:-3] # remove prefix and suffix
+        shareds.append(name)
         continue
     elif args[i] == '-o':
         prev_o = True
         continue
-    elif args[i].startswith('-L') or args[i].startswith('-l'):
-        shareds.append(args[i])
+    elif args[i].startswith('-l'):
+        shareds.append(args[i][2:])
+        continue
+    elif args[i].startswith('-L'):
+        search.append(args[i][2:])
     out_args.append(args[i])
 
 with open(OUT, 'w') as f:
-    json.dump({'cmd': out_args, 'so': shareds}, f, indent=2)
+    json.dump({'cmd': out_args, 'libs': shareds, 'search': search}, f, indent=2)
 
 subprocess.run([CXX] + args)

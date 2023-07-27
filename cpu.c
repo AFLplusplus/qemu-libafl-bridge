@@ -198,7 +198,7 @@ int libafl_qemu_set_breakpoint(target_ulong pc)
         libafl_breakpoint_invalidate(cpu, pc);
     }
 
-    struct libafl_breakpoint* bp = malloc(sizeof(struct libafl_breakpoint));
+    struct libafl_breakpoint* bp = calloc(sizeof(struct libafl_breakpoint), 1);
     bp->addr = pc;
     bp->next = libafl_qemu_breakpoints;
     libafl_qemu_breakpoints = bp;
@@ -239,7 +239,7 @@ size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(target_ulong, uint
 
     size_t idx = LIBAFL_TABLES_HASH(pc);
 
-    struct libafl_hook* hk = malloc(sizeof(struct libafl_hook));
+    struct libafl_hook* hk = calloc(sizeof(struct libafl_hook), 1);
     hk->addr = pc;
     hk->callback = callback;
     hk->data = data;

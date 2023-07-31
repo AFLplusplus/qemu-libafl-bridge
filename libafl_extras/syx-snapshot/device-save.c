@@ -78,8 +78,6 @@ device_save_state_t* device_save_kind(device_snapshot_kind_t kind, char** names)
         }
     }
 
-    printf("\n");
-
     qemu_put_byte(f, QEMU_VM_EOF);
 
     qemu_fclose(f);
@@ -107,4 +105,30 @@ void device_restore_all(device_save_state_t* dss) {
 
 void device_free_all(device_save_state_t* dss) {
     g_free(dss->save_buffer);
+}
+
+char** device_list_all(void) {
+    SaveStateEntry *se;
+    
+    size_t size = 1;
+    QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
+        size++;
+    }
+    
+    char** list = malloc(size * sizeof(char*));
+    size_t i = 0;
+    QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
+        if (se->is_ram) {
+            continue;
+        }
+        if (!strcmp(se->idstr, "globalstate")) {
+            continue;
+        }
+        
+        list[i] = se->idstr;
+        i++;
+    }
+    list[i] = NULL;
+    
+    return list;
 }

@@ -19,5 +19,8 @@ typedef enum device_snapshot_kind_e {
 
 device_save_state_t* device_save_all(void);
 device_save_state_t* device_save_kind(device_snapshot_kind_t kind, char** names);
+
 void device_restore_all(device_save_state_t* device_save_state);
 void device_free_all(device_save_state_t* dss);
+
+char** device_list_all(void);

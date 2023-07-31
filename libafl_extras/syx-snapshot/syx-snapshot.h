@@ -6,13 +6,6 @@
 #include "../syx-misc.h"
 
 /**
- * SYX Snapshot parameters
- */
-typedef struct syx_snapshot_init_params_s {
-    uint64_t page_size;
-} syx_snapshot_init_params_t;
-
-/**
  * Saved ramblock
  */
 typedef struct syx_snapshot_ramblock_s {
@@ -112,7 +105,7 @@ uint64_t syx_snapshot_handler(CPUState* cpu, uint32_t cmd, target_ulong target_o
 // Snapshot API
 //
 
-syx_snapshot_t* syx_snapshot_create(bool track);
+syx_snapshot_t* syx_snapshot_create(bool track, device_snapshot_kind_t kind, char** devices);
 void syx_snapshot_free(syx_snapshot_t* snapshot);
 // void syx_snapshot_load(syx_snapshot_t* snapshot);
 
@@ -121,7 +114,7 @@ void syx_snapshot_free(syx_snapshot_t* snapshot);
 // Root snapshot API
 //
 
-syx_snapshot_root_t syx_snapshot_root_create(void);
+syx_snapshot_root_t syx_snapshot_root_create(device_snapshot_kind_t kind, char** devices);
 void syx_snapshot_root_restore(syx_snapshot_t* snapshot);
 void syx_snapshot_root_free(syx_snapshot_root_t* root);
 
@@ -139,7 +132,7 @@ void syx_snapshot_stop_track(syx_snapshot_tracker_t* tracker, syx_snapshot_t* sn
 // Snapshot increment API
 //
 
-void syx_snapshot_increment_push(syx_snapshot_t* snapshot, CPUState* cpu);
+void syx_snapshot_increment_push(syx_snapshot_t* snapshot, device_snapshot_kind_t kind, char** devices);
 void syx_snapshot_increment_pop(syx_snapshot_t* snapshot);
 void syx_snapshot_increment_restore_last(syx_snapshot_t* snapshot);
 syx_snapshot_increment_t* syx_snapshot_increment_free(syx_snapshot_increment_t* increment);

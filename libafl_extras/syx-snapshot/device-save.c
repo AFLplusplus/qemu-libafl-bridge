@@ -19,6 +19,20 @@ extern void save_section_footer(QEMUFile *f, SaveStateEntry *se);
 
 // iothread must be locked
 device_save_state_t* device_save_all(void) {
+    return device_save_kind(DEVICE_SNAPSHOT_ALL, NULL);
+}
+
+static int is_in_list(char* str, char** list) {
+    while (*list) {
+        if (!strcmp(str, *list)) {
+            return 1;
+        }
+        list++;
+    }
+    return 0;
+}
+
+device_save_state_t* device_save_kind(device_snapshot_kind_t kind, char** names) {
     device_save_state_t* dss = g_new0(device_save_state_t, 1);
     SaveStateEntry *se;
 
@@ -38,6 +52,20 @@ device_save_state_t* device_save_all(void) {
         }
         if (!strcmp(se->idstr, "globalstate")) {
             continue;
+        }
+        switch (kind) {
+            case DEVICE_SNAPSHOT_ALLOWLIST:
+                if (!is_in_list(se->idstr, names)) {
+                    continue;
+                }
+                break;
+            case DEVICE_SNAPSHOT_DENYLIST:
+                if (is_in_list(se->idstr, names)) {
+                    continue;
+                }
+                break;
+            default:
+                break;
         }
 
         // SYX_PRINTF("Saving section %s...\n", se->idstr);

@@ -45,10 +45,10 @@ uint64_t syx_snapshot_handler(CPUState* cpu, uint32_t cmd, target_ulong target_o
     return (uint64_t) -1;
 }
 
-syx_snapshot_t* syx_snapshot_create(bool track) {
+syx_snapshot_t* syx_snapshot_create(bool track, device_snapshot_kind_t kind, char** devices) {
     syx_snapshot_t* snapshot = g_new0(syx_snapshot_t, 1);
 
-    snapshot->root_snapshot = syx_snapshot_root_create();
+    snapshot->root_snapshot = syx_snapshot_root_create(kind, devices);
     snapshot->last_incremental_snapshot = NULL;
     snapshot->dirty_list = syx_snapshot_dirty_list_create();
 
@@ -74,12 +74,12 @@ void syx_snapshot_free(syx_snapshot_t* snapshot) {
     g_free(snapshot);
 }
 
-syx_snapshot_root_t syx_snapshot_root_create(void) {
+syx_snapshot_root_t syx_snapshot_root_create(device_snapshot_kind_t kind, char** devices) {
     syx_snapshot_root_t root = {0};
 
     RAMBlock* block;
     uint64_t nb_blocks = 0;
-    device_save_state_t* dss = device_save_all();
+    device_save_state_t* dss = device_save_kind(kind, devices);
 
     RAMBLOCK_FOREACH(block) {
         nb_blocks++;
@@ -150,13 +150,13 @@ void syx_snapshot_stop_track(syx_snapshot_tracker_t* tracker, syx_snapshot_t* sn
     abort();
 }
 
-void syx_snapshot_increment_push(syx_snapshot_t* snapshot, CPUState* cpu) {
+void syx_snapshot_increment_push(syx_snapshot_t* snapshot, device_snapshot_kind_t kind, char** devices) {
     syx_snapshot_increment_t* increment = g_new0(syx_snapshot_increment_t, 1);
     increment->parent = snapshot->last_incremental_snapshot;
     snapshot->last_incremental_snapshot = increment;
 
     increment->dirty_page_list = syx_snapshot_dirty_list_to_dirty_page_list(&snapshot->dirty_list);
-    increment->dss = device_save_all();
+    increment->dss = device_save_kind(kind, devices);
 
     syx_snapshot_dirty_list_flush(&snapshot->dirty_list);
 }

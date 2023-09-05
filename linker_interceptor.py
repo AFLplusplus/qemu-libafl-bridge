@@ -4,17 +4,24 @@ import subprocess, shutil, json, sys, os
 
 FILTER = ['-shared']
 
+CC = os.getenv('__LIBAFL_QEMU_BUILD_CC') or 'cc'
 CXX = os.getenv('__LIBAFL_QEMU_BUILD_CXX') or 'c++'
 OUT = os.getenv('__LIBAFL_QEMU_BUILD_OUT') or 'linkinfo.json'
 
 args = sys.argv[1:]
 
+if '++' in sys.argv[0]:
+    cc = CXX
+else:
+    cc = CC
+
 out_args = []
 shareds = []
 search = []
+islinking = False
 
 def process_args(args):
-    global out_args, shareds, search
+    global out_args, shareds, search, islinking
     prev_o = False
 
     for i in range(len(args)):
@@ -22,6 +29,7 @@ def process_args(args):
             prev_o = False
             continue
         elif args[i] in FILTER:
+            islinking = True
             continue
         elif args[i].endswith('.so') and not args[i].startswith('-'):
             name = os.path.basename(args[i])[3:-3] # remove prefix and suffix
@@ -45,11 +53,12 @@ def process_args(args):
 
 process_args(args)
 
-with open(OUT, 'w') as f:
-    json.dump({
-      'cmd': out_args,
-      'libs': shareds,
-      'search': search,
-    }, f, indent=2)
+if islinking:
+    with open(OUT, 'w') as f:
+        json.dump({
+          'cmd': out_args,
+          'libs': shareds,
+          'search': search,
+        }, f, indent=2)
 
-subprocess.run([CXX] + args)
+subprocess.run([cc] + args)

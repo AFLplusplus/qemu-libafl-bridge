@@ -18,18 +18,19 @@ else:
 out_args = []
 shareds = []
 search = []
-islinking = False
+is_linking_qemu = False
 
 def process_args(args):
-    global out_args, shareds, search, islinking
+    global out_args, shareds, search, is_linking_qemu
     prev_o = False
 
     for i in range(len(args)):
         if prev_o:
             prev_o = False
+            if args[i].endswith('.so') and args[i].startswith('libqemu'):
+                is_linking_qemu = True
             continue
         elif args[i] in FILTER:
-            islinking = True
             continue
         elif args[i].endswith('.so') and not args[i].startswith('-'):
             name = os.path.basename(args[i])[3:-3] # remove prefix and suffix
@@ -53,7 +54,7 @@ def process_args(args):
 
 process_args(args)
 
-if islinking:
+if is_linking_qemu:
     with open(OUT, 'w') as f:
         json.dump({
           'cmd': out_args,
@@ -61,4 +62,5 @@ if islinking:
           'search': search,
         }, f, indent=2)
 
-subprocess.run([cc] + args)
+r = subprocess.run([cc] + args)
+sys.exit(r.returncode)

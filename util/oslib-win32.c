@@ -480,8 +480,9 @@ int qemu_bind_wrap(int sockfd, const struct sockaddr *addr,
 }
 
 EXCEPTION_DISPOSITION
-win32_close_exception_handler(struct _EXCEPTION_RECORD*,
-                              void*, struct _CONTEXT*, void*)
+win32_close_exception_handler(struct _EXCEPTION_RECORD *exception_record,
+                              void *registration, struct _CONTEXT *context,
+                              void *dispatcher)
 {
     return EXCEPTION_EXECUTE_HANDLER;
 }
@@ -834,4 +835,37 @@ int qemu_msync(void *addr, size_t length, int fd)
      * requested - but it will still get the job done
      */
     return qemu_fdatasync(fd);
+}
+
+void *qemu_win32_map_alloc(size_t size, HANDLE *h, Error **errp)
+{
+    void *bits;
+
+    trace_win32_map_alloc(size);
+
+    *h = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0,
+                          size, NULL);
+    if (*h == NULL) {
+        error_setg_win32(errp, GetLastError(), "Failed to CreateFileMapping");
+        return NULL;
+    }
+
+    bits = MapViewOfFile(*h, FILE_MAP_ALL_ACCESS, 0, 0, size);
+    if (bits == NULL) {
+        error_setg_win32(errp, GetLastError(), "Failed to MapViewOfFile");
+        CloseHandle(*h);
+        return NULL;
+    }
+
+    return bits;
+}
+
+void qemu_win32_map_free(void *ptr, HANDLE h, Error **errp)
+{
+    trace_win32_map_free(ptr, h);
+
+    if (UnmapViewOfFile(ptr) == 0) {
+        error_setg_win32(errp, GetLastError(), "Failed to UnmapViewOfFile");
+    }
+    CloseHandle(h);
 }

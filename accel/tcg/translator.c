@@ -12,9 +12,9 @@
 #include "qemu/error-report.h"
 #include "exec/exec-all.h"
 #include "exec/translator.h"
-#include "exec/translate-all.h"
 #include "exec/plugin-gen.h"
 #include "tcg/tcg-op-common.h"
+#include "internal.h"
 
 static void gen_io_start(void)
 {
@@ -160,7 +160,7 @@ extern struct libafl_backdoor_hook* libafl_backdoor_hooks;
 
 //// --- End LibAFL code ---
 
-bool translator_use_goto_tb(DisasContextBase *db, target_ulong dest)
+bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
 {
     /* Suppress goto_tb if requested. */
     if (tb_cflags(db->tb) & CF_NO_GOTO_TB) {
@@ -172,8 +172,8 @@ bool translator_use_goto_tb(DisasContextBase *db, target_ulong dest)
 }
 
 void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
-                     target_ulong pc, void *host_pc,
-                     const TranslatorOps *ops, DisasContextBase *db)
+                     vaddr pc, void *host_pc, const TranslatorOps *ops,
+                     DisasContextBase *db)
 {
     uint32_t cflags = tb_cflags(tb);
     TCGOp *icount_start_insn;
@@ -189,10 +189,6 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     db->singlestep_enabled = cflags & CF_SINGLE_STEP;
     db->host_addr[0] = host_pc;
     db->host_addr[1] = NULL;
-
-#ifdef CONFIG_USER_ONLY
-    page_protect(pc);
-#endif
 
     ops->init_disas_context(db, cpu);
     tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
@@ -352,10 +348,10 @@ post_translate_insn:
 }
 
 static void *translator_access(CPUArchState *env, DisasContextBase *db,
-                               target_ulong pc, size_t len)
+                               vaddr pc, size_t len)
 {
     void *host;
-    target_ulong base, end;
+    vaddr base, end;
     TranslationBlock *tb;
 
     tb = db->tb;
@@ -373,22 +369,36 @@ static void *translator_access(CPUArchState *env, DisasContextBase *db,
         host = db->host_addr[1];
         base = TARGET_PAGE_ALIGN(db->pc_first);
         if (host == NULL) {
-            tb_page_addr_t phys_page =
-                get_page_addr_code_hostp(env, base, &db->host_addr[1]);
+            tb_page_addr_t page0, old_page1, new_page1;
+
+            new_page1 = get_page_addr_code_hostp(env, base, &db->host_addr[1]);
 
             /*
              * If the second page is MMIO, treat as if the first page
              * was MMIO as well, so that we do not cache the TB.
              */
-            if (unlikely(phys_page == -1)) {
+            if (unlikely(new_page1 == -1)) {
+                tb_unlock_pages(tb);
                 tb_set_page_addr0(tb, -1);
                 return NULL;
             }
 
-            tb_set_page_addr1(tb, phys_page);
-#ifdef CONFIG_USER_ONLY
-            page_protect(end);
-#endif
+            /*
+             * If this is not the first time around, and page1 matches,
+             * then we already have the page locked.  Alternately, we're
+             * not doing anything to prevent the PTE from changing, so
+             * we might wind up with a different page, requiring us to
+             * re-do the locking.
+             */
+            old_page1 = tb_page_addr1(tb);
+            if (likely(new_page1 != old_page1)) {
+                page0 = tb_page_addr0(tb);
+                if (unlikely(old_page1 != -1)) {
+                    tb_unlock_page1(page0, old_page1);
+                }
+                tb_set_page_addr1(tb, new_page1);
+                tb_lock_page1(page0, new_page1);
+            }
             host = db->host_addr[1];
         }
 

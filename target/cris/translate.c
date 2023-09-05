@@ -342,7 +342,7 @@ static void t_gen_cris_mstep(TCGv d, TCGv a, TCGv b, TCGv ccs)
     tcg_gen_add_tl(d, d, t);
 }
 
-/* Extended arithmetics on CRIS.  */
+/* Extended arithmetic on CRIS.  */
 static inline void t_gen_add_flag(TCGv d, int flag)
 {
     TCGv c;
@@ -411,15 +411,17 @@ static inline void t_gen_swapw(TCGv d, TCGv s)
     tcg_gen_or_tl(d, d, t);
 }
 
-/* Reverse the within each byte.
-   T0 = (((T0 << 7) & 0x80808080) |
-   ((T0 << 5) & 0x40404040) |
-   ((T0 << 3) & 0x20202020) |
-   ((T0 << 1) & 0x10101010) |
-   ((T0 >> 1) & 0x08080808) |
-   ((T0 >> 3) & 0x04040404) |
-   ((T0 >> 5) & 0x02020202) |
-   ((T0 >> 7) & 0x01010101));
+/*
+ * Reverse the bits within each byte.
+ *
+ *  T0 = ((T0 << 7) & 0x80808080)
+ *     | ((T0 << 5) & 0x40404040)
+ *     | ((T0 << 3) & 0x20202020)
+ *     | ((T0 << 1) & 0x10101010)
+ *     | ((T0 >> 1) & 0x08080808)
+ *     | ((T0 >> 3) & 0x04040404)
+ *     | ((T0 >> 5) & 0x02020202)
+ *     | ((T0 >> 7) & 0x01010101);
  */
 static void t_gen_swapr(TCGv d, TCGv s)
 {
@@ -646,7 +648,7 @@ static void cris_alu_op_exec(DisasContext *dc, int op,
     switch (op) {
     case CC_OP_ADD:
         tcg_gen_add_tl(dst, a, b);
-        /* Extended arithmetics.  */
+        /* Extended arithmetic.  */
         t_gen_addx_carry(dc, dst);
         break;
     case CC_OP_ADDC:
@@ -659,7 +661,7 @@ static void cris_alu_op_exec(DisasContext *dc, int op,
         break;
     case CC_OP_SUB:
         tcg_gen_sub_tl(dst, a, b);
-        /* Extended arithmetics.  */
+        /* Extended arithmetic.  */
         t_gen_subx_carry(dc, dst);
         break;
     case CC_OP_MOVE:
@@ -685,7 +687,7 @@ static void cris_alu_op_exec(DisasContext *dc, int op,
         break;
     case CC_OP_NEG:
         tcg_gen_neg_tl(dst, b);
-        /* Extended arithmetics.  */
+        /* Extended arithmetic.  */
         t_gen_subx_carry(dc, dst);
         break;
     case CC_OP_LZ:
@@ -708,7 +710,7 @@ static void cris_alu_op_exec(DisasContext *dc, int op,
         break;
     case CC_OP_CMP:
         tcg_gen_sub_tl(dst, a, b);
-        /* Extended arithmetics.  */
+        /* Extended arithmetic.  */
         t_gen_subx_carry(dc, dst);
         break;
     default:
@@ -2924,12 +2926,12 @@ static unsigned int crisv32_decoder(CPUCRISState *env, DisasContext *dc)
  * On QEMU care needs to be taken when a branch+delayslot sequence is broken
  * and the branch and delayslot don't share pages.
  *
- * The TB contaning the branch insn will set up env->btarget and evaluate 
+ * The TB containing the branch insn will set up env->btarget and evaluate 
  * env->btaken. When the translation loop exits we will note that the branch 
  * sequence is broken and let env->dslot be the size of the branch insn (those
  * vary in length).
  *
- * The TB contaning the delayslot will have the PC of its real insn (i.e no lsb
+ * The TB containing the delayslot will have the PC of its real insn (i.e no lsb
  * set). It will also expect to have env->dslot setup with the size of the 
  * delay slot so that env->pc - env->dslot point to the branch insn. This TB 
  * will execute the dslot and take the branch, either to btarget or just one 
@@ -3143,7 +3145,7 @@ static void cris_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
         tcg_gen_lookup_and_goto_ptr();
         break;
     case DISAS_UPDATE:
-        /* Indicate that interupts must be re-evaluated before the next TB. */
+        /* Indicate that interrupts must be re-evaluated before the next TB. */
         tcg_gen_exit_tb(NULL, 0);
         break;
     default:

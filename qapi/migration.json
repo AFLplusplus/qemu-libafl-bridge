@@ -23,7 +23,8 @@
 #
 # @duplicate: number of duplicate (zero) pages (since 1.2)
 #
-# @skipped: number of skipped zero pages (since 1.5)
+# @skipped: number of skipped zero pages. Always zero, only provided for
+#     compatibility (since 1.5)
 #
 # @normal: number of normal pages (since 1.2)
 #
@@ -62,18 +63,25 @@
 #     between 0 and @dirty-sync-count * @multifd-channels.  (since
 #     7.1)
 #
+# Features:
+#
+# @deprecated: Member @skipped is always zero since 1.5.3
+#
 # Since: 0.14
+#
 ##
 { 'struct': 'MigrationStats',
   'data': {'transferred': 'int', 'remaining': 'int', 'total': 'int' ,
-           'duplicate': 'int', 'skipped': 'int', 'normal': 'int',
-           'normal-bytes': 'int', 'dirty-pages-rate' : 'int',
-           'mbps' : 'number', 'dirty-sync-count' : 'int',
-           'postcopy-requests' : 'int', 'page-size' : 'int',
-           'multifd-bytes' : 'uint64', 'pages-per-second' : 'uint64',
-           'precopy-bytes' : 'uint64', 'downtime-bytes' : 'uint64',
-           'postcopy-bytes' : 'uint64',
-           'dirty-sync-missed-zero-copy' : 'uint64' } }
+           'duplicate': 'int',
+           'skipped': { 'type': 'int', 'features': ['deprecated'] },
+           'normal': 'int',
+           'normal-bytes': 'int', 'dirty-pages-rate': 'int',
+           'mbps': 'number', 'dirty-sync-count': 'int',
+           'postcopy-requests': 'int', 'page-size': 'int',
+           'multifd-bytes': 'uint64', 'pages-per-second': 'uint64',
+           'precopy-bytes': 'uint64', 'downtime-bytes': 'uint64',
+           'postcopy-bytes': 'uint64',
+           'dirty-sync-missed-zero-copy': 'uint64' } }
 
 ##
 # @XBZRLECacheStats:
@@ -250,6 +258,18 @@
 #     blocked.  Present and non-empty when migration is blocked.
 #     (since 6.0)
 #
+# @dirty-limit-throttle-time-per-round: Maximum throttle time
+#     (in microseconds) of virtual CPUs each dirty ring full round,
+#     which shows how MigrationCapability dirty-limit affects the
+#     guest during live migration.  (Since 8.1)
+#
+# @dirty-limit-ring-full-time: Estimated average dirty ring full time
+#     (in microseconds) for each dirty ring full round.  The value
+#     equals the dirty ring memory size divided by the average dirty
+#     page rate of the virtual CPU, which can be used to observe the
+#     average memory load of the virtual CPU indirectly.  Note that
+#     zero means guest doesn't dirty memory.  (Since 8.1)
+#
 # Since: 0.14
 ##
 { 'struct': 'MigrationInfo',
@@ -264,10 +284,12 @@
            '*cpu-throttle-percentage': 'int',
            '*error-desc': 'str',
            '*blocked-reasons': ['str'],
-           '*postcopy-blocktime' : 'uint32',
+           '*postcopy-blocktime': 'uint32',
            '*postcopy-vcpu-blocktime': ['uint32'],
            '*compression': 'CompressionStats',
-           '*socket-address': ['SocketAddress'] } }
+           '*socket-address': ['SocketAddress'],
+           '*dirty-limit-throttle-time-per-round': 'uint64',
+           '*dirty-limit-ring-full-time': 'uint64'} }
 
 ##
 # @query-migrate:
@@ -465,8 +487,8 @@
 #     block devices (and thus take locks) immediately at the end of
 #     migration.  (since 3.0)
 #
-# @x-ignore-shared: If enabled, QEMU will not migrate shared memory that is
-#     accessible on the destination machine. (since 4.0)
+# @x-ignore-shared: If enabled, QEMU will not migrate shared memory
+#     that is accessible on the destination machine.  (since 4.0)
 #
 # @validate-uuid: Send the UUID of the source to allow the destination
 #     to ensure it is the same.  (since 4.2)
@@ -487,6 +509,22 @@
 #     and should not affect the correctness of postcopy migration.
 #     (since 7.1)
 #
+# @switchover-ack: If enabled, migration will not stop the source VM
+#     and complete the migration until an ACK is received from the
+#     destination that it's OK to do so.  Exactly when this ACK is
+#     sent depends on the migrated devices that use this feature.  For
+#     example, a device can use it to make sure some of its data is
+#     sent and loaded in the destination before doing switchover.
+#     This can reduce downtime if devices that support this capability
+#     are present.  'return-path' capability must be enabled to use
+#     it.  (since 8.1)
+#
+# @dirty-limit: If enabled, migration will throttle vCPUs as needed to
+#     keep their dirty page rate within @vcpu-dirty-limit.  This can
+#     improve responsiveness of large guests during live migration,
+#     and can result in more stable read performance.  Requires KVM
+#     with accelerator property "dirty-ring-size" set.  (Since 8.1)
+#
 # Features:
 #
 # @unstable: Members @x-colo and @x-ignore-shared are experimental.
@@ -502,7 +540,8 @@
            'dirty-bitmaps', 'postcopy-blocktime', 'late-block-activate',
            { 'name': 'x-ignore-shared', 'features': [ 'unstable' ] },
            'validate-uuid', 'background-snapshot',
-           'zero-copy-send', 'postcopy-preempt'] }
+           'zero-copy-send', 'postcopy-preempt', 'switchover-ack',
+           'dirty-limit'] }
 
 ##
 # @MigrationCapabilityStatus:
@@ -516,7 +555,7 @@
 # Since: 1.2
 ##
 { 'struct': 'MigrationCapabilityStatus',
-  'data': { 'capability' : 'MigrationCapability', 'state' : 'bool' } }
+  'data': { 'capability': 'MigrationCapability', 'state': 'bool' } }
 
 ##
 # @migrate-set-capabilities:
@@ -779,9 +818,17 @@
 #     Nodes are mapped to their block device name if there is one, and
 #     to their node name otherwise.  (Since 5.2)
 #
+# @x-vcpu-dirty-limit-period: Periodic time (in milliseconds) of dirty
+#     limit during live migration.  Should be in the range 1 to 1000ms.
+#     Defaults to 1000ms.  (Since 8.1)
+#
+# @vcpu-dirty-limit: Dirtyrate limit (MB/s) during live migration.
+#     Defaults to 1.  (Since 8.1)
+#
 # Features:
 #
-# @unstable: Member @x-checkpoint-delay is experimental.
+# @unstable: Members @x-checkpoint-delay and @x-vcpu-dirty-limit-period
+#     are experimental.
 #
 # Since: 2.4
 ##
@@ -799,8 +846,10 @@
            'multifd-channels',
            'xbzrle-cache-size', 'max-postcopy-bandwidth',
            'max-cpu-throttle', 'multifd-compression',
-           'multifd-zlib-level' ,'multifd-zstd-level',
-           'block-bitmap-mapping' ] }
+           'multifd-zlib-level', 'multifd-zstd-level',
+           'block-bitmap-mapping',
+           { 'name': 'x-vcpu-dirty-limit-period', 'features': ['unstable'] },
+           'vcpu-dirty-limit'] }
 
 ##
 # @MigrateSetParameters:
@@ -935,9 +984,17 @@
 #     Nodes are mapped to their block device name if there is one, and
 #     to their node name otherwise.  (Since 5.2)
 #
+# @x-vcpu-dirty-limit-period: Periodic time (in milliseconds) of dirty
+#     limit during live migration.  Should be in the range 1 to 1000ms.
+#     Defaults to 1000ms.  (Since 8.1)
+#
+# @vcpu-dirty-limit: Dirtyrate limit (MB/s) during live migration.
+#     Defaults to 1.  (Since 8.1)
+#
 # Features:
 #
-# @unstable: Member @x-checkpoint-delay is experimental.
+# @unstable: Members @x-checkpoint-delay and @x-vcpu-dirty-limit-period
+#     are experimental.
 #
 # TODO: either fuse back into MigrationParameters, or make
 #     MigrationParameters members mandatory
@@ -972,7 +1029,10 @@
             '*multifd-compression': 'MultiFDCompression',
             '*multifd-zlib-level': 'uint8',
             '*multifd-zstd-level': 'uint8',
-            '*block-bitmap-mapping': [ 'BitmapMigrationNodeAlias' ] } }
+            '*block-bitmap-mapping': [ 'BitmapMigrationNodeAlias' ],
+            '*x-vcpu-dirty-limit-period': { 'type': 'uint64',
+                                            'features': [ 'unstable' ] },
+            '*vcpu-dirty-limit': 'uint64'} }
 
 ##
 # @migrate-set-parameters:
@@ -1127,9 +1187,17 @@
 #     Nodes are mapped to their block device name if there is one, and
 #     to their node name otherwise.  (Since 5.2)
 #
+# @x-vcpu-dirty-limit-period: Periodic time (in milliseconds) of dirty
+#     limit during live migration.  Should be in the range 1 to 1000ms.
+#     Defaults to 1000ms.  (Since 8.1)
+#
+# @vcpu-dirty-limit: Dirtyrate limit (MB/s) during live migration.
+#     Defaults to 1.  (Since 8.1)
+#
 # Features:
 #
-# @unstable: Member @x-checkpoint-delay is experimental.
+# @unstable: Members @x-checkpoint-delay and @x-vcpu-dirty-limit-period
+#     are experimental.
 #
 # Since: 2.4
 ##
@@ -1161,7 +1229,10 @@
             '*multifd-compression': 'MultiFDCompression',
             '*multifd-zlib-level': 'uint8',
             '*multifd-zstd-level': 'uint8',
-            '*block-bitmap-mapping': [ 'BitmapMigrationNodeAlias' ] } }
+            '*block-bitmap-mapping': [ 'BitmapMigrationNodeAlias' ],
+            '*x-vcpu-dirty-limit-period': { 'type': 'uint64',
+                                            'features': [ 'unstable' ] },
+            '*vcpu-dirty-limit': 'uint64'} }
 
 ##
 # @query-migrate-parameters:
@@ -1567,7 +1638,7 @@
 # Since: 2.9
 ##
 { 'command': 'xen-set-replication',
-  'data': { 'enable': 'bool', 'primary': 'bool', '*failover' : 'bool' },
+  'data': { 'enable': 'bool', 'primary': 'bool', '*failover': 'bool' },
   'if': 'CONFIG_REPLICATION' }
 
 ##
@@ -1735,14 +1806,13 @@
 ##
 # @DirtyRateStatus:
 #
-# An enumeration of dirtyrate status.
+# Dirty page rate measurement status.
 #
-# @unstarted: the dirtyrate thread has not been started.
+# @unstarted: measuring thread has not been started yet
 #
-# @measuring: the dirtyrate thread is measuring.
+# @measuring: measuring thread is running
 #
-# @measured: the dirtyrate thread has measured and results are
-#     available.
+# @measured: dirty page rate is measured and the results are available
 #
 # Since: 5.2
 ##
@@ -1752,13 +1822,14 @@
 ##
 # @DirtyRateMeasureMode:
 #
-# An enumeration of mode of measuring dirtyrate.
+# Method used to measure dirty page rate.  Differences between
+# available methods are explained in @calc-dirty-rate.
 #
-# @page-sampling: calculate dirtyrate by sampling pages.
+# @page-sampling: use page sampling
 #
-# @dirty-ring: calculate dirtyrate by dirty ring.
+# @dirty-ring: use dirty ring
 #
-# @dirty-bitmap: calculate dirtyrate by dirty bitmap.
+# @dirty-bitmap: use dirty bitmap
 #
 # Since: 6.2
 ##
@@ -1768,25 +1839,24 @@
 ##
 # @DirtyRateInfo:
 #
-# Information about current dirty page rate of vm.
+# Information about measured dirty page rate.
 #
 # @dirty-rate: an estimate of the dirty page rate of the VM in units
-#     of MB/s, present only when estimating the rate has completed.
+#     of MiB/s.  Value is present only when @status is 'measured'.
 #
-# @status: status containing dirtyrate query status includes
-#     'unstarted' or 'measuring' or 'measured'
+# @status: current status of dirty page rate measurements
 #
 # @start-time: start time in units of second for calculation
 #
-# @calc-time: time in units of second for sample dirty pages
+# @calc-time: time period for which dirty page rate was measured
+#     (in seconds)
 #
-# @sample-pages: page count per GB for sample dirty pages the default
-#     value is 512 (since 6.1)
+# @sample-pages: number of sampled pages per GiB of guest memory.
+#     Valid only in page-sampling mode (Since 6.1)
 #
-# @mode: mode containing method of calculate dirtyrate includes
-#     'page-sampling' and 'dirty-ring' (Since 6.2)
+# @mode: mode that was used to measure dirty page rate (Since 6.2)
 #
-# @vcpu-dirty-rate: dirtyrate for each vcpu if dirty-ring mode
+# @vcpu-dirty-rate: dirty rate for each vCPU if dirty-ring mode was
 #     specified (Since 6.2)
 #
 # Since: 5.2
@@ -1803,15 +1873,49 @@
 ##
 # @calc-dirty-rate:
 #
-# start calculating dirty page rate for vm
+# Start measuring dirty page rate of the VM.  Results can be retrieved
+# with @query-dirty-rate after measurements are completed.
 #
-# @calc-time: time in units of second for sample dirty pages
+# Dirty page rate is the number of pages changed in a given time
+# period expressed in MiB/s.  The following methods of calculation are
+# available:
 #
-# @sample-pages: page count per GB for sample dirty pages the default
-#     value is 512 (since 6.1)
+# 1. In page sampling mode, a random subset of pages are selected and
+#    hashed twice: once at the beginning of measurement time period,
+#    and once again at the end.  If two hashes for some page are
+#    different, the page is counted as changed.  Since this method
+#    relies on sampling and hashing, calculated dirty page rate is
+#    only an estimate of its true value.  Increasing @sample-pages
+#    improves estimation quality at the cost of higher computational
+#    overhead.
 #
-# @mode: mechanism of calculating dirtyrate includes 'page-sampling'
-#     and 'dirty-ring' (Since 6.1)
+# 2. Dirty bitmap mode captures writes to memory (for example by
+#    temporarily revoking write access to all pages) and counting page
+#    faults.  Information about modified pages is collected into a
+#    bitmap, where each bit corresponds to one guest page.  This mode
+#    requires that KVM accelerator property "dirty-ring-size" is *not*
+#    set.
+#
+# 3. Dirty ring mode is similar to dirty bitmap mode, but the
+#    information about modified pages is collected into ring buffer.
+#    This mode tracks page modification per each vCPU separately.  It
+#    requires that KVM accelerator property "dirty-ring-size" is set.
+#
+# @calc-time: time period in units of second for which dirty page rate
+#     is calculated.  Note that larger @calc-time values will
+#     typically result in smaller dirty page rates because page
+#     dirtying is a one-time event.  Once some page is counted as
+#     dirty during @calc-time period, further writes to this page will
+#     not increase dirty page rate anymore.
+#
+# @sample-pages: number of sampled pages per each GiB of guest memory.
+#     Default value is 512.  For 4KiB guest pages this corresponds to
+#     sampling ratio of 0.2%.  This argument is used only in page
+#     sampling mode.  (Since 6.1)
+#
+# @mode: mechanism for tracking dirty pages.  Default value is
+#     'page-sampling'.  Others are 'dirty-bitmap' and 'dirty-ring'.
+#     (Since 6.1)
 #
 # Since: 5.2
 #
@@ -1828,9 +1932,21 @@
 ##
 # @query-dirty-rate:
 #
-# query dirty page rate in units of MB/s for vm
+# Query results of the most recent invocation of @calc-dirty-rate.
 #
 # Since: 5.2
+#
+# Examples:
+#
+# 1. Measurement is in progress:
+#
+# <- {"status": "measuring", "sample-pages": 512,
+#     "mode": "page-sampling", "start-time": 3665220, "calc-time": 10}
+#
+# 2. Measurement has been completed:
+#
+# <- {"status": "measured", "sample-pages": 512, "dirty-rate": 108,
+#     "mode": "page-sampling", "start-time": 3665220, "calc-time": 10}
 ##
 { 'command': 'query-dirty-rate', 'returns': 'DirtyRateInfo' }
 

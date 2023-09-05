@@ -20,7 +20,7 @@ config_host = keyval.load(meson.current_build_dir() / 'config-host.mak')
 
 cc = meson.get_compiler('c')
 all_languages = ['c']
-if add_languages('cpp', required: false, native: false)
+if targetos == 'windows' and add_languages('cpp', required: false, native: false)
   all_languages += ['cpp']
   cxx = meson.get_compiler('cpp')
 endif
@@ -55,15 +55,10 @@ qapi_trace_events = []
 
 bsd_oses = ['gnu/kfreebsd', 'freebsd', 'netbsd', 'openbsd', 'dragonfly', 'darwin']
 supported_oses = ['windows', 'freebsd', 'netbsd', 'openbsd', 'darwin', 'sunos', 'linux']
-supported_cpus = ['ppc', 'ppc64', 's390x', 'riscv', 'x86', 'x86_64',
+supported_cpus = ['ppc', 'ppc64', 's390x', 'riscv32', 'riscv64', 'x86', 'x86_64',
   'arm', 'aarch64', 'loongarch64', 'mips', 'mips64', 'sparc64']
 
 cpu = host_machine.cpu_family()
-
-# Unify riscv* to a single family.
-if cpu in ['riscv32', 'riscv64']
-  cpu = 'riscv'
-endif
 
 target_dirs = config_host['TARGET_DIRS'].split()
 have_linux_user = false
@@ -99,6 +94,8 @@ elif cpu == 'x86'
   host_arch = 'i386'
 elif cpu == 'mips64'
   host_arch = 'mips'
+elif cpu in ['riscv32', 'riscv64']
+  host_arch = 'riscv'
 else
   host_arch = cpu
 endif
@@ -113,8 +110,10 @@ elif cpu in ['ppc', 'ppc64']
   kvm_targets = ['ppc-softmmu', 'ppc64-softmmu']
 elif cpu in ['mips', 'mips64']
   kvm_targets = ['mips-softmmu', 'mipsel-softmmu', 'mips64-softmmu', 'mips64el-softmmu']
-elif cpu in ['riscv']
-  kvm_targets = ['riscv32-softmmu', 'riscv64-softmmu']
+elif cpu in ['riscv32']
+  kvm_targets = ['riscv32-softmmu']
+elif cpu in ['riscv64']
+  kvm_targets = ['riscv64-softmmu']
 else
   kvm_targets = []
 endif
@@ -473,19 +472,10 @@ if targetos != 'darwin'
   warn_flags += ['-Wthread-safety']
 endif
 
-# Check that the C++ compiler exists and works with the C compiler.
-link_language = 'c'
-linker = cc
+# Set up C++ compiler flags
 qemu_cxxflags = []
 if 'cpp' in all_languages
   qemu_cxxflags = ['-D__STDC_LIMIT_MACROS', '-D__STDC_CONSTANT_MACROS', '-D__STDC_FORMAT_MACROS'] + qemu_cflags
-  if cxx.links(files('scripts/main.c'), args: qemu_cflags)
-    link_language = 'cpp'
-    linker = cxx
-  else
-    message('C++ compiler does not work with C compiler')
-    message('Disabling C++-specific optional code')
-  endif
 endif
 
 # clang does not support glibc + FORTIFY_SOURCE (is it still true?)
@@ -661,8 +651,8 @@ endif
 if get_option('whpx').allowed() and targetos == 'windows'
   if get_option('whpx').enabled() and host_machine.cpu() != 'x86_64'
     error('WHPX requires 64-bit host')
-  elif cc.has_header('WinHvPlatform.h', required: get_option('whpx')) and \
-       cc.has_header('WinHvEmulation.h', required: get_option('whpx'))
+  elif cc.has_header('winhvplatform.h', required: get_option('whpx')) and \
+       cc.has_header('winhvemulation.h', required: get_option('whpx'))
     accelerators += 'CONFIG_WHPX'
   endif
 endif
@@ -837,6 +827,8 @@ if gdbus_codegen.found() and get_option('cfi')
   gdbus_codegen = not_found
   gdbus_codegen_error = '@0@ uses gdbus-codegen, which does not support control flow integrity'
 endif
+
+xml_pp = find_program('scripts/xml-preprocess.py')
 
 lttng = not_found
 if 'ust' in get_option('trace_backends')
@@ -1070,6 +1062,12 @@ if not get_option('virglrenderer').auto() or have_system or have_vhost_user_gpu
   virgl = dependency('virglrenderer',
                      method: 'pkg-config',
                      required: get_option('virglrenderer'))
+  if virgl.found()
+    config_host_data.set('HAVE_VIRGL_D3D_INFO_EXT',
+                         cc.has_member('struct virgl_renderer_resource_info_ext', 'd3d_tex2d',
+                                       prefix: '#include <virglrenderer.h>',
+                                       dependencies: virgl))
+  endif
 endif
 blkio = not_found
 if not get_option('blkio').auto() or have_block
@@ -1592,7 +1590,7 @@ if not get_option('snappy').auto() or have_system
   snappy = cc.find_library('snappy', has_headers: ['snappy-c.h'],
                            required: get_option('snappy'))
 endif
-if snappy.found() and not linker.links('''
+if snappy.found() and not cc.links('''
    #include <snappy-c.h>
    int main(void) { snappy_max_compressed_length(4096); return 0; }''', dependencies: snappy)
   snappy = not_found
@@ -1985,8 +1983,6 @@ dbus_display = get_option('dbus_display') \
            error_message: '-display dbus requires glib>=2.64') \
   .require(gdbus_codegen.found(),
            error_message: gdbus_codegen_error.format('-display dbus')) \
-  .require(targetos != 'windows',
-           error_message: '-display dbus is not available on Windows') \
   .allowed()
 
 have_virtfs = get_option('virtfs') \
@@ -2121,7 +2117,6 @@ if numa.found()
                                        dependencies: numa))
 endif
 config_host_data.set('CONFIG_OPENGL', opengl.found())
-config_host_data.set('CONFIG_PROFILER', get_option('profiler'))
 config_host_data.set('CONFIG_RBD', rbd.found())
 config_host_data.set('CONFIG_RDMA', rdma.found())
 config_host_data.set('CONFIG_SAFESTACK', get_option('safe_stack'))
@@ -2232,6 +2227,8 @@ config_host_data.set('CONFIG_CLOCK_ADJTIME', cc.has_function('clock_adjtime'))
 config_host_data.set('CONFIG_DUP3', cc.has_function('dup3'))
 config_host_data.set('CONFIG_FALLOCATE', cc.has_function('fallocate'))
 config_host_data.set('CONFIG_POSIX_FALLOCATE', cc.has_function('posix_fallocate'))
+config_host_data.set('CONFIG_GETCPU', cc.has_function('getcpu', prefix: gnu_source_prefix))
+config_host_data.set('CONFIG_SCHED_GETCPU', cc.has_function('sched_getcpu', prefix: '#include <sched.h>'))
 # Note that we need to specify prefix: here to avoid incorrectly
 # thinking that Windows has posix_memalign()
 config_host_data.set('CONFIG_POSIX_MEMALIGN', cc.has_function('posix_memalign', prefix: '#include <stdlib.h>'))
@@ -2667,6 +2664,15 @@ config_host_data.set('CONFIG_AVX512BW_OPT', get_option('avx512bw') \
     int main(int argc, char *argv[]) { return bar(argv[0]); }
   '''), error_message: 'AVX512BW not available').allowed())
 
+# For both AArch64 and AArch32, detect if builtins are available.
+config_host_data.set('CONFIG_ARM_AES_BUILTIN', cc.compiles('''
+    #include <arm_neon.h>
+    #ifndef __ARM_FEATURE_AES
+    __attribute__((target("+crypto")))
+    #endif
+    void foo(uint8x16_t *p) { *p = vaesmcq_u8(*p); }
+  '''))
+
 have_pvrdma = get_option('pvrdma') \
   .require(rdma.found(), error_message: 'PVRDMA requires OpenFabrics libraries') \
   .require(cc.compiles(gnu_source_prefix + '''
@@ -2739,7 +2745,7 @@ config_host_data.set('CONFIG_AF_VSOCK', cc.has_header_symbol(
 
 have_vss = false
 have_vss_sdk = false # old xp/2003 SDK
-if targetos == 'windows' and link_language == 'cpp'
+if targetos == 'windows' and 'cpp' in all_languages
   have_vss = cxx.compiles('''
     #define __MIDL_user_allocate_free_DEFINED__
     #include <vss.h>
@@ -3840,7 +3846,6 @@ foreach target : target_dirs
                    c_args: c_args,
                    dependencies: arch_deps + deps + exe['dependencies'],
                    objects: lib.extract_all_objects(recursive: true),
-                   link_language: link_language,
                    link_depends: [block_syms, qemu_syms] + exe.get('link_depends', []),
                    link_args: link_args,
                    win_subsystem: exe['win_subsystem'])
@@ -3851,9 +3856,9 @@ foreach target : target_dirs
                    c_args: c_args,
                    dependencies: arch_deps + deps + exe['dependencies'],
                    objects: lib.extract_all_objects(recursive: true),
-                   link_language: link_language,
                    link_depends: [block_syms, qemu_syms] + exe.get('link_depends', []),
-                   link_args: link_args)
+                   link_args: link_args,
+                   win_subsystem: exe['win_subsystem'])
         endif
         if 'AS_STATIC_LIB' in config_host
             emulator = static_library(exe_name, exe['sources'],
@@ -4092,7 +4097,7 @@ summary_info += {'host CPU':          cpu}
 summary_info += {'host endianness':   build_machine.endian()}
 summary_info += {'C compiler':        ' '.join(meson.get_compiler('c').cmd_array())}
 summary_info += {'Host C compiler':   ' '.join(meson.get_compiler('c', native: true).cmd_array())}
-if link_language == 'cpp'
+if 'cpp' in all_languages
   summary_info += {'C++ compiler':    ' '.join(meson.get_compiler('cpp').cmd_array())}
 else
   summary_info += {'C++ compiler':      false}
@@ -4105,13 +4110,13 @@ if get_option('optimization') != 'plain'
   option_cflags += ['-O' + get_option('optimization')]
 endif
 summary_info += {'CFLAGS':            ' '.join(get_option('c_args') + option_cflags)}
-if link_language == 'cpp'
+if 'cpp' in all_languages
   summary_info += {'CXXFLAGS':        ' '.join(get_option('cpp_args') + option_cflags)}
 endif
 if targetos == 'darwin'
   summary_info += {'OBJCFLAGS':       ' '.join(get_option('objc_args') + option_cflags)}
 endif
-link_args = get_option(link_language + '_link_args')
+link_args = get_option('c_link_args')
 if link_args.length() > 0
   summary_info += {'LDFLAGS':         ' '.join(link_args)}
 endif
@@ -4123,7 +4128,6 @@ if 'objc' in all_languages
   summary_info += {'QEMU_OBJCFLAGS':    ' '.join(qemu_common_flags)}
 endif
 summary_info += {'QEMU_LDFLAGS':      ' '.join(qemu_ldflags)}
-summary_info += {'profiler':          get_option('profiler')}
 summary_info += {'link-time optimization (LTO)': get_option('b_lto')}
 summary_info += {'PIE':               get_option('b_pie')}
 summary_info += {'static build':      get_option('prefer_static')}
@@ -4211,7 +4215,7 @@ if have_block
   summary_info += {'Block whitelist (ro)': get_option('block_drv_ro_whitelist')}
   summary_info += {'Use block whitelist in tools': get_option('block_drv_whitelist_in_tools')}
   summary_info += {'VirtFS (9P) support':    have_virtfs}
-  summary_info += {'VirtFS (9P) Proxy Helper support': have_virtfs_proxy_helper}
+  summary_info += {'VirtFS (9P) Proxy Helper support (deprecated)': have_virtfs_proxy_helper}
   summary_info += {'Live block migration': config_host_data.get('CONFIG_LIVE_BLOCK_MIGRATION')}
   summary_info += {'replication support': config_host_data.get('CONFIG_REPLICATION')}
   summary_info += {'bochs support':     get_option('bochs').allowed()}
@@ -4285,7 +4289,7 @@ if targetos == 'linux'
   summary_info += {'ALSA support':    alsa}
   summary_info += {'PulseAudio support': pulse}
 endif
-summary_info += {'Pipewire support':  pipewire}
+summary_info += {'PipeWire support':  pipewire}
 summary_info += {'JACK support':      jack}
 summary(summary_info, bool_yn: true, section: 'Audio backends')
 

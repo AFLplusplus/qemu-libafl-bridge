@@ -652,7 +652,7 @@ DEF("m", HAS_ARG, QEMU_OPTION_m,
     "                size: initial amount of guest memory\n"
     "                slots: number of hotplug slots (default: none)\n"
     "                maxmem: maximum amount of guest memory (default: none)\n"
-    "NOTE: Some architectures might enforce a specific granularity\n",
+    "                Note: Some architectures might enforce a specific granularity\n",
     QEMU_ARCH_ALL)
 SRST
 ``-m [size=]megs[,slots=n,maxmem=size]``
@@ -963,10 +963,10 @@ SRST
         to honor this value but actual latencies may be lower or higher.
 
 ``-audiodev pipewire,id=id[,prop[=value][,...]]``
-    Creates a backend using Pipewire. This backend is available on
+    Creates a backend using PipeWire. This backend is available on
     most systems.
 
-    Pipewire specific options are:
+    PipeWire specific options are:
 
     ``in|out.latency=usecs``
         Desired latency in microseconds.
@@ -1735,7 +1735,9 @@ SRST
         Accesses to the filesystem are done by QEMU.
 
     ``proxy``
-        Accesses to the filesystem are done by virtfs-proxy-helper(1).
+        Accesses to the filesystem are done by virtfs-proxy-helper(1). This
+        option is deprecated (since QEMU 8.1) and will be removed in a future
+        version of QEMU. Use ``local`` instead.
 
     ``synth``
         Synthetic filesystem, only used by QTests.
@@ -1867,6 +1869,8 @@ SRST
 
     ``proxy``
         Accesses to the filesystem are done by virtfs-proxy-helper(1).
+        This option is deprecated (since QEMU 8.1) and will be removed in a
+        future version of QEMU. Use ``local`` instead.
 
     ``synth``
         Synthetic filesystem, only used by QTests.
@@ -2139,6 +2143,9 @@ SRST
 
         ``show-menubar=on|off`` : Display the main window menubar, defaults to "on"
 
+        ``zoom-to-fit=on|off`` : Expand video output to the window size,
+                                 defaults to "off"
+
     ``curses[,charset=<encoding>]``
         Display video output via curses. For graphics device models
         which support a text mode, QEMU can display this output using a
@@ -2210,8 +2217,8 @@ DEF("spice", HAS_ARG, QEMU_OPTION_spice,
     "       [,disable-agent-file-xfer=on|off][,agent-mouse=[on|off]]\n"
     "       [,playback-compression=[on|off]][,seamless-migration=[on|off]]\n"
     "       [,gl=[on|off]][,rendernode=<file>]\n"
-    "   enable spice\n"
-    "   at least one of {port, tls-port} is mandatory\n",
+    "                enable spice\n"
+    "                at least one of {port, tls-port} is mandatory\n",
     QEMU_ARCH_ALL)
 #endif
 SRST
@@ -4670,11 +4677,12 @@ ERST
 
 #ifndef _WIN32
 DEF("chroot", HAS_ARG, QEMU_OPTION_chroot, \
-    "-chroot dir     chroot to dir just before starting the VM\n",
+    "-chroot dir     chroot to dir just before starting the VM (deprecated)\n",
     QEMU_ARCH_ALL)
 #endif
 SRST
 ``-chroot dir``
+    Deprecated, use '-run-with chroot=...' instead.
     Immediately before starting guest execution, chroot to the specified
     directory. Especially useful in combination with -runas.
 ERST
@@ -4861,13 +4869,16 @@ SRST
     This option is deprecated and should no longer be used. The new option
     ``-run-with async-teardown=on`` is a replacement.
 ERST
+#endif
+#ifdef CONFIG_POSIX
 DEF("run-with", HAS_ARG, QEMU_OPTION_run_with,
-    "-run-with async-teardown[=on|off]\n"
-    "                misc QEMU process lifecycle options\n"
-    "                async-teardown=on enables asynchronous teardown\n",
+    "-run-with [async-teardown=on|off][,chroot=dir]\n"
+    "                Set miscellaneous QEMU process lifecycle options:\n"
+    "                async-teardown=on enables asynchronous teardown (Linux only)\n"
+    "                chroot=dir chroot to dir just before starting the VM\n",
     QEMU_ARCH_ALL)
 SRST
-``-run-with``
+``-run-with [async-teardown=on|off][,chroot=dir]``
     Set QEMU process lifecycle options.
 
     ``async-teardown=on`` enables asynchronous teardown. A new process called
@@ -4880,6 +4891,10 @@ SRST
     performed correctly. This only works if the cleanup process is not
     forcefully killed with SIGKILL before the main QEMU process has
     terminated completely.
+
+    ``chroot=dir`` can be used for doing a chroot to the specified directory
+    immediately before starting the guest execution. This is especially useful
+    in combination with -runas.
 ERST
 #endif
 

@@ -39,7 +39,7 @@ static void check_max_alignment(unsigned a_bits)
      * The requested alignment cannot overlap the TLB flags.
      * FIXME: Must keep the count up-to-date with "exec/cpu-all.h".
      */
-    tcg_debug_assert(a_bits + 6 <= tcg_ctx->page_bits);
+    tcg_debug_assert(a_bits + 5 <= tcg_ctx->page_bits);
 #endif
 }
 
@@ -809,7 +809,7 @@ typedef void (*gen_atomic_op_i64)(TCGv_i64, TCGv_env, TCGv_i64,
 #else
 # define WITH_ATOMIC64(X)
 #endif
-#ifdef CONFIG_CMPXCHG128
+#if HAVE_CMPXCHG128
 # define WITH_ATOMIC128(X) X,
 #else
 # define WITH_ATOMIC128(X)

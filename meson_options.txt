@@ -267,7 +267,7 @@ option('oss', type: 'feature', value: 'auto',
 option('pa', type: 'feature', value: 'auto',
        description: 'PulseAudio sound support')
 option('pipewire', type: 'feature', value: 'auto',
-       description: 'Pipewire sound support')
+       description: 'PipeWire sound support')
 option('sndio', type: 'feature', value: 'auto',
        description: 'sndio sound support')
 
@@ -345,8 +345,6 @@ option('qom_cast_debug', type: 'boolean', value: true,
 option('gprof', type: 'boolean', value: false,
        description: 'QEMU profiling with gprof',
        deprecated: true)
-option('profiler', type: 'boolean', value: false,
-       description: 'profiler support')
 option('slirp_smbd', type : 'feature', value : 'auto',
        description: 'use smbd (at path --smbd=*) in slirp networking')
 

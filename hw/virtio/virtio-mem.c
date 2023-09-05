@@ -18,9 +18,9 @@
 #include "sysemu/numa.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/reset.h"
+#include "sysemu/runstate.h"
 #include "hw/virtio/virtio.h"
 #include "hw/virtio/virtio-bus.h"
-#include "hw/virtio/virtio-access.h"
 #include "hw/virtio/virtio-mem.h"
 #include "qapi/error.h"
 #include "qapi/visitor.h"
@@ -135,7 +135,7 @@ static bool virtio_mem_has_shared_zeropage(RAMBlock *rb)
      * anonymous RAM. In any other case, reading unplugged *can* populate a
      * fresh page, consuming actual memory.
      */
-    return !qemu_ram_is_shared(rb) && rb->fd < 0 &&
+    return !qemu_ram_is_shared(rb) && qemu_ram_get_fd(rb) < 0 &&
            qemu_ram_pagesize(rb) == qemu_real_host_page_size();
 }
 #endif /* VIRTIO_MEM_HAS_LEGACY_GUESTS */
@@ -399,33 +399,46 @@ static void virtio_mem_notify_unplug_all(VirtIOMEM *vmem)
     }
 }
 
-static bool virtio_mem_test_bitmap(const VirtIOMEM *vmem, uint64_t start_gpa,
-                                   uint64_t size, bool plugged)
+static bool virtio_mem_is_range_plugged(const VirtIOMEM *vmem,
+                                        uint64_t start_gpa, uint64_t size)
 {
     const unsigned long first_bit = (start_gpa - vmem->addr) / vmem->block_size;
     const unsigned long last_bit = first_bit + (size / vmem->block_size) - 1;
     unsigned long found_bit;
 
     /* We fake a shorter bitmap to avoid searching too far. */
-    if (plugged) {
-        found_bit = find_next_zero_bit(vmem->bitmap, last_bit + 1, first_bit);
-    } else {
-        found_bit = find_next_bit(vmem->bitmap, last_bit + 1, first_bit);
-    }
+    found_bit = find_next_zero_bit(vmem->bitmap, last_bit + 1, first_bit);
     return found_bit > last_bit;
 }
 
-static void virtio_mem_set_bitmap(VirtIOMEM *vmem, uint64_t start_gpa,
-                                  uint64_t size, bool plugged)
+static bool virtio_mem_is_range_unplugged(const VirtIOMEM *vmem,
+                                          uint64_t start_gpa, uint64_t size)
+{
+    const unsigned long first_bit = (start_gpa - vmem->addr) / vmem->block_size;
+    const unsigned long last_bit = first_bit + (size / vmem->block_size) - 1;
+    unsigned long found_bit;
+
+    /* We fake a shorter bitmap to avoid searching too far. */
+    found_bit = find_next_bit(vmem->bitmap, last_bit + 1, first_bit);
+    return found_bit > last_bit;
+}
+
+static void virtio_mem_set_range_plugged(VirtIOMEM *vmem, uint64_t start_gpa,
+                                         uint64_t size)
 {
     const unsigned long bit = (start_gpa - vmem->addr) / vmem->block_size;
     const unsigned long nbits = size / vmem->block_size;
 
-    if (plugged) {
-        bitmap_set(vmem->bitmap, bit, nbits);
-    } else {
-        bitmap_clear(vmem->bitmap, bit, nbits);
-    }
+    bitmap_set(vmem->bitmap, bit, nbits);
+}
+
+static void virtio_mem_set_range_unplugged(VirtIOMEM *vmem, uint64_t start_gpa,
+                                           uint64_t size)
+{
+    const unsigned long bit = (start_gpa - vmem->addr) / vmem->block_size;
+    const unsigned long nbits = size / vmem->block_size;
+
+    bitmap_clear(vmem->bitmap, bit, nbits);
 }
 
 static void virtio_mem_send_response(VirtIOMEM *vmem, VirtQueueElement *elem,
@@ -475,6 +488,7 @@ static int virtio_mem_set_block_state(VirtIOMEM *vmem, uint64_t start_gpa,
 {
     const uint64_t offset = start_gpa - vmem->addr;
     RAMBlock *rb = vmem->memdev->mr.ram_block;
+    int ret = 0;
 
     if (virtio_mem_is_busy()) {
         return -EBUSY;
@@ -485,42 +499,43 @@ static int virtio_mem_set_block_state(VirtIOMEM *vmem, uint64_t start_gpa,
             return -EBUSY;
         }
         virtio_mem_notify_unplug(vmem, offset, size);
-    } else {
-        int ret = 0;
+        virtio_mem_set_range_unplugged(vmem, start_gpa, size);
+        return 0;
+    }
 
-        if (vmem->prealloc) {
-            void *area = memory_region_get_ram_ptr(&vmem->memdev->mr) + offset;
-            int fd = memory_region_get_fd(&vmem->memdev->mr);
-            Error *local_err = NULL;
+    if (vmem->prealloc) {
+        void *area = memory_region_get_ram_ptr(&vmem->memdev->mr) + offset;
+        int fd = memory_region_get_fd(&vmem->memdev->mr);
+        Error *local_err = NULL;
 
-            qemu_prealloc_mem(fd, area, size, 1, NULL, &local_err);
-            if (local_err) {
-                static bool warned;
+        qemu_prealloc_mem(fd, area, size, 1, NULL, &local_err);
+        if (local_err) {
+            static bool warned;
 
-                /*
-                 * Warn only once, we don't want to fill the log with these
-                 * warnings.
-                 */
-                if (!warned) {
-                    warn_report_err(local_err);
-                    warned = true;
-                } else {
-                    error_free(local_err);
-                }
-                ret = -EBUSY;
+            /*
+             * Warn only once, we don't want to fill the log with these
+             * warnings.
+             */
+            if (!warned) {
+                warn_report_err(local_err);
+                warned = true;
+            } else {
+                error_free(local_err);
             }
-        }
-        if (!ret) {
-            ret = virtio_mem_notify_plug(vmem, offset, size);
-        }
-
-        if (ret) {
-            /* Could be preallocation or a notifier populated memory. */
-            ram_block_discard_range(vmem->memdev->mr.ram_block, offset, size);
-            return -EBUSY;
+            ret = -EBUSY;
         }
     }
-    virtio_mem_set_bitmap(vmem, start_gpa, size, plug);
+
+    if (!ret) {
+        ret = virtio_mem_notify_plug(vmem, offset, size);
+    }
+    if (ret) {
+        /* Could be preallocation or a notifier populated memory. */
+        ram_block_discard_range(vmem->memdev->mr.ram_block, offset, size);
+        return -EBUSY;
+    }
+
+    virtio_mem_set_range_plugged(vmem, start_gpa, size);
     return 0;
 }
 
@@ -539,7 +554,8 @@ static int virtio_mem_state_change_request(VirtIOMEM *vmem, uint64_t gpa,
     }
 
     /* test if really all blocks are in the opposite state */
-    if (!virtio_mem_test_bitmap(vmem, gpa, size, !plug)) {
+    if ((plug && !virtio_mem_is_range_unplugged(vmem, gpa, size)) ||
+        (!plug && !virtio_mem_is_range_plugged(vmem, gpa, size))) {
         return VIRTIO_MEM_RESP_ERROR;
     }
 
@@ -606,20 +622,20 @@ static int virtio_mem_unplug_all(VirtIOMEM *vmem)
 {
     RAMBlock *rb = vmem->memdev->mr.ram_block;
 
-    if (virtio_mem_is_busy()) {
-        return -EBUSY;
-    }
-
-    if (ram_block_discard_range(rb, 0, qemu_ram_get_used_length(rb))) {
-        return -EBUSY;
-    }
-    virtio_mem_notify_unplug_all(vmem);
-
-    bitmap_clear(vmem->bitmap, 0, vmem->bitmap_size);
     if (vmem->size) {
+        if (virtio_mem_is_busy()) {
+            return -EBUSY;
+        }
+        if (ram_block_discard_range(rb, 0, qemu_ram_get_used_length(rb))) {
+            return -EBUSY;
+        }
+        virtio_mem_notify_unplug_all(vmem);
+
+        bitmap_clear(vmem->bitmap, 0, vmem->bitmap_size);
         vmem->size = 0;
         notifier_list_notify(&vmem->size_change_notifiers, &vmem->size);
     }
+
     trace_virtio_mem_unplugged_all();
     virtio_mem_resize_usable_region(vmem, vmem->requested_size, true);
     return 0;
@@ -652,9 +668,9 @@ static void virtio_mem_state_request(VirtIOMEM *vmem, VirtQueueElement *elem,
         return;
     }
 
-    if (virtio_mem_test_bitmap(vmem, gpa, size, true)) {
+    if (virtio_mem_is_range_plugged(vmem, gpa, size)) {
         resp.u.state.state = cpu_to_le16(VIRTIO_MEM_STATE_PLUGGED);
-    } else if (virtio_mem_test_bitmap(vmem, gpa, size, false)) {
+    } else if (virtio_mem_is_range_unplugged(vmem, gpa, size)) {
         resp.u.state.state = cpu_to_le16(VIRTIO_MEM_STATE_UNPLUGGED);
     } else {
         resp.u.state.state = cpu_to_le16(VIRTIO_MEM_STATE_MIXED);
@@ -886,11 +902,23 @@ static void virtio_mem_device_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    ret = ram_block_discard_range(rb, 0, qemu_ram_get_used_length(rb));
-    if (ret) {
-        error_setg_errno(errp, -ret, "Unexpected error discarding RAM");
-        ram_block_coordinated_discard_require(false);
-        return;
+    /*
+     * We don't know at this point whether shared RAM is migrated using
+     * QEMU or migrated using the file content. "x-ignore-shared" will be
+     * configured after realizing the device. So in case we have an
+     * incoming migration, simply always skip the discard step.
+     *
+     * Otherwise, make sure that we start with a clean slate: either the
+     * memory backend might get reused or the shared file might still have
+     * memory allocated.
+     */
+    if (!runstate_check(RUN_STATE_INMIGRATE)) {
+        ret = ram_block_discard_range(rb, 0, qemu_ram_get_used_length(rb));
+        if (ret) {
+            error_setg_errno(errp, -ret, "Unexpected error discarding RAM");
+            ram_block_coordinated_discard_require(false);
+            return;
+        }
     }
 
     virtio_mem_resize_usable_region(vmem, vmem->requested_size, true);
@@ -962,10 +990,6 @@ static int virtio_mem_post_load(void *opaque, int version_id)
     RamDiscardListener *rdl;
     int ret;
 
-    if (vmem->prealloc && !vmem->early_migration) {
-        warn_report("Proper preallocation with migration requires a newer QEMU machine");
-    }
-
     /*
      * We started out with all memory discarded and our memory region is mapped
      * into an address space. Replay, now that we updated the bitmap.
@@ -976,6 +1000,18 @@ static int virtio_mem_post_load(void *opaque, int version_id)
         if (ret) {
             return ret;
         }
+    }
+
+    /*
+     * If shared RAM is migrated using the file content and not using QEMU,
+     * don't mess with preallocation and postcopy.
+     */
+    if (migrate_ram_is_ignored(vmem->memdev->mr.ram_block)) {
+        return 0;
+    }
+
+    if (vmem->prealloc && !vmem->early_migration) {
+        warn_report("Proper preallocation with migration requires a newer QEMU machine");
     }
 
     if (migration_in_incoming_postcopy()) {
@@ -1007,6 +1043,14 @@ static int virtio_mem_post_load_early(void *opaque, int version_id)
     int ret;
 
     if (!vmem->prealloc) {
+        return 0;
+    }
+
+    /*
+     * If shared RAM is migrated using the file content and not using QEMU,
+     * don't mess with preallocation and postcopy.
+     */
+    if (migrate_ram_is_ignored(rb)) {
         return 0;
     }
 
@@ -1373,7 +1417,7 @@ static bool virtio_mem_rdm_is_populated(const RamDiscardManager *rdm,
         return false;
     }
 
-    return virtio_mem_test_bitmap(vmem, start_gpa, end_gpa - start_gpa, true);
+    return virtio_mem_is_range_plugged(vmem, start_gpa, end_gpa - start_gpa);
 }
 
 struct VirtIOMEMReplayData {
@@ -1468,6 +1512,30 @@ static void virtio_mem_rdm_unregister_listener(RamDiscardManager *rdm,
     QLIST_REMOVE(rdl, next);
 }
 
+static void virtio_mem_unplug_request_check(VirtIOMEM *vmem, Error **errp)
+{
+    if (vmem->unplugged_inaccessible == ON_OFF_AUTO_OFF) {
+        /*
+         * We could allow it with a usable region size of 0, but let's just
+         * not care about that legacy setting.
+         */
+        error_setg(errp, "virtio-mem device cannot get unplugged while"
+                   " '" VIRTIO_MEM_UNPLUGGED_INACCESSIBLE_PROP "' != 'on'");
+        return;
+    }
+
+    if (vmem->size) {
+        error_setg(errp, "virtio-mem device cannot get unplugged while"
+                   " '" VIRTIO_MEM_SIZE_PROP "' != '0'");
+        return;
+    }
+    if (vmem->requested_size) {
+        error_setg(errp, "virtio-mem device cannot get unplugged while"
+                   " '" VIRTIO_MEM_REQUESTED_SIZE_PROP "' != '0'");
+        return;
+    }
+}
+
 static void virtio_mem_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -1490,6 +1558,7 @@ static void virtio_mem_class_init(ObjectClass *klass, void *data)
     vmc->get_memory_region = virtio_mem_get_memory_region;
     vmc->add_size_change_notifier = virtio_mem_add_size_change_notifier;
     vmc->remove_size_change_notifier = virtio_mem_remove_size_change_notifier;
+    vmc->unplug_request_check = virtio_mem_unplug_request_check;
 
     rdmc->get_min_granularity = virtio_mem_rdm_get_min_granularity;
     rdmc->is_populated = virtio_mem_rdm_is_populated;

@@ -811,6 +811,10 @@ struct IOMMUMemoryRegion {
 #define IOMMU_NOTIFIER_FOREACH(n, mr) \
     QLIST_FOREACH((n), &(mr)->iommu_notify, node)
 
+#define MEMORY_LISTENER_PRIORITY_MIN            0
+#define MEMORY_LISTENER_PRIORITY_ACCEL          10
+#define MEMORY_LISTENER_PRIORITY_DEV_BACKEND    10
+
 /**
  * struct MemoryListener: callbacks structure for updates to the physical memory map
  *
@@ -938,7 +942,7 @@ struct MemoryListener {
      *
      * @listener: The #MemoryListener.
      * @last_stage: The last stage to synchronize the log during migration.
-     * The caller should gurantee that the synchronization with true for
+     * The caller should guarantee that the synchronization with true for
      * @last_stage is triggered for once after all VCPUs have been stopped.
      */
     void (*log_sync_global)(MemoryListener *listener, bool last_stage);

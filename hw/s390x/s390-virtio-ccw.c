@@ -42,7 +42,7 @@
 #include "hw/s390x/tod.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/cpus.h"
-#include "hw/s390x/pv.h"
+#include "target/s390x/kvm/pv.h"
 #include "migration/blocker.h"
 #include "qapi/visitor.h"
 
@@ -221,10 +221,6 @@ static void s390_create_virtio_net(BusState *bus, const char *name)
     for (i = 0; i < nb_nics; i++) {
         NICInfo *nd = &nd_table[i];
         DeviceState *dev;
-
-        if (!nd->model) {
-            nd->model = g_strdup("virtio");
-        }
 
         qemu_check_nic_model(nd, "virtio");
 
@@ -828,14 +824,26 @@ bool css_migration_enabled(void)
     }                                                                         \
     type_init(ccw_machine_register_##suffix)
 
+static void ccw_machine_8_2_instance_options(MachineState *machine)
+{
+}
+
+static void ccw_machine_8_2_class_options(MachineClass *mc)
+{
+}
+DEFINE_CCW_MACHINE(8_2, "8.2", true);
+
 static void ccw_machine_8_1_instance_options(MachineState *machine)
 {
+    ccw_machine_8_2_instance_options(machine);
 }
 
 static void ccw_machine_8_1_class_options(MachineClass *mc)
 {
+    ccw_machine_8_2_class_options(mc);
+    compat_props_add(mc->compat_props, hw_compat_8_1, hw_compat_8_1_len);
 }
-DEFINE_CCW_MACHINE(8_1, "8.1", true);
+DEFINE_CCW_MACHINE(8_1, "8.1", false);
 
 static void ccw_machine_8_0_instance_options(MachineState *machine)
 {

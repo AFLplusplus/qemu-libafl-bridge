@@ -44,6 +44,8 @@
 #define PROM_ADDR     0xfff00000
 #define PROM_SIZE     0x80000
 
+#define INITRD_MIN_ADDR 0x600000
+
 #define KVMPPC_HCALL_BASE    0xf000
 #define KVMPPC_H_RTAS        (KVMPPC_HCALL_BASE + 0x0)
 #define KVMPPC_H_VOF_CLIENT  (KVMPPC_HCALL_BASE + 0x5)
@@ -80,6 +82,8 @@ struct Pegasos2MachineState {
     uint64_t kernel_addr;
     uint64_t kernel_entry;
     uint64_t kernel_size;
+    uint64_t initrd_addr;
+    uint64_t initrd_size;
 };
 
 static void *build_fdt(MachineState *machine, int *fdt_size);
@@ -117,7 +121,8 @@ static void pegasos2_init(MachineState *machine)
     I2CBus *i2c_bus;
     const char *fwname = machine->firmware ?: PROM_FILENAME;
     char *filename;
-    int i, sz;
+    int i;
+    ssize_t sz;
     uint8_t *spd_data;
 
     /* init CPU */
@@ -175,7 +180,7 @@ static void pegasos2_init(MachineState *machine)
 
     /* VIA VT8231 South Bridge (multifunction PCI device) */
     via = OBJECT(pci_create_simple_multifunction(pci_bus, PCI_DEVFN(12, 0),
-                                                 true, TYPE_VT8231_ISA));
+                                                 TYPE_VT8231_ISA));
     for (i = 0; i < PCI_NUM_PINS; i++) {
         pm->via_pirq[i] = qdev_get_gpio_in_named(DEVICE(via), "pirq", i);
     }
@@ -211,6 +216,20 @@ static void pegasos2_init(MachineState *machine)
         }
     } else if (pm->vof && !qtest_enabled()) {
         warn_report("Using Virtual OpenFirmware but no -kernel option.");
+    }
+
+    if (machine->initrd_filename) {
+        pm->initrd_addr = pm->kernel_addr + pm->kernel_size + 64 * KiB;
+        pm->initrd_addr = ROUND_UP(pm->initrd_addr, 4);
+        pm->initrd_addr = MAX(pm->initrd_addr, INITRD_MIN_ADDR);
+        sz = load_image_targphys(machine->initrd_filename, pm->initrd_addr,
+                                 machine->ram_size - pm->initrd_addr);
+        if (sz <= 0) {
+            error_report("Could not load initrd '%s'",
+                         machine->initrd_filename);
+            exit(1);
+        }
+        pm->initrd_size = sz;
     }
 
     if (!pm->vof && machine->kernel_cmdline && machine->kernel_cmdline[0]) {
@@ -305,9 +324,13 @@ static void pegasos2_machine_reset(MachineState *machine, ShutdownCause reason)
 
     pegasos2_pci_config_write(pm, 1, (PCI_DEVFN(12, 2) << 8) |
                               PCI_INTERRUPT_LINE, 2, 0x409);
+    pegasos2_pci_config_write(pm, 1, (PCI_DEVFN(12, 2) << 8) |
+                              PCI_COMMAND, 2, 0x7);
 
     pegasos2_pci_config_write(pm, 1, (PCI_DEVFN(12, 3) << 8) |
                               PCI_INTERRUPT_LINE, 2, 0x409);
+    pegasos2_pci_config_write(pm, 1, (PCI_DEVFN(12, 3) << 8) |
+                              PCI_COMMAND, 2, 0x7);
 
     pegasos2_pci_config_write(pm, 1, (PCI_DEVFN(12, 4) << 8) |
                               PCI_INTERRUPT_LINE, 2, 0x9);
@@ -333,6 +356,11 @@ static void pegasos2_machine_reset(MachineState *machine, ShutdownCause reason)
     if (pm->kernel_size &&
         vof_claim(pm->vof, pm->kernel_addr, pm->kernel_size, 0) == -1) {
         error_report("Memory for kernel is in use");
+        exit(1);
+    }
+    if (pm->initrd_size &&
+        vof_claim(pm->vof, pm->initrd_addr, pm->initrd_size, 0) == -1) {
+        error_report("Memory for initrd is in use");
         exit(1);
     }
     fdt = build_fdt(machine, &sz);
@@ -711,6 +739,13 @@ static void add_pci_device(PCIBus *bus, PCIDevice *d, void *opaque)
                                      pci_get_word(&d->config[PCI_VENDOR_ID]),
                                      pci_get_word(&d->config[PCI_DEVICE_ID]));
 
+    if (pci_get_word(&d->config[PCI_CLASS_DEVICE])  ==
+        PCI_CLASS_NETWORK_ETHERNET) {
+        name = "ethernet";
+    } else if (pci_get_word(&d->config[PCI_CLASS_DEVICE]) >> 8 ==
+        PCI_BASE_CLASS_DISPLAY) {
+        name = "display";
+    }
     for (i = 0; device_map[i].id; i++) {
         if (!strcmp(pn, device_map[i].id)) {
             name = device_map[i].name;
@@ -738,11 +773,19 @@ static void add_pci_device(PCIBus *bus, PCIDevice *d, void *opaque)
         if (!d->io_regions[i].size) {
             continue;
         }
-        cells[j] = cpu_to_be32(d->devfn << 8 | (PCI_BASE_ADDRESS_0 + i * 4));
+        cells[j] = PCI_BASE_ADDRESS_0 + i * 4;
+        if (cells[j] == 0x28) {
+            cells[j] = 0x30;
+        }
+        cells[j] = cpu_to_be32(d->devfn << 8 | cells[j]);
         if (d->io_regions[i].type & PCI_BASE_ADDRESS_SPACE_IO) {
             cells[j] |= cpu_to_be32(1 << 24);
         } else {
-            cells[j] |= cpu_to_be32(2 << 24);
+            if (d->io_regions[i].type & PCI_BASE_ADDRESS_MEM_TYPE_64) {
+                cells[j] |= cpu_to_be32(3 << 24);
+            } else {
+                cells[j] |= cpu_to_be32(2 << 24);
+            }
             if (d->io_regions[i].type & PCI_BASE_ADDRESS_MEM_PREFETCH) {
                 cells[j] |= cpu_to_be32(4 << 28);
             }
@@ -897,6 +940,7 @@ static void *build_fdt(MachineState *machine, int *fdt_size)
     qemu_fdt_setprop_cell(fdt, "/rtas", "rtas-display-device", 0);
     qemu_fdt_setprop_cell(fdt, "/rtas", "rtas-size", 20);
     qemu_fdt_setprop_cell(fdt, "/rtas", "rtas-version", 1);
+    qemu_fdt_setprop_string(fdt, "/rtas", "name", "rtas");
 
     /* cpus */
     qemu_fdt_add_subnode(fdt, "/cpus");
@@ -966,6 +1010,12 @@ static void *build_fdt(MachineState *machine, int *fdt_size)
     qemu_fdt_setprop_string(fdt, "/memory@0", "name", "memory");
 
     qemu_fdt_add_subnode(fdt, "/chosen");
+    if (pm->initrd_addr && pm->initrd_size) {
+        qemu_fdt_setprop_cell(fdt, "/chosen", "linux,initrd-end",
+                              pm->initrd_addr + pm->initrd_size);
+        qemu_fdt_setprop_cell(fdt, "/chosen", "linux,initrd-start",
+                              pm->initrd_addr);
+    }
     qemu_fdt_setprop_string(fdt, "/chosen", "bootargs",
                             machine->kernel_cmdline ?: "");
     qemu_fdt_setprop_string(fdt, "/chosen", "name", "chosen");

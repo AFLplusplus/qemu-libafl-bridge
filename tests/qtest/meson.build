@@ -104,7 +104,7 @@ qtests_i386 = \
    'numa-test'
   ]
 
-if dbus_display and targetos != 'windows'
+if dbus_display
   qtests_i386 += ['dbus-display-test']
 endif
 
@@ -233,6 +233,9 @@ qtests_s390x = \
    'virtio-ccw-test',
    'cpu-plug-test',
    'migration-test']
+
+qtests_riscv32 = \
+  (config_all_devices.has_key('CONFIG_SIFIVE_E_AON') ? ['sifive-e-aon-watchdog-test'] : [])
 
 qos_test_ss = ss.source_set()
 qos_test_ss.add(

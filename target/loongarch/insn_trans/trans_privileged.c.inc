@@ -99,13 +99,7 @@ static const CSRInfo csr_info[] = {
     CSR_OFF(PWCH),
     CSR_OFF(STLBPS),
     CSR_OFF(RVACFG),
-    [LOONGARCH_CSR_CPUID] = {
-        .offset = (int)offsetof(CPUState, cpu_index)
-                  - (int)offsetof(LoongArchCPU, env),
-        .flags = CSRFL_READONLY,
-        .readfn = NULL,
-        .writefn = NULL
-    },
+    CSR_OFF_FUNCS(CPUID, CSRFL_READONLY, gen_helper_csrrd_cpuid, NULL),
     CSR_OFF_FLAGS(PRCFG1, CSRFL_READONLY),
     CSR_OFF_FLAGS(PRCFG2, CSRFL_READONLY),
     CSR_OFF_FLAGS(PRCFG3, CSRFL_READONLY),
@@ -318,14 +312,14 @@ static bool gen_iocsrwr(DisasContext *ctx, arg_rr *a,
     return true;
 }
 
-TRANS(iocsrrd_b, gen_iocsrrd, gen_helper_iocsrrd_b)
-TRANS(iocsrrd_h, gen_iocsrrd, gen_helper_iocsrrd_h)
-TRANS(iocsrrd_w, gen_iocsrrd, gen_helper_iocsrrd_w)
-TRANS(iocsrrd_d, gen_iocsrrd, gen_helper_iocsrrd_d)
-TRANS(iocsrwr_b, gen_iocsrwr, gen_helper_iocsrwr_b)
-TRANS(iocsrwr_h, gen_iocsrwr, gen_helper_iocsrwr_h)
-TRANS(iocsrwr_w, gen_iocsrwr, gen_helper_iocsrwr_w)
-TRANS(iocsrwr_d, gen_iocsrwr, gen_helper_iocsrwr_d)
+TRANS(iocsrrd_b, IOCSR, gen_iocsrrd, gen_helper_iocsrrd_b)
+TRANS(iocsrrd_h, IOCSR, gen_iocsrrd, gen_helper_iocsrrd_h)
+TRANS(iocsrrd_w, IOCSR, gen_iocsrrd, gen_helper_iocsrrd_w)
+TRANS(iocsrrd_d, IOCSR, gen_iocsrrd, gen_helper_iocsrrd_d)
+TRANS(iocsrwr_b, IOCSR, gen_iocsrwr, gen_helper_iocsrwr_b)
+TRANS(iocsrwr_h, IOCSR, gen_iocsrwr, gen_helper_iocsrwr_h)
+TRANS(iocsrwr_w, IOCSR, gen_iocsrwr, gen_helper_iocsrwr_w)
+TRANS(iocsrwr_d, IOCSR, gen_iocsrwr, gen_helper_iocsrwr_d)
 
 static void check_mmu_idx(DisasContext *ctx)
 {
@@ -443,6 +437,10 @@ static bool trans_ldpte(DisasContext *ctx, arg_ldpte *a)
     TCGv_i32 mem_idx = tcg_constant_i32(ctx->mem_idx);
     TCGv src1 = gpr_src(ctx, a->rj, EXT_NONE);
 
+    if (!avail_LSPW(ctx)) {
+        return true;
+    }
+
     if (check_plv(ctx)) {
         return false;
     }
@@ -455,6 +453,10 @@ static bool trans_lddir(DisasContext *ctx, arg_lddir *a)
     TCGv_i32 mem_idx = tcg_constant_i32(ctx->mem_idx);
     TCGv src = gpr_src(ctx, a->rj, EXT_NONE);
     TCGv dest = gpr_dst(ctx, a->rd, EXT_NONE);
+
+    if (!avail_LSPW(ctx)) {
+        return true;
+    }
 
     if (check_plv(ctx)) {
         return false;

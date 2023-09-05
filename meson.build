@@ -3857,8 +3857,7 @@ foreach target : target_dirs
                    dependencies: arch_deps + deps + exe['dependencies'],
                    objects: lib.extract_all_objects(recursive: true),
                    link_depends: [block_syms, qemu_syms] + exe.get('link_depends', []),
-                   link_args: link_args,
-                   win_subsystem: exe['win_subsystem'])
+                   link_args: link_args)
         endif
         if 'AS_STATIC_LIB' in config_host
             emulator = static_library(exe_name, exe['sources'],

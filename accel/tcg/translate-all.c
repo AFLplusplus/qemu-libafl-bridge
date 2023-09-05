@@ -301,7 +301,7 @@ void libafl_add_read_hook(uint64_t (*gen)(target_ulong pc, MemOpIdx oi, uint64_t
 
 void libafl_gen_read(TCGTemp *addr, MemOpIdx oi)
 {
-    size_t size = memop_size(oi);
+    size_t size = memop_size(get_memop(oi));
 
     struct libafl_rw_hook* hook = libafl_read_hooks;
     while (hook) {
@@ -406,7 +406,7 @@ void libafl_add_write_hook(uint64_t (*gen)(target_ulong pc, MemOpIdx oi, uint64_
 
 void libafl_gen_write(TCGTemp *addr, MemOpIdx oi)
 {
-    size_t size = memop_size(oi);
+    size_t size = memop_size(get_memop(oi));
 
     struct libafl_rw_hook* hook = libafl_write_hooks;
     while (hook) {

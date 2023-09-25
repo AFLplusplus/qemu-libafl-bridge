@@ -154,9 +154,9 @@ static KVMMSRHandlers msr_handlers[KVM_MSR_FILTER_MAX_RANGES];
 static RateLimit bus_lock_ratelimit_ctrl;
 static int kvm_get_one_msr(X86CPU *cpu, int index, uint64_t *value);
 
-int kvm_has_pit_state2(void)
+bool kvm_has_pit_state2(void)
 {
-    return has_pit_state2;
+    return !!has_pit_state2;
 }
 
 bool kvm_has_smm(void)
@@ -4729,7 +4729,7 @@ int kvm_arch_put_registers(CPUState *cpu, int level)
     /*
      * Put MSR_IA32_FEATURE_CONTROL first, this ensures the VM gets out of VMX
      * root operation upon vCPU reset. kvm_put_msr_feature_control() should also
-     * preceed kvm_put_nested_state() when 'real' nested state is set.
+     * precede kvm_put_nested_state() when 'real' nested state is set.
      */
     if (level >= KVM_PUT_RESET_STATE) {
         ret = kvm_put_msr_feature_control(x86_cpu);
@@ -5653,7 +5653,7 @@ int kvm_arch_fixup_msi_route(struct kvm_irq_routing_entry *route,
             }
 
             /*
-             * Handled untranslated compatibilty format interrupt with
+             * Handled untranslated compatibility format interrupt with
              * extended destination ID in the low bits 11-5. */
             dst.address = kvm_swizzle_msi_ext_dest_id(dst.address);
 

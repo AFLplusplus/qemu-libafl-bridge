@@ -75,11 +75,14 @@ const int vdpa_feature_bits[] = {
     VIRTIO_NET_F_GUEST_TSO4,
     VIRTIO_NET_F_GUEST_TSO6,
     VIRTIO_NET_F_GUEST_UFO,
+    VIRTIO_NET_F_GUEST_USO4,
+    VIRTIO_NET_F_GUEST_USO6,
     VIRTIO_NET_F_HASH_REPORT,
     VIRTIO_NET_F_HOST_ECN,
     VIRTIO_NET_F_HOST_TSO4,
     VIRTIO_NET_F_HOST_TSO6,
     VIRTIO_NET_F_HOST_UFO,
+    VIRTIO_NET_F_HOST_USO,
     VIRTIO_NET_F_MQ,
     VIRTIO_NET_F_MRG_RXBUF,
     VIRTIO_NET_F_MTU,
@@ -821,7 +824,7 @@ static int vhost_vdpa_net_load_rx(VhostVDPAState *s,
      * According to virtio_net_reset(), device turns promiscuous mode
      * on by default.
      *
-     * Addtionally, according to VirtIO standard, "Since there are
+     * Additionally, according to VirtIO standard, "Since there are
      * no guarantees, it can use a hash filter or silently switch to
      * allmulti or promiscuous mode if it is given too many addresses.".
      * QEMU marks `n->mac_table.uni_overflow` if guest sets too many
@@ -1130,7 +1133,7 @@ static int vhost_vdpa_net_excessive_mac_filter_cvq_add(VhostVDPAState *s,
      * Pack the non-multicast MAC addresses part for fake CVQ command.
      *
      * According to virtio_net_handle_mac(), QEMU doesn't verify the MAC
-     * addresses provieded in CVQ command. Therefore, only the entries
+     * addresses provided in CVQ command. Therefore, only the entries
      * field need to be prepared in the CVQ command.
      */
     mac_ptr = out->iov_base + cursor;
@@ -1141,7 +1144,7 @@ static int vhost_vdpa_net_excessive_mac_filter_cvq_add(VhostVDPAState *s,
      * Pack the multicast MAC addresses part for fake CVQ command.
      *
      * According to virtio_net_handle_mac(), QEMU doesn't verify the MAC
-     * addresses provieded in CVQ command. Therefore, only the entries
+     * addresses provided in CVQ command. Therefore, only the entries
      * field need to be prepared in the CVQ command.
      */
     mac_ptr = out->iov_base + cursor;
@@ -1202,7 +1205,7 @@ static int vhost_vdpa_net_handle_ctrl_avail(VhostShadowVirtqueue *svq,
          * rejects the flawed CVQ command.
          *
          * Therefore, QEMU must handle this situation instead of sending
-         * the CVQ command direclty.
+         * the CVQ command directly.
          */
         dev_written = vhost_vdpa_net_excessive_mac_filter_cvq_add(s, elem,
                                                                   &out);

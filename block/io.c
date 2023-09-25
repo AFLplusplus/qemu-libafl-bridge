@@ -342,7 +342,7 @@ static void coroutine_fn bdrv_co_yield_to_drain(BlockDriverState *bs,
      * timer callback), it is a bug in the caller that should be fixed. */
     assert(data.done);
 
-    /* Reaquire the AioContext of bs if we dropped it */
+    /* Reacquire the AioContext of bs if we dropped it */
     if (ctx != co_ctx) {
         aio_context_acquire(ctx);
     }
@@ -591,10 +591,16 @@ static void coroutine_fn tracked_request_end(BdrvTrackedRequest *req)
         qatomic_dec(&req->bs->serialising_in_flight);
     }
 
-    qemu_co_mutex_lock(&req->bs->reqs_lock);
+    qemu_mutex_lock(&req->bs->reqs_lock);
     QLIST_REMOVE(req, list);
+    qemu_mutex_unlock(&req->bs->reqs_lock);
+
+    /*
+     * At this point qemu_co_queue_wait(&req->wait_queue, ...) won't be called
+     * anymore because the request has been removed from the list, so it's safe
+     * to restart the queue outside reqs_lock to minimize the critical section.
+     */
     qemu_co_queue_restart_all(&req->wait_queue);
-    qemu_co_mutex_unlock(&req->bs->reqs_lock);
 }
 
 /**
@@ -621,9 +627,9 @@ static void coroutine_fn tracked_request_begin(BdrvTrackedRequest *req,
 
     qemu_co_queue_init(&req->wait_queue);
 
-    qemu_co_mutex_lock(&bs->reqs_lock);
+    qemu_mutex_lock(&bs->reqs_lock);
     QLIST_INSERT_HEAD(&bs->tracked_requests, req, list);
-    qemu_co_mutex_unlock(&bs->reqs_lock);
+    qemu_mutex_unlock(&bs->reqs_lock);
 }
 
 static bool tracked_request_overlaps(BdrvTrackedRequest *req,
@@ -787,9 +793,9 @@ bdrv_wait_serialising_requests(BdrvTrackedRequest *self)
         return;
     }
 
-    qemu_co_mutex_lock(&bs->reqs_lock);
+    qemu_mutex_lock(&bs->reqs_lock);
     bdrv_wait_serialising_requests_locked(self);
-    qemu_co_mutex_unlock(&bs->reqs_lock);
+    qemu_mutex_unlock(&bs->reqs_lock);
 }
 
 void coroutine_fn bdrv_make_request_serialising(BdrvTrackedRequest *req,
@@ -797,12 +803,12 @@ void coroutine_fn bdrv_make_request_serialising(BdrvTrackedRequest *req,
 {
     IO_CODE();
 
-    qemu_co_mutex_lock(&req->bs->reqs_lock);
+    qemu_mutex_lock(&req->bs->reqs_lock);
 
     tracked_request_set_serialising(req, align);
     bdrv_wait_serialising_requests_locked(req);
 
-    qemu_co_mutex_unlock(&req->bs->reqs_lock);
+    qemu_mutex_unlock(&req->bs->reqs_lock);
 }
 
 int bdrv_check_qiov_request(int64_t offset, int64_t bytes,
@@ -2944,25 +2950,18 @@ int bdrv_load_vmstate(BlockDriverState *bs, uint8_t *buf,
 /**************************************************************/
 /* async I/Os */
 
+/**
+ * Synchronously cancels an acb. Must be called with the BQL held and the acb
+ * must be processed with the BQL held too (IOThreads are not allowed).
+ *
+ * Use bdrv_aio_cancel_async() instead when possible.
+ */
 void bdrv_aio_cancel(BlockAIOCB *acb)
 {
-    IO_CODE();
+    GLOBAL_STATE_CODE();
     qemu_aio_ref(acb);
     bdrv_aio_cancel_async(acb);
-    while (acb->refcnt > 1) {
-        if (acb->aiocb_info->get_aio_context) {
-            aio_poll(acb->aiocb_info->get_aio_context(acb), true);
-        } else if (acb->bs) {
-            /* qemu_aio_ref and qemu_aio_unref are not thread-safe, so
-             * assert that we're not using an I/O thread.  Thread-safe
-             * code should use bdrv_aio_cancel_async exclusively.
-             */
-            assert(bdrv_get_aio_context(acb->bs) == qemu_get_aio_context());
-            aio_poll(bdrv_get_aio_context(acb->bs), true);
-        } else {
-            abort();
-        }
-    }
+    AIO_WAIT_WHILE_UNLOCKED(NULL, acb->refcnt > 1);
     qemu_aio_unref(acb);
 }
 
@@ -2996,7 +2995,7 @@ int coroutine_fn bdrv_co_flush(BlockDriverState *bs)
         goto early_exit;
     }
 
-    qemu_co_mutex_lock(&bs->reqs_lock);
+    qemu_mutex_lock(&bs->reqs_lock);
     current_gen = qatomic_read(&bs->write_gen);
 
     /* Wait until any previous flushes are completed */
@@ -3006,7 +3005,7 @@ int coroutine_fn bdrv_co_flush(BlockDriverState *bs)
 
     /* Flushes reach this point in nondecreasing current_gen order.  */
     bs->active_flush_req = true;
-    qemu_co_mutex_unlock(&bs->reqs_lock);
+    qemu_mutex_unlock(&bs->reqs_lock);
 
     /* Write back all layers by calling one driver function */
     if (bs->drv->bdrv_co_flush) {
@@ -3094,11 +3093,11 @@ out:
         bs->flushed_gen = current_gen;
     }
 
-    qemu_co_mutex_lock(&bs->reqs_lock);
+    qemu_mutex_lock(&bs->reqs_lock);
     bs->active_flush_req = false;
     /* Return value is ignored - it's ok if wait queue is empty */
     qemu_co_queue_next(&bs->flush_queue);
-    qemu_co_mutex_unlock(&bs->reqs_lock);
+    qemu_mutex_unlock(&bs->reqs_lock);
 
 early_exit:
     bdrv_dec_in_flight(bs);

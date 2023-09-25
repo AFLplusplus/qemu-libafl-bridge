@@ -38,6 +38,7 @@
 #include "exec/confidential-guest-support.h"
 #include "hw/virtio/virtio.h"
 #include "hw/virtio/virtio-pci.h"
+#include "hw/virtio/virtio-net.h"
 
 GlobalProperty hw_compat_8_1[] = {};
 const size_t hw_compat_8_1_len = G_N_ELEMENTS(hw_compat_8_1);
@@ -45,6 +46,9 @@ const size_t hw_compat_8_1_len = G_N_ELEMENTS(hw_compat_8_1);
 GlobalProperty hw_compat_8_0[] = {
     { "migration", "multifd-flush-after-each-section", "on"},
     { TYPE_PCI_DEVICE, "x-pcie-ari-nextfn-1", "on" },
+    { TYPE_VIRTIO_NET, "host_uso", "off"},
+    { TYPE_VIRTIO_NET, "guest_uso4", "off"},
+    { TYPE_VIRTIO_NET, "guest_uso6", "off"},
 };
 const size_t hw_compat_8_0_len = G_N_ELEMENTS(hw_compat_8_0);
 
@@ -1355,6 +1359,7 @@ out:
 
 void machine_run_board_init(MachineState *machine, const char *mem_path, Error **errp)
 {
+    ERRP_GUARD();
     MachineClass *machine_class = MACHINE_GET_CLASS(machine);
     ObjectClass *oc = object_class_by_name(machine->cpu_type);
     CPUClass *cc;
@@ -1383,9 +1388,13 @@ void machine_run_board_init(MachineState *machine, const char *mem_path, Error *
                numa_uses_legacy_mem()) {
         if (object_property_find(object_get_objects_root(),
                                  machine_class->default_ram_id)) {
-            error_setg(errp, "object name '%s' is reserved for the default"
-                " RAM backend, it can't be used for any other purposes."
-                " Change the object's 'id' to something else",
+            error_setg(errp, "object's id '%s' is reserved for the default"
+                " RAM backend, it can't be used for any other purposes",
+                machine_class->default_ram_id);
+            error_append_hint(errp,
+                "Change the object's 'id' to something else or disable"
+                " automatic creation of the default RAM backend by setting"
+                " 'memory-backend=%s' with '-machine'.\n",
                 machine_class->default_ram_id);
             return;
         }
@@ -1417,7 +1426,7 @@ void machine_run_board_init(MachineState *machine, const char *mem_path, Error *
         for (i = 0; machine_class->valid_cpu_types[i]; i++) {
             if (object_class_dynamic_cast(oc,
                                           machine_class->valid_cpu_types[i])) {
-                /* The user specificed CPU is in the valid field, we are
+                /* The user specified CPU is in the valid field, we are
                  * good to go.
                  */
                 break;

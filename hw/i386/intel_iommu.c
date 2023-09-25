@@ -52,7 +52,7 @@
 
 /*
  * PCI bus number (or SID) is not reliable since the device is usaully
- * initalized before guest can configure the PCI bridge
+ * initialized before guest can configure the PCI bridge
  * (SECONDARY_BUS_NUMBER).
  */
 struct vtd_as_key {
@@ -1694,7 +1694,7 @@ static bool vtd_switch_address_space(VTDAddressSpace *as)
      * """
      *
      * We enable per as memory region (iommu_ir_fault) for catching
-     * the tranlsation for interrupt range through PASID + PT.
+     * the translation for interrupt range through PASID + PT.
      */
     if (pt && as->pasid != PCI_NO_PASID) {
         memory_region_set_enabled(&as->iommu_ir_fault, true);
@@ -4053,7 +4053,7 @@ static bool vtd_decide_config(IntelIOMMUState *s, Error **errp)
             error_setg(errp, "eim=on requires accel=kvm,kernel-irqchip=split");
             return false;
         }
-        if (!kvm_enable_x2apic()) {
+        if (kvm_enabled() && !kvm_enable_x2apic()) {
             error_setg(errp, "eim=on requires support on the KVM side"
                              "(X2APIC_API, first shipped in v4.7)");
             return false;

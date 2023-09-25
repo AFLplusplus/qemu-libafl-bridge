@@ -208,7 +208,7 @@ void cxl_event_set_status(CXLDeviceState *cxl_dstate, CXLEventLogType log_type,
  * > is the maximum access size allowed for these registers. If this rule is not
  * > followed, the behavior is undefined
  *
- * CXL 2.0 Errata F4 states futher that the layouts in the specification are
+ * CXL 2.0 Errata F4 states further that the layouts in the specification are
  * shown as greater than 128 bits, but implementations are expected to
  * use any size of access up to 64 bits.
  *
@@ -300,7 +300,7 @@ REG64(CXL_MEM_DEV_STS, 0)
 typedef struct CXLError {
     QTAILQ_ENTRY(CXLError) node;
     int type; /* Error code as per FE definition */
-    uint32_t header[32];
+    uint32_t header[CXL_RAS_ERR_HEADER_NUM];
 } CXLError;
 
 typedef QTAILQ_HEAD(, CXLError) CXLErrorList;

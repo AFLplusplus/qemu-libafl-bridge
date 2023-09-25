@@ -2949,54 +2949,16 @@ void gen_gvec_sqrdmlsh_qc(unsigned vece, uint32_t rd_ofs, uint32_t rn_ofs,
     gen_gvec_fn3_qc(rd_ofs, rn_ofs, rm_ofs, opr_sz, max_sz, fns[vece - 1]);
 }
 
-#define GEN_CMP0(NAME, COND)                                            \
-    static void gen_##NAME##0_i32(TCGv_i32 d, TCGv_i32 a)               \
-    {                                                                   \
-        tcg_gen_negsetcond_i32(COND, d, a, tcg_constant_i32(0));        \
-    }                                                                   \
-    static void gen_##NAME##0_i64(TCGv_i64 d, TCGv_i64 a)               \
-    {                                                                   \
-        tcg_gen_negsetcond_i64(COND, d, a, tcg_constant_i64(0));        \
-    }                                                                   \
-    static void gen_##NAME##0_vec(unsigned vece, TCGv_vec d, TCGv_vec a) \
-    {                                                                   \
-        TCGv_vec zero = tcg_constant_vec_matching(d, vece, 0);          \
-        tcg_gen_cmp_vec(COND, vece, d, a, zero);                        \
-    }                                                                   \
-    void gen_gvec_##NAME##0(unsigned vece, uint32_t d, uint32_t m,      \
-                            uint32_t opr_sz, uint32_t max_sz)           \
-    {                                                                   \
-        const GVecGen2 op[4] = {                                        \
-            { .fno = gen_helper_gvec_##NAME##0_b,                       \
-              .fniv = gen_##NAME##0_vec,                                \
-              .opt_opc = vecop_list_cmp,                                \
-              .vece = MO_8 },                                           \
-            { .fno = gen_helper_gvec_##NAME##0_h,                       \
-              .fniv = gen_##NAME##0_vec,                                \
-              .opt_opc = vecop_list_cmp,                                \
-              .vece = MO_16 },                                          \
-            { .fni4 = gen_##NAME##0_i32,                                \
-              .fniv = gen_##NAME##0_vec,                                \
-              .opt_opc = vecop_list_cmp,                                \
-              .vece = MO_32 },                                          \
-            { .fni8 = gen_##NAME##0_i64,                                \
-              .fniv = gen_##NAME##0_vec,                                \
-              .opt_opc = vecop_list_cmp,                                \
-              .prefer_i64 = TCG_TARGET_REG_BITS == 64,                  \
-              .vece = MO_64 },                                          \
-        };                                                              \
-        tcg_gen_gvec_2(d, m, opr_sz, max_sz, &op[vece]);                \
-    }
+#define GEN_CMP0(NAME, COND)                              \
+    void NAME(unsigned vece, uint32_t d, uint32_t m,      \
+              uint32_t opr_sz, uint32_t max_sz)           \
+    { tcg_gen_gvec_cmpi(COND, vece, d, m, 0, opr_sz, max_sz); }
 
-static const TCGOpcode vecop_list_cmp[] = {
-    INDEX_op_cmp_vec, 0
-};
-
-GEN_CMP0(ceq, TCG_COND_EQ)
-GEN_CMP0(cle, TCG_COND_LE)
-GEN_CMP0(cge, TCG_COND_GE)
-GEN_CMP0(clt, TCG_COND_LT)
-GEN_CMP0(cgt, TCG_COND_GT)
+GEN_CMP0(gen_gvec_ceq0, TCG_COND_EQ)
+GEN_CMP0(gen_gvec_cle0, TCG_COND_LE)
+GEN_CMP0(gen_gvec_cge0, TCG_COND_GE)
+GEN_CMP0(gen_gvec_clt0, TCG_COND_LT)
+GEN_CMP0(gen_gvec_cgt0, TCG_COND_GT)
 
 #undef GEN_CMP0
 
@@ -4544,6 +4506,20 @@ void gen_gvec_uaba(unsigned vece, uint32_t rd_ofs, uint32_t rn_ofs,
     tcg_gen_gvec_3(rd_ofs, rn_ofs, rm_ofs, opr_sz, max_sz, &ops[vece]);
 }
 
+static bool aa32_cpreg_encoding_in_impdef_space(uint8_t crn, uint8_t crm)
+{
+    static const uint16_t mask[3] = {
+        0b0000000111100111,  /* crn ==  9, crm == {c0-c2, c5-c8}   */
+        0b0000000100010011,  /* crn == 10, crm == {c0, c1, c4, c8} */
+        0b1000000111111111,  /* crn == 11, crm == {c0-c8, c15}     */
+    };
+
+    if (crn >= 9 && crn <= 11) {
+        return (mask[crn - 9] >> crm) & 1;
+    }
+    return false;
+}
+
 static void do_coproc_insn(DisasContext *s, int cpnum, int is64,
                            int opc1, int crn, int crm, int opc2,
                            bool isread, int rt, int rt2)
@@ -4622,6 +4598,25 @@ static void do_coproc_insn(DisasContext *s, int cpnum, int is64,
              */
             s->base.is_jmp = DISAS_NEXT;
             set_disas_label(s, over);
+        }
+    }
+
+    if (cpnum == 15 && aa32_cpreg_encoding_in_impdef_space(crn, crm)) {
+        /*
+         * Check for TIDCP trap, which must take precedence over the UNDEF
+         * for "no such register" etc.  It shares precedence with HSTR,
+         * but raises the same exception, so order doesn't matter.
+         */
+        switch (s->current_el) {
+        case 0:
+            if (arm_dc_feature(s, ARM_FEATURE_AARCH64)
+                && dc_isar_feature(aa64_tidcp1, s)) {
+                gen_helper_tidcp_el0(cpu_env, tcg_constant_i32(syndrome));
+            }
+            break;
+        case 1:
+            gen_helper_tidcp_el1(cpu_env, tcg_constant_i32(syndrome));
+            break;
         }
     }
 

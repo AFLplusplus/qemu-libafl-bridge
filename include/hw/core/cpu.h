@@ -227,17 +227,6 @@ struct CPUWatchpoint {
     QTAILQ_ENTRY(CPUWatchpoint) entry;
 };
 
-#ifdef CONFIG_PLUGIN
-/*
- * For plugins we sometime need to save the resolved iotlb data before
- * the memory regions get moved around  by io_writex.
- */
-typedef struct SavedIOTLB {
-    MemoryRegionSection *section;
-    hwaddr mr_offset;
-} SavedIOTLB;
-#endif
-
 struct KVMState;
 struct kvm_run;
 
@@ -409,8 +398,6 @@ struct CPUState {
 
 #ifdef CONFIG_PLUGIN
     GArray *plugin_mem_cbs;
-    /* saved iotlb data from io_writex */
-    SavedIOTLB saved_iotlb;
 #endif
 
     /* TODO Move common fields from CPUArchState here. */
@@ -422,7 +409,7 @@ struct CPUState {
     int32_t exception_index;
 
     AccelCPUState *accel;
-    /* shared by kvm, hax and hvf */
+    /* shared by kvm and hvf */
     bool vcpu_dirty;
 
     /* Used to keep track of an outstanding cpu throttle thread for migration

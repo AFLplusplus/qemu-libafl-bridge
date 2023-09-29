@@ -35,7 +35,7 @@
 
 static struct target_sigaction sigact_table[TARGET_NSIG];
 
-static void host_signal_handler(int host_signum, siginfo_t *info,
+/*static*/ void host_signal_handler(int host_signum, siginfo_t *info,
                                 void *puc);
 
 /* Fallback addresses into sigtramp page. */
@@ -781,7 +781,7 @@ static inline void rewind_if_in_safe_syscall(void *puc)
     }
 }
 
-static void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
+/*static*/ void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
 {
     CPUArchState *env = thread_cpu->env_ptr;
     CPUState *cpu = env_cpu(env);

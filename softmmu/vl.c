@@ -2125,6 +2125,7 @@ static int global_init_func(void *opaque, QemuOpts *opts, Error **errp)
 static bool is_qemuopts_group(const char *group)
 {
     if (g_str_equal(group, "object") ||
+        g_str_equal(group, "audiodev") ||
         g_str_equal(group, "machine") ||
         g_str_equal(group, "smp-opts") ||
         g_str_equal(group, "boot-opts")) {
@@ -2140,6 +2141,15 @@ static void qemu_record_config_group(const char *group, QDict *dict,
         Visitor *v = qobject_input_visitor_new_keyval(QOBJECT(dict));
         object_option_add_visitor(v);
         visit_free(v);
+
+    } else if (g_str_equal(group, "audiodev")) {
+        Audiodev *dev = NULL;
+        Visitor *v = qobject_input_visitor_new_keyval(QOBJECT(dict));
+        if (visit_type_Audiodev(v, NULL, &dev, errp)) {
+            audio_define(dev);
+        }
+        visit_free(v);
+
     } else if (g_str_equal(group, "machine")) {
         /*
          * Cannot merge string-valued and type-safe dictionaries, so JSON
@@ -3204,7 +3214,6 @@ void qemu_init(int argc, char **argv)
                 }
                 break;
             case QEMU_OPTION_watchdog_action: {
-                QemuOpts *opts;
                 opts = qemu_opts_create(qemu_find_opts("action"), NULL, 0, &error_abort);
                 qemu_opt_set(opts, "watchdog", optarg, &error_abort);
                 break;
@@ -3515,16 +3524,16 @@ void qemu_init(int argc, char **argv)
                 break;
             case QEMU_OPTION_compat:
                 {
-                    CompatPolicy *opts;
+                    CompatPolicy *opts_policy;
                     Visitor *v;
 
                     v = qobject_input_visitor_new_str(optarg, NULL,
                                                       &error_fatal);
 
-                    visit_type_CompatPolicy(v, NULL, &opts, &error_fatal);
-                    QAPI_CLONE_MEMBERS(CompatPolicy, &compat_policy, opts);
+                    visit_type_CompatPolicy(v, NULL, &opts_policy, &error_fatal);
+                    QAPI_CLONE_MEMBERS(CompatPolicy, &compat_policy, opts_policy);
 
-                    qapi_free_CompatPolicy(opts);
+                    qapi_free_CompatPolicy(opts_policy);
                     visit_free(v);
                     break;
                 }

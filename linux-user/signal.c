@@ -35,7 +35,7 @@
 
 static struct target_sigaction sigact_table[TARGET_NSIG];
 
-/*static*/ void host_signal_handler(int host_signum, siginfo_t *info,
+static void host_signal_handler(int host_signum, siginfo_t *info,
                                 void *puc);
 
 /* Fallback addresses into sigtramp page. */
@@ -781,7 +781,11 @@ static inline void rewind_if_in_safe_syscall(void *puc)
     }
 }
 
-/*static*/ void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
+//// --- Begin LibAFL code ---
+
+int libafl_qemu_handle_crash(int host_sig, siginfo_t *info, void *puc);
+
+int libafl_qemu_handle_crash(int host_sig, siginfo_t *info, void *puc)
 {
     CPUArchState *env = thread_cpu->env_ptr;
     CPUState *cpu = env_cpu(env);
@@ -823,7 +827,7 @@ static inline void rewind_if_in_safe_syscall(void *puc)
                 /* If this was a write to a TB protected page, restart. */
                 if (is_write &&
                     handle_sigsegv_accerr_write(cpu, sigmask, pc, guest_addr)) {
-                    return;
+                    return 0;
                 }
 
                 /*
@@ -852,7 +856,7 @@ static inline void rewind_if_in_safe_syscall(void *puc)
     /* get target signal number */
     guest_sig = host_to_target_signal(host_sig);
     if (guest_sig < 1 || guest_sig > TARGET_NSIG) {
-        return;
+        return 0;
     }
     trace_user_host_signal(env, host_sig, guest_sig);
 
@@ -893,7 +897,16 @@ static inline void rewind_if_in_safe_syscall(void *puc)
 
     /* interrupt the virtual CPU as soon as possible */
     cpu_exit(thread_cpu);
+    
+    return 1;
 }
+
+static void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
+{
+    libafl_qemu_handle_crash(host_sig, info, puc);
+}
+
+//// --- End LibAFL code ---
 
 /* do_sigaltstack() returns target values and errnos. */
 /* compare linux/kernel/signal.c:do_sigaltstack() */

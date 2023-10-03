@@ -693,6 +693,13 @@ void cpu_loop_exit_sigbus(CPUState *cpu, target_ulong addr,
     cpu_loop_exit_restore(cpu, ra);
 }
 
+//// --- Begin LibAFL code ---
+
+__attribute__((weak)) void libafl_executor_reinstall_handlers(void);
+__attribute__((weak)) void libafl_executor_reinstall_handlers(void) {}
+
+//// --- End LibAFL code ---
+
 /* abort execution with signal */
 static G_NORETURN
 void dump_core_and_abort(CPUArchState *cpu_env, int target_sig)
@@ -736,6 +743,12 @@ void dump_core_and_abort(CPUArchState *cpu_env, int target_sig)
     act.sa_handler = SIG_DFL;
     act.sa_flags = 0;
     // sigaction(host_sig, &act, NULL); // LibAFL uses it's own handler
+
+//// --- Begin LibAFL code ---
+
+    libafl_executor_reinstall_handlers();
+
+//// --- End LibAFL code ---
 
     /* For some reason raise(host_sig) doesn't send the signal when
      * statically linked on x86-64. */

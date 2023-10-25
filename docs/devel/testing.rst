@@ -1014,8 +1014,8 @@ class.  Here's a simple usage example:
       """
       def test_qmp_human_info_version(self):
           self.vm.launch()
-          res = self.vm.command('human-monitor-command',
-                                command_line='info version')
+          res = self.vm.cmd('human-monitor-command',
+                            command_line='info version')
           self.assertRegexpMatches(res, r'^(\d+\.\d+\.\d)')
 
 To execute your test, run:
@@ -1065,15 +1065,15 @@ and hypothetical example follows:
           first_machine.launch()
           second_machine.launch()
 
-          first_res = first_machine.command(
+          first_res = first_machine.cmd(
               'human-monitor-command',
               command_line='info version')
 
-          second_res = second_machine.command(
+          second_res = second_machine.cmd(
               'human-monitor-command',
               command_line='info version')
 
-          third_res = self.get_vm(name='third_machine').command(
+          third_res = self.get_vm(name='third_machine').cmd(
               'human-monitor-command',
               command_line='info version')
 
@@ -1458,7 +1458,7 @@ TCG test dependencies
 ~~~~~~~~~~~~~~~~~~~~~
 
 The TCG tests are deliberately very light on dependencies and are
-either totally bare with minimal gcc lib support (for softmmu tests)
+either totally bare with minimal gcc lib support (for system-mode tests)
 or just glibc (for linux-user tests). This is because getting a cross
 compiler to work with additional libraries can be challenging.
 

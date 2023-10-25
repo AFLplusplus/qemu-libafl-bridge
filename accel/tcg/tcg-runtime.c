@@ -138,7 +138,7 @@ __thread CPUState* libafl_breakpoint_cpu;
 __thread vaddr libafl_breakpoint_pc;
 
 #ifdef TARGET_ARM
-#define THUMB_MASK(value) (value | libafl_breakpoint_cpu->env_ptr->thumb)
+#define THUMB_MASK(value) (value | cpu_env(libafl_breakpoint_cpu)->thumb)
 #else
 #define THUMB_MASK(value) value
 #endif

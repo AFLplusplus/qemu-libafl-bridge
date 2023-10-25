@@ -272,11 +272,14 @@ SRST
 ERST
 
 DEF("smp", HAS_ARG, QEMU_OPTION_smp,
-    "-smp [[cpus=]n][,maxcpus=maxcpus][,sockets=sockets][,dies=dies][,clusters=clusters][,cores=cores][,threads=threads]\n"
+    "-smp [[cpus=]n][,maxcpus=maxcpus][,drawers=drawers][,books=books][,sockets=sockets]\n"
+    "               [,dies=dies][,clusters=clusters][,cores=cores][,threads=threads]\n"
     "                set the number of initial CPUs to 'n' [default=1]\n"
     "                maxcpus= maximum number of total CPUs, including\n"
     "                offline CPUs for hotplug, etc\n"
-    "                sockets= number of sockets on the machine board\n"
+    "                drawers= number of drawers on the machine board\n"
+    "                books= number of books in one drawer\n"
+    "                sockets= number of sockets in one book\n"
     "                dies= number of dies in one socket\n"
     "                clusters= number of clusters in one die\n"
     "                cores= number of cores in one cluster\n"
@@ -727,31 +730,23 @@ SRST
 ERST
 
 
-HXCOMM Deprecated by -audiodev
-DEF("audio-help", 0, QEMU_OPTION_audio_help,
-    "-audio-help     show -audiodev equivalent of the currently specified audio settings\n",
-    QEMU_ARCH_ALL)
-SRST
-``-audio-help``
-    Will show the -audiodev equivalent of the currently specified
-    (deprecated) environment variables.
-ERST
-
 DEF("audio", HAS_ARG, QEMU_OPTION_audio,
+    "-audio [driver=]driver[,prop[=value][,...]]\n"
+    "                specifies default audio backend when `audiodev` is not\n"
+    "                used to create a machine or sound device;"
+    "                options are the same as for -audiodev\n"
     "-audio [driver=]driver,model=value[,prop[=value][,...]]\n"
     "                specifies the audio backend and device to use;\n"
     "                apart from 'model', options are the same as for -audiodev.\n"
     "                use '-audio model=help' to show possible devices.\n",
     QEMU_ARCH_ALL)
 SRST
-``-audio [driver=]driver,model=value[,prop[=value][,...]]``
-    This option is a shortcut for configuring both the guest audio
-    hardware and the host audio backend in one go.
-    The driver option is the same as with the corresponding ``-audiodev`` option below.
-    The guest hardware model can be set with ``model=modelname``.
-
-    Use ``driver=help`` to list the available drivers,
-    and ``model=help`` to list the available device types.
+``-audio [driver=]driver[,model=value][,prop[=value][,...]]``
+    If the ``model`` option is specified, ``-audio`` is a shortcut
+    for configuring both the guest audio hardware and the host audio
+    backend in one go. The guest hardware model can be set with
+    ``model=modelname``.  Use ``model=help`` to list the available
+    device types.
 
     The following two example do exactly the same, to show how ``-audio``
     can be used to shorten the command line length:
@@ -760,6 +755,17 @@ SRST
 
         |qemu_system| -audiodev pa,id=pa -device sb16,audiodev=pa
         |qemu_system| -audio pa,model=sb16
+
+    If the ``model`` option is not specified, ``-audio`` is used to
+    configure a default audio backend that will be used whenever the
+    ``audiodev`` property is not set on a device or machine.  In
+    particular, ``-audio none`` ensures that no audio is produced even
+    for machines that have embedded sound hardware.
+
+    In both cases, the driver option is the same as with the corresponding
+    ``-audiodev`` option below.  Use ``driver=help`` to list the available
+    drivers.
+
 ERST
 
 DEF("audiodev", HAS_ARG, QEMU_OPTION_audiodev,
@@ -4716,6 +4722,7 @@ DEF("incoming", HAS_ARG, QEMU_OPTION_incoming, \
     "                prepare for incoming migration, listen on\n" \
     "                specified protocol and socket address\n" \
     "-incoming fd:fd\n" \
+    "-incoming file:filename[,offset=offset]\n" \
     "-incoming exec:cmdline\n" \
     "                accept incoming migration on given file descriptor\n" \
     "                or from given external command\n" \
@@ -4732,7 +4739,11 @@ SRST
     Prepare for incoming migration, listen on a given unix socket.
 
 ``-incoming fd:fd``
-    Accept incoming migration from a given filedescriptor.
+    Accept incoming migration from a given file descriptor.
+
+``-incoming file:filename[,offset=offset]``
+    Accept incoming migration from a given file starting at offset.
+    offset allows the common size suffixes, or a 0x prefix, but not both.
 
 ``-incoming exec:cmdline``
     Accept incoming migration as an output from specified external

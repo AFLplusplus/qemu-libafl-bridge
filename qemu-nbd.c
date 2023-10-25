@@ -219,6 +219,7 @@ static int qemu_nbd_client_list(SocketAddress *saddr, QCryptoTLSCreds *tls,
                 [NBD_FLAG_SEND_RESIZE_BIT]          = "resize",
                 [NBD_FLAG_SEND_CACHE_BIT]           = "cache",
                 [NBD_FLAG_SEND_FAST_ZERO_BIT]       = "fast-zero",
+                [NBD_FLAG_BLOCK_STAT_PAYLOAD_BIT]   = "block-status-payload",
             };
 
             printf("  size:  %" PRIu64 "\n", list[i].size);
@@ -235,6 +236,9 @@ static int qemu_nbd_client_list(SocketAddress *saddr, QCryptoTLSCreds *tls,
             printf("  opt block: %u\n", list[i].opt_block);
             printf("  max block: %u\n", list[i].max_block);
         }
+        printf("  transaction size: %s\n",
+               list[i].mode >= NBD_MODE_EXTENDED ?
+               "64-bit" : "32-bit");
         if (list[i].n_contexts) {
             printf("  available meta contexts: %d\n", list[i].n_contexts);
             for (j = 0; j < list[i].n_contexts; j++) {
@@ -939,7 +943,6 @@ int main(int argc, char **argv)
         g_autoptr(GError) err = NULL;
         int stderr_fd[2];
         pid_t pid;
-        int ret;
 
         if (!g_unix_open_pipe(stderr_fd, FD_CLOEXEC, &err)) {
             error_report("Error setting up communication pipe: %s",
@@ -1172,7 +1175,6 @@ int main(int argc, char **argv)
 
     if (opts.device) {
 #if HAVE_NBD_DEVICE
-        int ret;
         ret = pthread_create(&client_thread, NULL, nbd_client_thread, &opts);
         if (ret != 0) {
             error_report("Failed to create client thread: %s", strerror(ret));
@@ -1219,9 +1221,10 @@ int main(int argc, char **argv)
     qemu_opts_del(sn_opts);
 
     if (opts.device) {
-        void *ret;
-        pthread_join(client_thread, &ret);
-        exit(ret != NULL);
+        void *result;
+        pthread_join(client_thread, &result);
+        ret = (intptr_t)result;
+        exit(ret);
     } else {
         exit(EXIT_SUCCESS);
     }

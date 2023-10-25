@@ -111,7 +111,7 @@ static int dump_cleanup(DumpState *s)
             qemu_mutex_unlock_iothread();
         }
     }
-    migrate_del_blocker(dump_migration_blocker);
+    migrate_del_blocker(&dump_migration_blocker);
 
     return 0;
 }
@@ -1872,20 +1872,20 @@ static void dump_init(DumpState *s, int fd, bool has_format,
     if (vmci) {
         uint64_t addr, note_head_size, name_size, desc_size;
         uint32_t size;
-        uint16_t format;
+        uint16_t guest_format;
 
         note_head_size = dump_is_64bit(s) ?
             sizeof(Elf64_Nhdr) : sizeof(Elf32_Nhdr);
 
-        format = le16_to_cpu(vmci->vmcoreinfo.guest_format);
+        guest_format = le16_to_cpu(vmci->vmcoreinfo.guest_format);
         size = le32_to_cpu(vmci->vmcoreinfo.size);
         addr = le64_to_cpu(vmci->vmcoreinfo.paddr);
         if (!vmci->has_vmcoreinfo) {
             warn_report("guest note is not present");
         } else if (size < note_head_size || size > MAX_GUEST_NOTE_SIZE) {
             warn_report("guest note size is invalid: %" PRIu32, size);
-        } else if (format != FW_CFG_VMCOREINFO_FORMAT_ELF) {
-            warn_report("guest note format is unsupported: %" PRIu16, format);
+        } else if (guest_format != FW_CFG_VMCOREINFO_FORMAT_ELF) {
+            warn_report("guest note format is unsupported: %" PRIu16, guest_format);
         } else {
             s->guest_note = g_malloc(size + 1); /* +1 for adding \0 */
             cpu_physical_memory_read(addr, s->guest_note, size);
@@ -2158,7 +2158,7 @@ void qmp_dump_guest_memory(bool paging, const char *file,
      * Allows even for -only-migratable, but forbid migration during the
      * process of dump guest memory.
      */
-    if (migrate_add_blocker_internal(dump_migration_blocker, errp)) {
+    if (migrate_add_blocker_internal(&dump_migration_blocker, errp)) {
         /* Remember to release the fd before passing it over to dump state */
         close(fd);
         return;

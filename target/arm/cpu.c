@@ -80,7 +80,7 @@ void arm_cpu_synchronize_from_tb(CPUState *cs,
 {
     /* The program counter is always up to date with CF_PCREL. */
     if (!(tb_cflags(tb) & CF_PCREL)) {
-        CPUARMState *env = cs->env_ptr;
+        CPUARMState *env = cpu_env(cs);
         /*
          * It's OK to look at env for the current mode here, because it's
          * never possible for an AArch64 TB to chain to an AArch32 TB.
@@ -97,7 +97,7 @@ void arm_restore_state_to_opc(CPUState *cs,
                               const TranslationBlock *tb,
                               const uint64_t *data)
 {
-    CPUARMState *env = cs->env_ptr;
+    CPUARMState *env = cpu_env(cs);
 
     if (is_a64(env)) {
         if (tb_cflags(tb) & CF_PCREL) {
@@ -553,6 +553,101 @@ static void arm_cpu_reset_hold(Object *obj)
     }
 }
 
+void arm_emulate_firmware_reset(CPUState *cpustate, int target_el)
+{
+    ARMCPU *cpu = ARM_CPU(cpustate);
+    CPUARMState *env = &cpu->env;
+    bool have_el3 = arm_feature(env, ARM_FEATURE_EL3);
+    bool have_el2 = arm_feature(env, ARM_FEATURE_EL2);
+
+    /*
+     * Check we have the EL we're aiming for. If that is the
+     * highest implemented EL, then cpu_reset has already done
+     * all the work.
+     */
+    switch (target_el) {
+    case 3:
+        assert(have_el3);
+        return;
+    case 2:
+        assert(have_el2);
+        if (!have_el3) {
+            return;
+        }
+        break;
+    case 1:
+        if (!have_el3 && !have_el2) {
+            return;
+        }
+        break;
+    default:
+        g_assert_not_reached();
+    }
+
+    if (have_el3) {
+        /*
+         * Set the EL3 state so code can run at EL2. This should match
+         * the requirements set by Linux in its booting spec.
+         */
+        if (env->aarch64) {
+            env->cp15.scr_el3 |= SCR_RW;
+            if (cpu_isar_feature(aa64_pauth, cpu)) {
+                env->cp15.scr_el3 |= SCR_API | SCR_APK;
+            }
+            if (cpu_isar_feature(aa64_mte, cpu)) {
+                env->cp15.scr_el3 |= SCR_ATA;
+            }
+            if (cpu_isar_feature(aa64_sve, cpu)) {
+                env->cp15.cptr_el[3] |= R_CPTR_EL3_EZ_MASK;
+                env->vfp.zcr_el[3] = 0xf;
+            }
+            if (cpu_isar_feature(aa64_sme, cpu)) {
+                env->cp15.cptr_el[3] |= R_CPTR_EL3_ESM_MASK;
+                env->cp15.scr_el3 |= SCR_ENTP2;
+                env->vfp.smcr_el[3] = 0xf;
+            }
+            if (cpu_isar_feature(aa64_hcx, cpu)) {
+                env->cp15.scr_el3 |= SCR_HXEN;
+            }
+            if (cpu_isar_feature(aa64_fgt, cpu)) {
+                env->cp15.scr_el3 |= SCR_FGTEN;
+            }
+        }
+
+        if (target_el == 2) {
+            /* If the guest is at EL2 then Linux expects the HVC insn to work */
+            env->cp15.scr_el3 |= SCR_HCE;
+        }
+
+        /* Put CPU into non-secure state */
+        env->cp15.scr_el3 |= SCR_NS;
+        /* Set NSACR.{CP11,CP10} so NS can access the FPU */
+        env->cp15.nsacr |= 3 << 10;
+    }
+
+    if (have_el2 && target_el < 2) {
+        /* Set EL2 state so code can run at EL1. */
+        if (env->aarch64) {
+            env->cp15.hcr_el2 |= HCR_RW;
+        }
+    }
+
+    /* Set the CPU to the desired state */
+    if (env->aarch64) {
+        env->pstate = aarch64_pstate_mode(target_el, true);
+    } else {
+        static const uint32_t mode_for_el[] = {
+            0,
+            ARM_CPU_MODE_SVC,
+            ARM_CPU_MODE_HYP,
+            ARM_CPU_MODE_SVC,
+        };
+
+        cpsr_write(env, mode_for_el[target_el], CPSR_M, CPSRWriteRaw);
+    }
+}
+
+
 #if defined(CONFIG_TCG) && !defined(CONFIG_USER_ONLY)
 
 static inline bool arm_excp_unmasked(CPUState *cs, unsigned int excp_idx,
@@ -560,7 +655,7 @@ static inline bool arm_excp_unmasked(CPUState *cs, unsigned int excp_idx,
                                      unsigned int cur_el, bool secure,
                                      uint64_t hcr_el2)
 {
-    CPUARMState *env = cs->env_ptr;
+    CPUARMState *env = cpu_env(cs);
     bool pstate_unmasked;
     bool unmasked = false;
 
@@ -690,7 +785,7 @@ static inline bool arm_excp_unmasked(CPUState *cs, unsigned int excp_idx,
 static bool arm_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
 {
     CPUClass *cc = CPU_GET_CLASS(cs);
-    CPUARMState *env = cs->env_ptr;
+    CPUARMState *env = cpu_env(cs);
     uint32_t cur_el = arm_current_el(env);
     bool secure = arm_is_secure(env);
     uint64_t hcr_el2 = arm_hcr_el2_eff(env);
@@ -1215,7 +1310,6 @@ static void arm_cpu_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
 
-    cpu_set_cpustate_pointers(cpu);
     cpu->cp_regs = g_hash_table_new_full(g_direct_hash, g_direct_equal,
                                          NULL, g_free);
 
@@ -2320,15 +2414,15 @@ static Property arm_cpu_properties[] = {
     DEFINE_PROP_END_OF_LIST()
 };
 
-static gchar *arm_gdb_arch_name(CPUState *cs)
+static const gchar *arm_gdb_arch_name(CPUState *cs)
 {
     ARMCPU *cpu = ARM_CPU(cs);
     CPUARMState *env = &cpu->env;
 
     if (arm_feature(env, ARM_FEATURE_IWMMXT)) {
-        return g_strdup("iwmmxt");
+        return "iwmmxt";
     }
-    return g_strdup("arm");
+    return "arm";
 }
 
 #ifndef CONFIG_USER_ONLY
@@ -2393,7 +2487,6 @@ static void arm_cpu_class_init(ObjectClass *oc, void *data)
     cc->sysemu_ops = &arm_sysemu_ops;
 #endif
     cc->gdb_num_core_regs = 26;
-    cc->gdb_core_xml_file = "arm-core.xml";
     cc->gdb_arch_name = arm_gdb_arch_name;
     cc->gdb_get_dynamic_xml = arm_gdb_get_dynamic_xml;
     cc->gdb_stop_before_watchpoint = true;
@@ -2415,18 +2508,17 @@ static void arm_cpu_instance_init(Object *obj)
 static void cpu_register_class_init(ObjectClass *oc, void *data)
 {
     ARMCPUClass *acc = ARM_CPU_CLASS(oc);
+    CPUClass *cc = CPU_CLASS(acc);
 
     acc->info = data;
+    cc->gdb_core_xml_file = "arm-core.xml";
 }
 
 void arm_cpu_register(const ARMCPUInfo *info)
 {
     TypeInfo type_info = {
         .parent = TYPE_ARM_CPU,
-        .instance_size = sizeof(ARMCPU),
-        .instance_align = __alignof__(ARMCPU),
         .instance_init = arm_cpu_instance_init,
-        .class_size = sizeof(ARMCPUClass),
         .class_init = info->class_init ?: cpu_register_class_init,
         .class_data = (void *)info,
     };

@@ -1213,10 +1213,10 @@ struct ArchCPU {
     CPUState parent_obj;
     /*< public >*/
 
+    CPUMIPSState env;
+
     Clock *clock;
     Clock *count_div; /* Divider for CP0_Count clock */
-    CPUNegativeOffsetState neg;
-    CPUMIPSState env;
 };
 
 
@@ -1345,11 +1345,10 @@ uint64_t cpu_mips_phys_to_kseg1(void *opaque, uint64_t addr);
 
 #if !defined(CONFIG_USER_ONLY)
 
-/* mips_int.c */
+/* HW declaration specific to the MIPS target */
 void cpu_mips_soft_irq(CPUMIPSState *env, int irq, int level);
-
-/* mips_itu.c */
-void itc_reconfigure(struct MIPSITUState *tag);
+void cpu_mips_irq_init_cpu(MIPSCPU *cpu);
+void cpu_mips_clock_init(MIPSCPU *cpu);
 
 #endif /* !CONFIG_USER_ONLY */
 

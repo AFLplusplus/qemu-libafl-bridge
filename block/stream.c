@@ -172,7 +172,7 @@ static int coroutine_fn stream_run(Job *job, Error **errp)
         copy = false;
 
         WITH_GRAPH_RDLOCK_GUARD() {
-            ret = bdrv_is_allocated(unfiltered_bs, offset, STREAM_CHUNK, &n);
+            ret = bdrv_co_is_allocated(unfiltered_bs, offset, STREAM_CHUNK, &n);
             if (ret == 1) {
                 /* Allocated in the top, no need to copy.  */
             } else if (ret >= 0) {
@@ -180,9 +180,9 @@ static int coroutine_fn stream_run(Job *job, Error **errp)
                  * Copy if allocated in the intermediate images.  Limit to the
                  * known-unallocated area [offset, offset+n*BDRV_SECTOR_SIZE).
                  */
-                ret = bdrv_is_allocated_above(bdrv_cow_bs(unfiltered_bs),
-                                            s->base_overlay, true,
-                                            offset, n, &n);
+                ret = bdrv_co_is_allocated_above(bdrv_cow_bs(unfiltered_bs),
+                                                 s->base_overlay, true,
+                                                 offset, n, &n);
                 /* Finish early if end of backing file has been reached */
                 if (ret == 0 && n == 0) {
                     n = len - offset;
@@ -292,7 +292,6 @@ void stream_start(const char *job_id, BlockDriverState *bs,
     /* Make sure that the image is opened in read-write mode */
     bs_read_only = bdrv_is_read_only(bs);
     if (bs_read_only) {
-        int ret;
         /* Hold the chain during reopen */
         if (bdrv_freeze_backing_chain(bs, above_base, errp) < 0) {
             return;

@@ -57,7 +57,7 @@ static bool gen_load_gt(DisasContext *ctx, arg_rrr *a, MemOp mop)
     TCGv src1 = gpr_src(ctx, a->rj, EXT_NONE);
     TCGv src2 = gpr_src(ctx, a->rk, EXT_NONE);
 
-    gen_helper_asrtgt_d(cpu_env, src1, src2);
+    gen_helper_asrtgt_d(tcg_env, src1, src2);
     src1 = make_address_i(ctx, src1, 0);
     tcg_gen_qemu_ld_tl(dest, src1, ctx->mem_idx, mop);
     gen_set_gpr(a->rd, dest, EXT_NONE);
@@ -71,7 +71,7 @@ static bool gen_load_le(DisasContext *ctx, arg_rrr *a, MemOp mop)
     TCGv src1 = gpr_src(ctx, a->rj, EXT_NONE);
     TCGv src2 = gpr_src(ctx, a->rk, EXT_NONE);
 
-    gen_helper_asrtle_d(cpu_env, src1, src2);
+    gen_helper_asrtle_d(tcg_env, src1, src2);
     src1 = make_address_i(ctx, src1, 0);
     tcg_gen_qemu_ld_tl(dest, src1, ctx->mem_idx, mop);
     gen_set_gpr(a->rd, dest, EXT_NONE);
@@ -85,7 +85,7 @@ static bool gen_store_gt(DisasContext *ctx, arg_rrr *a, MemOp mop)
     TCGv src1 = gpr_src(ctx, a->rj, EXT_NONE);
     TCGv src2 = gpr_src(ctx, a->rk, EXT_NONE);
 
-    gen_helper_asrtgt_d(cpu_env, src1, src2);
+    gen_helper_asrtgt_d(tcg_env, src1, src2);
     src1 = make_address_i(ctx, src1, 0);
     tcg_gen_qemu_st_tl(data, src1, ctx->mem_idx, mop);
 
@@ -98,7 +98,7 @@ static bool gen_store_le(DisasContext *ctx, arg_rrr *a, MemOp mop)
     TCGv src1 = gpr_src(ctx, a->rj, EXT_NONE);
     TCGv src2 = gpr_src(ctx, a->rk, EXT_NONE);
 
-    gen_helper_asrtle_d(cpu_env, src1, src2);
+    gen_helper_asrtle_d(tcg_env, src1, src2);
     src1 = make_address_i(ctx, src1, 0);
     tcg_gen_qemu_st_tl(data, src1, ctx->mem_idx, mop);
 
@@ -106,6 +106,11 @@ static bool gen_store_le(DisasContext *ctx, arg_rrr *a, MemOp mop)
 }
 
 static bool trans_preld(DisasContext *ctx, arg_preld *a)
+{
+    return true;
+}
+
+static bool trans_preldx(DisasContext *ctx, arg_preldx * a)
 {
     return true;
 }

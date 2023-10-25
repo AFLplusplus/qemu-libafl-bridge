@@ -436,6 +436,30 @@ the process listing. This was replaced by the new ``password-secret``
 option which lets the password be securely provided on the command
 line using a ``secret`` object instance.
 
+``QEMU_AUDIO_`` environment variables and ``-audio-help`` (removed in 8.2)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+The ``-audiodev`` and ``-audio`` command line options are now the only
+way to specify audio backend settings.
+
+Using ``-audiodev`` to define the default audio backend (removed in 8.2)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+If no audiodev property is specified, previous versions would use the
+first ``-audiodev`` command line option as a fallback.  Starting with
+version 8.2, audio backends created with ``-audiodev`` will only be
+used by clients (sound cards, machines with embedded sound hardware, VNC)
+that refer to it in an ``audiodev=`` property.
+
+In order to configure a default audio backend, use the ``-audio``
+command line option without specifying a ``model``; while previous
+versions of QEMU required a model, starting with version 8.2
+QEMU does not require a model and will not create any sound card
+in this case.
+
+Note that the default audio backend must be configured on the command
+line if the ``-nodefaults`` options is used.
+
 QEMU Machine Protocol (QMP) commands
 ------------------------------------
 

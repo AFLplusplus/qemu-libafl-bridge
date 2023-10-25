@@ -34,13 +34,13 @@
 
 static void check_max_alignment(unsigned a_bits)
 {
-#if defined(CONFIG_SOFTMMU)
     /*
      * The requested alignment cannot overlap the TLB flags.
      * FIXME: Must keep the count up-to-date with "exec/cpu-all.h".
      */
-    tcg_debug_assert(a_bits + 5 <= tcg_ctx->page_bits);
-#endif
+    if (tcg_use_softmmu) {
+        tcg_debug_assert(a_bits + 5 <= tcg_ctx->page_bits);
+    }
 }
 
 static MemOp tcg_canonicalize_memop(MemOp op, bool is64, bool st)
@@ -442,10 +442,11 @@ void tcg_gen_qemu_st_i64_chk(TCGv_i64 val, TCGTemp *addr, TCGArg idx,
  */
 static bool use_two_i64_for_i128(MemOp mop)
 {
-#ifdef CONFIG_SOFTMMU
     /* Two softmmu tlb lookups is larger than one function call. */
-    return false;
-#else
+    if (tcg_use_softmmu) {
+        return false;
+    }
+
     /*
      * For user-only, two 64-bit operations may well be smaller than a call.
      * Determine if that would be legal for the requested atomicity.
@@ -463,7 +464,6 @@ static bool use_two_i64_for_i128(MemOp mop)
     default:
         g_assert_not_reached();
     }
-#endif
 }
 
 static void canonicalize_memop_i128_as_i64(MemOp ret[2], MemOp orig)
@@ -620,7 +620,7 @@ static void tcg_gen_qemu_ld_i128_int(TCGv_i128 val, TCGTemp *addr,
             tcg_gen_extu_i32_i64(ext_addr, temp_tcgv_i32(addr));
             addr = tcgv_i64_temp(ext_addr);
         }
-        gen_helper_ld_i128(val, cpu_env, temp_tcgv_i64(addr),
+        gen_helper_ld_i128(val, tcg_env, temp_tcgv_i64(addr),
                            tcg_constant_i32(orig_oi));
     }
 
@@ -729,7 +729,7 @@ static void tcg_gen_qemu_st_i128_int(TCGv_i128 val, TCGTemp *addr,
             tcg_gen_extu_i32_i64(ext_addr, temp_tcgv_i32(addr));
             addr = tcgv_i64_temp(ext_addr);
         }
-        gen_helper_st_i128(cpu_env, temp_tcgv_i64(addr), val,
+        gen_helper_st_i128(tcg_env, temp_tcgv_i64(addr), val,
                            tcg_constant_i32(orig_oi));
     }
 
@@ -745,7 +745,7 @@ void tcg_gen_qemu_st_i128_chk(TCGv_i128 val, TCGTemp *addr, TCGArg idx,
     tcg_gen_qemu_st_i128_int(val, addr, idx, memop);
 }
 
-static void tcg_gen_ext_i32(TCGv_i32 ret, TCGv_i32 val, MemOp opc)
+void tcg_gen_ext_i32(TCGv_i32 ret, TCGv_i32 val, MemOp opc)
 {
     switch (opc & MO_SSIZE) {
     case MO_SB:
@@ -760,13 +760,16 @@ static void tcg_gen_ext_i32(TCGv_i32 ret, TCGv_i32 val, MemOp opc)
     case MO_UW:
         tcg_gen_ext16u_i32(ret, val);
         break;
-    default:
+    case MO_UL:
+    case MO_SL:
         tcg_gen_mov_i32(ret, val);
         break;
+    default:
+        g_assert_not_reached();
     }
 }
 
-static void tcg_gen_ext_i64(TCGv_i64 ret, TCGv_i64 val, MemOp opc)
+void tcg_gen_ext_i64(TCGv_i64 ret, TCGv_i64 val, MemOp opc)
 {
     switch (opc & MO_SSIZE) {
     case MO_SB:
@@ -787,9 +790,12 @@ static void tcg_gen_ext_i64(TCGv_i64 ret, TCGv_i64 val, MemOp opc)
     case MO_UL:
         tcg_gen_ext32u_i64(ret, val);
         break;
-    default:
+    case MO_UQ:
+    case MO_SQ:
         tcg_gen_mov_i64(ret, val);
         break;
+    default:
+        g_assert_not_reached();
     }
 }
 
@@ -878,7 +884,7 @@ static void tcg_gen_atomic_cmpxchg_i32_int(TCGv_i32 retv, TCGTemp *addr,
 
     oi = make_memop_idx(memop & ~MO_SIGN, idx);
     a64 = maybe_extend_addr64(addr);
-    gen(retv, cpu_env, a64, cmpv, newv, tcg_constant_i32(oi));
+    gen(retv, tcg_env, a64, cmpv, newv, tcg_constant_i32(oi));
     maybe_free_addr64(a64);
 
     if (memop & MO_SIGN) {
@@ -958,12 +964,12 @@ static void tcg_gen_atomic_cmpxchg_i64_int(TCGv_i64 retv, TCGTemp *addr,
         if (gen) {
             MemOpIdx oi = make_memop_idx(memop, idx);
             TCGv_i64 a64 = maybe_extend_addr64(addr);
-            gen(retv, cpu_env, a64, cmpv, newv, tcg_constant_i32(oi));
+            gen(retv, tcg_env, a64, cmpv, newv, tcg_constant_i32(oi));
             maybe_free_addr64(a64);
             return;
         }
 
-        gen_helper_exit_atomic(cpu_env);
+        gen_helper_exit_atomic(tcg_env);
 
         /*
          * Produce a result for a well-formed opcode stream.  This satisfies
@@ -1021,7 +1027,7 @@ static void tcg_gen_nonatomic_cmpxchg_i128_int(TCGv_i128 retv, TCGTemp *addr,
         MemOpIdx oi = make_memop_idx(memop, idx);
         TCGv_i64 a64 = maybe_extend_addr64(addr);
 
-        gen_helper_nonatomic_cmpxchgo(retv, cpu_env, a64, cmpv, newv,
+        gen_helper_nonatomic_cmpxchgo(retv, tcg_env, a64, cmpv, newv,
                                       tcg_constant_i32(oi));
         maybe_free_addr64(a64);
     } else {
@@ -1080,12 +1086,12 @@ static void tcg_gen_atomic_cmpxchg_i128_int(TCGv_i128 retv, TCGTemp *addr,
     if (gen) {
         MemOpIdx oi = make_memop_idx(memop, idx);
         TCGv_i64 a64 = maybe_extend_addr64(addr);
-        gen(retv, cpu_env, a64, cmpv, newv, tcg_constant_i32(oi));
+        gen(retv, tcg_env, a64, cmpv, newv, tcg_constant_i32(oi));
         maybe_free_addr64(a64);
         return;
     }
 
-    gen_helper_exit_atomic(cpu_env);
+    gen_helper_exit_atomic(tcg_env);
 
     /*
      * Produce a result for a well-formed opcode stream.  This satisfies
@@ -1139,7 +1145,7 @@ static void do_atomic_op_i32(TCGv_i32 ret, TCGTemp *addr, TCGv_i32 val,
 
     oi = make_memop_idx(memop & ~MO_SIGN, idx);
     a64 = maybe_extend_addr64(addr);
-    gen(ret, cpu_env, a64, val, tcg_constant_i32(oi));
+    gen(ret, tcg_env, a64, val, tcg_constant_i32(oi));
     maybe_free_addr64(a64);
 
     if (memop & MO_SIGN) {
@@ -1177,12 +1183,12 @@ static void do_atomic_op_i64(TCGv_i64 ret, TCGTemp *addr, TCGv_i64 val,
         if (gen) {
             MemOpIdx oi = make_memop_idx(memop & ~MO_SIGN, idx);
             TCGv_i64 a64 = maybe_extend_addr64(addr);
-            gen(ret, cpu_env, a64, val, tcg_constant_i32(oi));
+            gen(ret, tcg_env, a64, val, tcg_constant_i32(oi));
             maybe_free_addr64(a64);
             return;
         }
 
-        gen_helper_exit_atomic(cpu_env);
+        gen_helper_exit_atomic(tcg_env);
         /* Produce a result, so that we have a well-formed opcode stream
            with respect to uses of the result in the (dead) code following.  */
         tcg_gen_movi_i64(ret, 0);

@@ -81,6 +81,16 @@
 void tcg_gen_callN(TCGHelperInfo *info, TCGTemp *ret, TCGTemp **args);
 
 target_ulong libafl_gen_cur_pc;
+int libafl_pc_synced;
+
+static void libafl_sync_pc(void) {
+    if (!libafl_pc_synced) {
+        TCGv_i64 tmp_pc = tcg_constant_i64((uint64_t)libafl_gen_cur_pc);
+        gen_helper_libafl_qemu_sync_pc(tcg_env, tmp_pc);
+        tcg_temp_free_i64(tmp_pc);
+        libafl_pc_synced = true;
+    }
+}
 
 TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
                                   target_ulong dst_block, int exit_n,
@@ -306,6 +316,8 @@ void libafl_gen_read(TCGTemp *addr, MemOpIdx oi)
 
     struct libafl_rw_hook* hook = libafl_read_hooks;
     while (hook) {
+        libafl_sync_pc();
+    
         uint64_t cur_id = 0;
         if (hook->gen)
             cur_id = hook->gen(libafl_gen_cur_pc, oi, hook->data);
@@ -411,6 +423,8 @@ void libafl_gen_write(TCGTemp *addr, MemOpIdx oi)
 
     struct libafl_rw_hook* hook = libafl_write_hooks;
     while (hook) {
+        libafl_sync_pc();
+    
         uint64_t cur_id = 0;
         if (hook->gen)
             cur_id = hook->gen(libafl_gen_cur_pc, oi, hook->data);
@@ -565,6 +579,8 @@ void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot)
 
     struct libafl_cmp_hook* hook = libafl_cmp_hooks;
     while (hook) {
+        libafl_sync_pc();
+    
         uint64_t cur_id = 0;
         if (hook->gen)
             cur_id = hook->gen(pc, size, hook->data);

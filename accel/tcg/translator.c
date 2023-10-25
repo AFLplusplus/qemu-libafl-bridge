@@ -124,6 +124,7 @@ static void gen_tb_end(const TranslationBlock *tb, uint32_t cflags,
 void tcg_gen_callN(TCGHelperInfo *info, TCGTemp *ret, TCGTemp **args);
 
 extern target_ulong libafl_gen_cur_pc;
+extern int libafl_pc_synced;
 
 struct libafl_breakpoint {
     target_ulong addr;
@@ -214,8 +215,16 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 
         //// --- Begin LibAFL code ---
 
+        libafl_gen_cur_pc = db->pc_next;
+        libafl_pc_synced = false;
+
         struct libafl_hook* hk = libafl_search_hook(db->pc_next);
         if (hk) {
+            TCGv_i64 tmp_pc = tcg_constant_i64((uint64_t)db->pc_next);
+            gen_helper_libafl_qemu_sync_pc(tcg_env, tmp_pc);
+            libafl_pc_synced = true;
+            tcg_temp_free_i64(tmp_pc);
+        
             TCGv_i64 tmp1 = tcg_constant_i64(hk->data);
 #if TARGET_LONG_BITS == 32
             TCGv_i32 tmp0 = tcg_constant_i32(db->pc_next);
@@ -237,14 +246,17 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
         struct libafl_breakpoint* bp = libafl_qemu_breakpoints;
         while (bp) {
             if (bp->addr == db->pc_next) {
-                TCGv_i64 tmp0 = tcg_constant_i64((uint64_t)db->pc_next);
-                gen_helper_libafl_qemu_handle_breakpoint(tcg_env, tmp0);
-                tcg_temp_free_i64(tmp0);
+                TCGv_i64 tmp_pc = tcg_constant_i64((uint64_t)db->pc_next);
+                if (!libafl_pc_synced) {
+                    gen_helper_libafl_qemu_sync_pc(tcg_env, tmp_pc);
+                    libafl_pc_synced = true;
+                }
+            
+                gen_helper_libafl_qemu_handle_breakpoint(tcg_env, tmp_pc);
+                tcg_temp_free_i64(tmp_pc);
             }
             bp = bp->next;
         }
-
-        libafl_gen_cur_pc = db->pc_next;
 
         // 0x0f, 0x3a, 0xf2, 0x44
         uint8_t backdoor = translator_ldub(cpu_env(cpu), db, db->pc_next);
@@ -257,6 +269,13 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
                     if (backdoor == 0x44) {
                         struct libafl_backdoor_hook* hk = libafl_backdoor_hooks;
                         while (hk) {
+                            if (!libafl_pc_synced) {
+                                TCGv_i64 tmp_pc = tcg_constant_i64((uint64_t)db->pc_next);
+                                gen_helper_libafl_qemu_sync_pc(tcg_env, tmp_pc);
+                                libafl_pc_synced = true;
+                                tcg_temp_free_i64(tmp_pc);
+                            }
+                        
                             TCGv_i64 tmp1 = tcg_constant_i64(hk->data);
 #if TARGET_LONG_BITS == 32
                             TCGv_i32 tmp0 = tcg_constant_i32(db->pc_next);
@@ -282,7 +301,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
                 }
             }
         }
-
+        
         //// --- End LibAFL code ---
 
         /* Disassemble one instruction.  The translate_insn hook should
@@ -296,6 +315,12 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
         ops->translate_insn(db, cpu);
 
 post_translate_insn:
+        //// --- Begin LibAFL code ---
+        
+        libafl_gen_cur_pc = 0;
+
+        //// --- End LibAFL code ---
+
         /*
          * We can't instrument after instructions that change control
          * flow although this only really affects post-load operations.

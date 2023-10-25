@@ -178,6 +178,13 @@ void HELPER(libafl_qemu_handle_breakpoint)(CPUArchState *env, uint64_t pc)
     libafl_qemu_trigger_breakpoint(cpu);
 }
 
+void HELPER(libafl_qemu_sync_pc)(CPUArchState *env, uint64_t pc)
+{
+    CPUState* cpu = env_cpu(env);
+    CPUClass* cc = CPU_GET_CLASS(cpu);
+    cc->set_pc(cpu, THUMB_MASK(((target_ulong)pc)));
+}
+
 //// --- End LibAFL code ---
 
 /* 32-bit helpers */

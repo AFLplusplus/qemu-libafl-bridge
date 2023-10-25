@@ -132,10 +132,10 @@ void libafl_load_qemu_snapshot(char *name, bool sync)
 
 #define EXCP_LIBAFL_BP 0xf4775747
 
-int libafl_qemu_break_asap = 0;
+__thread int libafl_qemu_break_asap = 0;
 
-CPUState* libafl_breakpoint_cpu;
-vaddr libafl_breakpoint_pc;
+__thread CPUState* libafl_breakpoint_cpu;
+__thread vaddr libafl_breakpoint_pc;
 
 #ifdef TARGET_ARM
 #define THUMB_MASK(value) (value | libafl_breakpoint_cpu->env_ptr->thumb)
@@ -167,7 +167,7 @@ void libafl_qemu_trigger_breakpoint(CPUState* cpu)
         cpu->exception_index = EXCP_LIBAFL_BP;
         cpu_loop_exit(cpu);
     } else {
-        libafl_qemu_break_asap = 1;
+        libafl_qemu_break_asap = 1;//TODO add a field to CPU
     }
 }
 

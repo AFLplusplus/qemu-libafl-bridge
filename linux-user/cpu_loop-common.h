@@ -25,7 +25,7 @@
 
 //// --- Begin LibAFL code ---
 
-extern int libafl_qemu_break_asap;
+extern __thread int libafl_qemu_break_asap;
 
 //// --- End LibAFL code ---
 

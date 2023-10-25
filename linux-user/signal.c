@@ -695,8 +695,7 @@ void cpu_loop_exit_sigbus(CPUState *cpu, target_ulong addr,
 
 //// --- Begin LibAFL code ---
 
-__attribute__((weak)) void libafl_executor_reinstall_handlers(void);
-__attribute__((weak)) void libafl_executor_reinstall_handlers(void) {}
+void (*libafl_dump_core_hook)(int target_sig);
 
 //// --- End LibAFL code ---
 
@@ -746,7 +745,7 @@ void dump_core_and_abort(CPUArchState *cpu_env, int target_sig)
 
 //// --- Begin LibAFL code ---
 
-    libafl_executor_reinstall_handlers();
+    if (libafl_dump_core_hook) libafl_dump_core_hook(target_sig);
 
 //// --- End LibAFL code ---
 

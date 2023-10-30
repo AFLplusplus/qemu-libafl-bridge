@@ -393,7 +393,9 @@ void syx_snapshot_dirty_list_add_hostaddr(void* host_addr) {
     ram_addr_t offset;
     RAMBlock* rb = qemu_ram_block_from_host((void*) host_addr, true, &offset);
 
+#ifdef CONFIG_DEBUG_TCG
     assert(rb);
+#endif
     
     hwaddr paddr = rb->mr->addr + offset;
     // If this assert is ever false, please understand why

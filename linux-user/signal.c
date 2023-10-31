@@ -1204,6 +1204,12 @@ int do_sigaction(int sig, const struct target_sigaction *act,
     return ret;
 }
 
+//// --- Start LibAFL code ---
+
+int libafl_force_dfl = 0;
+
+//// --- End LibAFL code ---
+
 static void handle_pending_signal(CPUArchState *cpu_env, int sig,
                                   struct emulated_sigtable *k)
 {
@@ -1230,8 +1236,18 @@ static void handle_pending_signal(CPUArchState *cpu_env, int sig,
     if (unlikely(qemu_loglevel_mask(LOG_STRACE))) {
         print_taken_signal(sig, &k->info);
     }
+    
+    //// --- Start LibAFL code ---
+    
+    int ignore_handling = 0;
+    if (libafl_force_dfl && (sig == SIGABRT || sig == SIGABRT|| sig == SIGSEGV
+                            || sig == SIGILL || sig == SIGBUS)) {
+        ignore_handling = 1;
+    }
+    
+    //// --- End LibAFL code ---
 
-    if (handler == TARGET_SIG_DFL) {
+    if (handler == TARGET_SIG_DFL || ignore_handling) {
         /* default handler : ignore some signal. The other are job control or fatal */
         if (sig == TARGET_SIGTSTP || sig == TARGET_SIGTTIN || sig == TARGET_SIGTTOU) {
             kill(getpid(),SIGSTOP);

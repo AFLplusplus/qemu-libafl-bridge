@@ -96,7 +96,11 @@ int libafl_qemu_remove_hook(size_t num, int invalidate);
 struct libafl_hook* libafl_search_hook(target_ulong addr);
 void libafl_flush_jit(void);
 
+#ifdef CONFIG_USER_ONLY
 extern __thread CPUState* libafl_breakpoint_cpu;
+#else
+extern CPUState* libafl_breakpoint_cpu;
+#endif
 
 extern int libafl_restoring_devices;
 

@@ -714,7 +714,7 @@ int vm_prepare_start(bool step_pending)
 
 //// --- Begin LibAFL code ---
 
-extern __thread CPUState* libafl_breakpoint_cpu;
+extern CPUState* libafl_breakpoint_cpu;
 
 //// --- End LibAFL code ---
 

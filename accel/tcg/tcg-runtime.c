@@ -132,10 +132,15 @@ void libafl_load_qemu_snapshot(char *name, bool sync)
 
 #define EXCP_LIBAFL_BP 0xf4775747
 
+#ifdef CONFIG_USER_ONLY
 __thread int libafl_qemu_break_asap = 0;
-
 __thread CPUState* libafl_breakpoint_cpu;
 __thread vaddr libafl_breakpoint_pc;
+#else
+int libafl_qemu_break_asap = 0;
+CPUState* libafl_breakpoint_cpu;
+vaddr libafl_breakpoint_pc;
+#endif
 
 #ifdef TARGET_ARM
 #define THUMB_MASK(value) (value | cpu_env(libafl_breakpoint_cpu)->thumb)

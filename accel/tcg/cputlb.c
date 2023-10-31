@@ -1830,7 +1830,8 @@ static bool mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
 
         //// --- Begin LibAFL code ---
 
-        if (type == MMU_DATA_STORE) {
+        // TODO: check if the second condition solves faulty dirty address report
+        if (type == MMU_DATA_STORE && !(flags & (TLB_INVALID_MASK | TLB_MMIO))) {
             syx_snapshot_dirty_list_add_hostaddr(l->page[0].haddr);
         }
 

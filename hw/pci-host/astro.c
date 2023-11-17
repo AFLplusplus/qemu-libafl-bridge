@@ -19,6 +19,8 @@
 
 #define TYPE_ASTRO_IOMMU_MEMORY_REGION "astro-iommu-memory-region"
 
+#define F_EXTEND(addr) ((addr) | MAKE_64BIT_MASK(32, 32))
+
 #include "qemu/osdep.h"
 #include "qemu/module.h"
 #include "qemu/units.h"
@@ -30,6 +32,7 @@
 #include "hw/pci-host/astro.h"
 #include "hw/hppa/hppa_hardware.h"
 #include "migration/vmstate.h"
+#include "target/hppa/cpu.h"
 #include "trace.h"
 #include "qom/object.h"
 
@@ -266,22 +269,6 @@ static const MemoryRegionOps elroy_config_addr_ops = {
 };
 
 
-/*
- * A subroutine of astro_translate_iommu that builds an IOMMUTLBEntry using the
- * given translated address and mask.
- */
-static bool make_iommu_tlbe(hwaddr addr, hwaddr taddr, hwaddr mask,
-                            IOMMUTLBEntry *ret)
-{
-    hwaddr tce_mask = ~((1ull << 12) - 1);
-    ret->target_as = &address_space_memory;
-    ret->iova = addr & tce_mask;
-    ret->translated_addr = taddr & tce_mask;
-    ret->addr_mask = ~tce_mask;
-    ret->perm = IOMMU_RW;
-    return true;
-}
-
 /* Handle PCI-to-system address translation.  */
 static IOMMUTLBEntry astro_translate_iommu(IOMMUMemoryRegion *iommu,
                                              hwaddr addr,
@@ -289,53 +276,59 @@ static IOMMUTLBEntry astro_translate_iommu(IOMMUMemoryRegion *iommu,
                                              int iommu_idx)
 {
     AstroState *s = container_of(iommu, AstroState, iommu);
-    IOMMUTLBEntry ret = {
-        .target_as = &address_space_memory,
-        .iova = addr,
-        .translated_addr = 0,
-        .addr_mask = ~(hwaddr)0,
-        .perm = IOMMU_NONE,
-    };
-    hwaddr pdir_ptr, index, a, ibase;
+    hwaddr pdir_ptr, index, ibase;
     hwaddr addr_mask = 0xfff; /* 4k translation */
     uint64_t entry;
 
 #define IOVP_SHIFT              12   /* equals PAGE_SHIFT */
 #define PDIR_INDEX(iovp)        ((iovp) >> IOVP_SHIFT)
-#define IOVP_MASK               PAGE_MASK
 #define SBA_PDIR_VALID_BIT      0x8000000000000000ULL
+
+    addr &= ~addr_mask;
+
+    /*
+     * Default translation: "32-bit PCI Addressing on 40-bit Runway".
+     * For addresses in the 32-bit memory address range ... and then
+     * language which not-coincidentally matches the PSW.W=0 mapping.
+     */
+    if (addr <= UINT32_MAX) {
+        entry = hppa_abs_to_phys_pa2_w0(addr);
+    } else {
+        entry = addr;
+    }
 
     /* "range enable" flag cleared? */
     if ((s->tlb_ibase & 1) == 0) {
-        make_iommu_tlbe(addr, addr, addr_mask, &ret);
-        return ret;
+        goto skip;
     }
 
-    a = addr;
     ibase = s->tlb_ibase & ~1ULL;
-    if ((a & s->tlb_imask) != ibase) {
+    if ((addr & s->tlb_imask) != ibase) {
         /* do not translate this one! */
-        make_iommu_tlbe(addr, addr, addr_mask, &ret);
-        return ret;
+        goto skip;
     }
-    index = PDIR_INDEX(a);
+
+    index = PDIR_INDEX(addr);
     pdir_ptr = s->tlb_pdir_base + index * sizeof(entry);
     entry = ldq_le_phys(&address_space_memory, pdir_ptr);
+
     if (!(entry & SBA_PDIR_VALID_BIT)) { /* I/O PDIR entry valid ? */
-        g_assert_not_reached();
-        goto failure;
+        /* failure */
+        return (IOMMUTLBEntry) { .perm = IOMMU_NONE };
     }
+
     entry &= ~SBA_PDIR_VALID_BIT;
     entry >>= IOVP_SHIFT;
     entry <<= 12;
-    entry |= addr & 0xfff;
-    make_iommu_tlbe(addr, entry, addr_mask, &ret);
-    goto success;
 
- failure:
-    ret = (IOMMUTLBEntry) { .perm = IOMMU_NONE };
- success:
-    return ret;
+ skip:
+    return (IOMMUTLBEntry) {
+        .target_as = &address_space_memory,
+        .iova = addr,
+        .translated_addr = entry,
+        .addr_mask = addr_mask,
+        .perm = IOMMU_RW,
+    };
 }
 
 static AddressSpace *elroy_pcihost_set_iommu(PCIBus *bus, void *opaque,
@@ -344,6 +337,10 @@ static AddressSpace *elroy_pcihost_set_iommu(PCIBus *bus, void *opaque,
     ElroyState *s = opaque;
     return &s->astro->iommu_as;
 }
+
+static const PCIIOMMUOps elroy_pcihost_iommu_ops = {
+    .get_address_space = elroy_pcihost_set_iommu,
+};
 
 /*
  * Encoding in IOSAPIC:
@@ -382,7 +379,7 @@ static void elroy_set_irq(void *opaque, int irq, int level)
         uint32_t ena = bit & ~old_ilr;
         s->ilr = old_ilr | bit;
         if (ena != 0) {
-            stl_be_phys(&address_space_memory, cpu_hpa, val & 63);
+            stl_be_phys(&address_space_memory, F_EXTEND(cpu_hpa), val & 63);
         }
     } else {
         s->ilr = old_ilr & ~bit;
@@ -821,20 +818,21 @@ static void astro_realize(DeviceState *obj, Error **errp)
 
         /* map elroys mmio */
         map_size = LMMIO_DIST_BASE_SIZE / ROPES_PER_IOC;
-        map_addr = (uint32_t) (LMMIO_DIST_BASE_ADDR + rope * map_size);
+        map_addr = F_EXTEND(LMMIO_DIST_BASE_ADDR + rope * map_size);
         memory_region_init_alias(&elroy->pci_mmio_alias, OBJECT(elroy),
                                  "pci-mmio-alias",
-                                 &elroy->pci_mmio, map_addr, map_size);
+                                 &elroy->pci_mmio, (uint32_t) map_addr, map_size);
         memory_region_add_subregion(get_system_memory(), map_addr,
                                  &elroy->pci_mmio_alias);
 
+        /* map elroys io */
         map_size = IOS_DIST_BASE_SIZE / ROPES_PER_IOC;
-        map_addr = (uint32_t) (IOS_DIST_BASE_ADDR + rope * map_size);
+        map_addr = F_EXTEND(IOS_DIST_BASE_ADDR + rope * map_size);
         memory_region_add_subregion(get_system_memory(), map_addr,
                                  &elroy->pci_io);
 
         /* Host memory as seen from the PCI side, via the IOMMU.  */
-        pci_setup_iommu(PCI_HOST_BRIDGE(elroy)->bus, elroy_pcihost_set_iommu,
+        pci_setup_iommu(PCI_HOST_BRIDGE(elroy)->bus, &elroy_pcihost_iommu_ops,
                                  elroy);
     }
 }

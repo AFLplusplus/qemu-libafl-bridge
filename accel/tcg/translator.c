@@ -89,7 +89,7 @@ static TCGOp *gen_tb_start(DisasContextBase *db, uint32_t cflags)
      * each translation block.  The cost is minimal, plus it would be
      * very easy to forget doing it in the translator.
      */
-    set_can_do_io(db, db->max_insns == 1 && (cflags & CF_LAST_IO));
+    set_can_do_io(db, db->max_insns == 1);
 
     return icount_start_insn;
 }
@@ -194,13 +194,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     ops->tb_start(db, cpu);
     tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
 
-    if (cflags & CF_MEMI_ONLY) {
-        /* We should only see CF_MEMI_ONLY for io_recompile. */
-        assert(cflags & CF_LAST_IO);
-        plugin_enabled = plugin_gen_tb_start(cpu, db, true);
-    } else {
-        plugin_enabled = plugin_gen_tb_start(cpu, db, false);
-    }
+    plugin_enabled = plugin_gen_tb_start(cpu, db, cflags & CF_MEMI_ONLY);
     db->plugin_enabled = plugin_enabled;
 
     while (true) {
@@ -255,9 +249,9 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
                 if (backdoor == 0xf2) {
                     backdoor = translator_ldub(cpu_env(cpu), db, db->pc_next +3);
                     if (backdoor == 0x44) {
-                        struct libafl_backdoor_hook* hk = libafl_backdoor_hooks;
-                        while (hk) {
-                            TCGv_i64 tmp1 = tcg_constant_i64(hk->data);
+                        struct libafl_backdoor_hook* bhk = libafl_backdoor_hooks;
+                        while (bhk) {
+                            TCGv_i64 tmp1 = tcg_constant_i64(bhk->data);
 #if TARGET_LONG_BITS == 32
                             TCGv_i32 tmp0 = tcg_constant_i32(db->pc_next);
                             TCGTemp *tmp2[2] = { tcgv_i32_temp(tmp0), tcgv_i64_temp(tmp1) };
@@ -265,15 +259,15 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
                             TCGv_i64 tmp0 = tcg_constant_i64(db->pc_next);
                             TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
 #endif
-                            // tcg_gen_callN(hk->exec, NULL, 2, tmp2);
-                            tcg_gen_callN(&hk->helper_info, NULL, tmp2);
+                            // tcg_gen_callN(bhk->exec, NULL, 2, tmp2);
+                            tcg_gen_callN(&bhk->helper_info, NULL, tmp2);
 #if TARGET_LONG_BITS == 32
                             tcg_temp_free_i32(tmp0);
 #else
                             tcg_temp_free_i64(tmp0);
 #endif
                             tcg_temp_free_i64(tmp1);
-                            hk = hk->next;
+                            bhk = bhk->next;
                         }
 
                         db->pc_next += 4;
@@ -285,11 +279,13 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 
         //// --- End LibAFL code ---
 
-        /* Disassemble one instruction.  The translate_insn hook should
-           update db->pc_next and db->is_jmp to indicate what should be
-           done next -- either exiting this loop or locate the start of
-           the next instruction.  */
-        if (db->num_insns == db->max_insns && (cflags & CF_LAST_IO)) {
+        /*
+         * Disassemble one instruction.  The translate_insn hook should
+         * update db->pc_next and db->is_jmp to indicate what should be
+         * done next -- either exiting this loop or locate the start of
+         * the next instruction.
+         */
+        if (db->num_insns == db->max_insns) {
             /* Accept I/O on the last instruction.  */
             set_can_do_io(db, true);
         }

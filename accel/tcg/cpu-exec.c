@@ -741,7 +741,7 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
             && cpu->neg.icount_decr.u16.low + cpu->icount_extra == 0) {
             /* Execute just one insn to trigger exception pending in the log */
             cpu->cflags_next_tb = (curr_cflags(cpu) & ~CF_USE_ICOUNT)
-                | CF_LAST_IO | CF_NOIRQ | 1;
+                | CF_NOIRQ | 1;
         }
 #endif
         return false;
@@ -1074,31 +1074,40 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 last_tb = NULL;
             }
 #endif
+
+            //// --- Begin LibAFL code ---
+
+            int has_libafl_edge = 0;
+            TranslationBlock *edge;
+
             /* See if we can patch the calling TB. */
             if (last_tb) {
                 // tb_add_jump(last_tb, tb_exit, tb);
                 
-                //// --- Begin LibAFL code ---
-
                 if (last_tb->jmp_reset_offset[1] != TB_JMP_OFFSET_INVALID) {
                     mmap_lock();
-                    TranslationBlock *edge = libafl_gen_edge(cpu, last_tb_pc, pc, tb_exit, cs_base, flags, cflags);
+                    edge = libafl_gen_edge(cpu, last_tb_pc, pc, tb_exit, cs_base, flags, cflags);
                     mmap_unlock();
 
                     if (edge) {
                         tb_add_jump(last_tb, tb_exit, edge);
                         tb_add_jump(edge, 0, tb);
+                        has_libafl_edge = 1;
                     } else {
                         tb_add_jump(last_tb, tb_exit, tb);
                     }
                 } else {
                     tb_add_jump(last_tb, tb_exit, tb);
                 }
-
-                //// --- End LibAFL code ---
             }
 
-            cpu_loop_exec_tb(cpu, tb, pc, &last_tb, &tb_exit, &last_tb_pc);
+            if (has_libafl_edge) {
+                cpu_loop_exec_tb(cpu, edge, last_tb_pc, &last_tb, &tb_exit, &last_tb_pc);
+            } else {
+                cpu_loop_exec_tb(cpu, tb, pc, &last_tb, &tb_exit, &last_tb_pc);
+            }
+
+            //// --- End LibAFL code ---
 
             /* Try to align the host and virtual clocks
                if the guest is in advance */

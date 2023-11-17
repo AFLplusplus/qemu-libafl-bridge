@@ -131,6 +131,17 @@ K: ^Subject:.*(?i)mips
 F: docs/system/target-mips.rst
 F: configs/targets/mips*
 
+X86 general architecture support
+M: Paolo Bonzini <pbonzini@redhat.com>
+S: Maintained
+F: configs/devices/i386-softmmu/default.mak
+F: configs/targets/i386-softmmu.mak
+F: configs/targets/x86_64-softmmu.mak
+F: docs/system/target-i386*
+F: target/i386/*.[ch]
+F: target/i386/Kconfig
+F: target/i386/meson.build
+
 Guest CPU cores (TCG)
 ---------------------
 Overall TCG CPUs
@@ -323,7 +334,7 @@ RISC-V TCG CPUs
 M: Palmer Dabbelt <palmer@dabbelt.com>
 M: Alistair Francis <alistair.francis@wdc.com>
 M: Bin Meng <bin.meng@windriver.com>
-R: Weiwei Li <liweiwei@iscas.ac.cn>
+R: Weiwei Li <liwei1518@gmail.com>
 R: Daniel Henrique Barboza <dbarboza@ventanamicro.com>
 R: Liu Zhiwei <zhiwei_liu@linux.alibaba.com>
 L: qemu-riscv@nongnu.org
@@ -490,7 +501,7 @@ S: Supported
 F: include/sysemu/kvm_xen.h
 F: target/i386/kvm/xen*
 F: hw/i386/kvm/xen*
-F: tests/avocado/xen_guest.py
+F: tests/avocado/kvm_xen_guest.py
 
 Guest CPU Cores (other accelerators)
 ------------------------------------
@@ -657,6 +668,7 @@ F: include/hw/dma/pl080.h
 F: hw/dma/pl330.c
 F: hw/gpio/pl061.c
 F: hw/input/pl050.c
+F: include/hw/input/pl050.h
 F: hw/intc/pl190.c
 F: hw/sd/pl181.c
 F: hw/ssi/pl022.c
@@ -687,7 +699,7 @@ M: Peter Maydell <peter.maydell@linaro.org>
 L: qemu-arm@nongnu.org
 S: Maintained
 F: hw/intc/arm*
-F: hw/intc/gic_internal.h
+F: hw/intc/gic*_internal.h
 F: hw/misc/a9scu.c
 F: hw/misc/arm11scu.c
 F: hw/misc/arm_l2x0.c
@@ -859,8 +871,10 @@ M: Hao Wu <wuhaotsh@google.com>
 L: qemu-arm@nongnu.org
 S: Supported
 F: hw/*/npcm*
+F: hw/sensor/adm1266.c
 F: include/hw/*/npcm*
 F: tests/qtest/npcm*
+F: tests/qtest/adm1266-test.c
 F: pc-bios/npcm7xx_bootrom.bin
 F: roms/vbootrom
 F: docs/system/arm/nuvoton.rst
@@ -925,6 +939,7 @@ F: hw/*/pxa2xx*
 F: hw/display/tc6393xb.c
 F: hw/gpio/max7310.c
 F: hw/gpio/zaurus.c
+F: hw/input/ads7846.c
 F: hw/misc/mst_fpga.c
 F: hw/adc/max111x.c
 F: include/hw/adc/max111x.h
@@ -977,7 +992,9 @@ M: Peter Maydell <peter.maydell@linaro.org>
 L: qemu-arm@nongnu.org
 S: Maintained
 F: hw/*/stellaris*
+F: hw/display/ssd03*
 F: include/hw/input/gamepad.h
+F: include/hw/timer/stellaris-gptm.h
 F: docs/system/arm/stellaris.rst
 
 STM32VLDISCOVERY
@@ -992,6 +1009,7 @@ M: Peter Maydell <peter.maydell@linaro.org>
 L: qemu-arm@nongnu.org
 S: Maintained
 F: hw/arm/vexpress.c
+F: hw/display/sii9022.c
 F: docs/system/arm/vexpress.rst
 
 Versatile PB
@@ -1131,7 +1149,7 @@ F: docs/system/arm/emcraft-sf2.rst
 ASPEED BMCs
 M: Cédric Le Goater <clg@kaod.org>
 M: Peter Maydell <peter.maydell@linaro.org>
-R: Andrew Jeffery <andrew@aj.id.au>
+R: Andrew Jeffery <andrew@codeconstruct.com.au>
 R: Joel Stanley <joel@jms.id.au>
 L: qemu-arm@nongnu.org
 S: Maintained
@@ -1192,6 +1210,7 @@ M: Richard Henderson <richard.henderson@linaro.org>
 R: Helge Deller <deller@gmx.de>
 S: Odd Fixes
 F: configs/devices/hppa-softmmu/default.mak
+F: hw/display/artist.c
 F: hw/hppa/
 F: hw/input/lasips2.c
 F: hw/net/*i82596*
@@ -1283,6 +1302,7 @@ F: include/hw/char/goldfish_tty.h
 F: include/hw/intc/goldfish_pic.h
 F: include/hw/intc/m68k_irqc.h
 F: include/hw/misc/virt_ctrl.h
+F: docs/specs/virt-ctlr.rst
 
 MicroBlaze Machines
 -------------------
@@ -1535,6 +1555,14 @@ F: hw/pci-host/mv64361.c
 F: hw/pci-host/mv643xx.h
 F: include/hw/pci-host/mv64361.h
 
+amigaone
+M: BALATON Zoltan <balaton@eik.bme.hu>
+L: qemu-ppc@nongnu.org
+S: Maintained
+F: hw/ppc/amigaone.c
+F: hw/pci-host/articia.c
+F: include/hw/pci-host/articia.h
+
 Virtual Open Firmware (VOF)
 M: Alexey Kardashevskiy <aik@ozlabs.ru>
 R: David Gibson <david@gibson.dropbear.id.au>
@@ -1614,6 +1642,7 @@ F: hw/intc/sh_intc.c
 F: hw/pci-host/sh_pci.c
 F: hw/timer/sh_timer.c
 F: include/hw/sh4/sh_intc.h
+F: include/hw/timer/tmu012.h
 
 Shix
 R: Yoshinori Sato <ysato@users.sourceforge.jp>
@@ -1771,7 +1800,7 @@ F: include/hw/southbridge/ich9.h
 F: include/hw/southbridge/piix.h
 F: hw/isa/apm.c
 F: include/hw/isa/apm.h
-F: tests/unit/test-x86-cpuid.c
+F: tests/unit/test-x86-topo.c
 F: tests/qtest/test-x86-cpuid-compat.c
 
 PC Chipset
@@ -1857,6 +1886,7 @@ M: Max Filippov <jcmvbkbc@gmail.com>
 S: Maintained
 F: hw/xtensa/xtfpga.c
 F: hw/net/opencores_eth.c
+F: include/hw/xtensa/mx_pic.h
 
 Devices
 -------
@@ -1882,6 +1912,7 @@ EDU
 M: Jiri Slaby <jslaby@suse.cz>
 S: Maintained
 F: hw/misc/edu.c
+F: docs/specs/edu.rst
 
 IDE
 M: John Snow <jsnow@redhat.com>
@@ -2226,7 +2257,7 @@ M: Stefan Hajnoczi <stefanha@redhat.com>
 S: Supported
 F: hw/virtio/vhost-user-fs*
 F: include/hw/virtio/vhost-user-fs.h
-L: virtio-fs@redhat.com
+L: virtio-fs@lists.linux.dev
 
 virtio-input
 M: Gerd Hoffmann <kraxel@redhat.com>
@@ -2308,6 +2339,15 @@ F: hw/virtio/virtio-mem-pci.h
 F: hw/virtio/virtio-mem-pci.c
 F: include/hw/virtio/virtio-mem.h
 
+virtio-snd
+M: Gerd Hoffmann <kraxel@redhat.com>
+R: Manos Pitsidianakis <manos.pitsidianakis@linaro.org>
+S: Supported
+F: hw/audio/virtio-snd.c
+F: hw/audio/virtio-snd-pci.c
+F: include/hw/audio/virtio-snd.h
+F: docs/system/devices/virtio-snd.rst
+
 nvme
 M: Keith Busch <kbusch@kernel.org>
 M: Klaus Jensen <its@irrelevant.dk>
@@ -2350,6 +2390,7 @@ S: Maintained
 F: hw/net/vmxnet*
 F: hw/scsi/vmw_pvscsi*
 F: tests/qtest/vmxnet3-test.c
+F: docs/specs/vwm_pvscsi-spec.rst
 
 Rocker
 M: Jiri Pirko <jiri@resnulli.us>
@@ -2434,7 +2475,7 @@ S: Orphan
 R: Ani Sinha <ani@anisinha.ca>
 F: hw/acpi/vmgenid.c
 F: include/hw/acpi/vmgenid.h
-F: docs/specs/vmgenid.txt
+F: docs/specs/vmgenid.rst
 F: tests/qtest/vmgenid-test.c
 
 LED
@@ -2466,6 +2507,7 @@ F: hw/display/vga*
 F: hw/display/bochs-display.c
 F: include/hw/display/vga.h
 F: include/hw/display/bochs-vbe.h
+F: docs/specs/standard-vga.rst
 
 ramfb
 M: Gerd Hoffmann <kraxel@redhat.com>
@@ -2479,6 +2521,7 @@ S: Odd Fixes
 F: hw/display/virtio-gpu*
 F: hw/display/virtio-vga.*
 F: include/hw/virtio/virtio-gpu.h
+F: docs/system/devices/virtio-gpu.rst
 
 vhost-user-blk
 M: Raphael Norwitz <raphael.norwitz@nutanix.com>
@@ -2581,6 +2624,7 @@ W: https://canbus.pages.fel.cvut.cz/
 F: net/can/*
 F: hw/net/can/*
 F: include/net/can_*.h
+F: docs/system/devices/can.rst
 
 OpenPIC interrupt controller
 M: Mark Cave-Ayland <mark.cave-ayland@ilande.co.uk>
@@ -2651,6 +2695,14 @@ R: Canokeys.org <contact@canokeys.org>
 F: hw/usb/canokey.c
 F: hw/usb/canokey.h
 F: docs/system/devices/canokey.rst
+
+Hyper-V Dynamic Memory Protocol
+M: Maciej S. Szmigiero <maciej.szmigiero@oracle.com>
+S: Supported
+F: hw/hyperv/hv-balloon*.c
+F: hw/hyperv/hv-balloon*.h
+F: include/hw/hyperv/dynmem-proto.h
+F: include/hw/hyperv/hv-balloon.h
 
 Subsystems
 ----------
@@ -2755,12 +2807,13 @@ S: Supported
 F: util/async.c
 F: util/aio-*.c
 F: util/aio-*.h
+F: util/defer-call.c
 F: util/fdmon-*.c
 F: block/io.c
-F: block/plug.c
 F: migration/block*
 F: include/block/aio.h
 F: include/block/aio-wait.h
+F: include/qemu/defer-call.h
 F: scripts/qemugdb/aio.py
 F: tests/unit/test-fdmon-epoll.c
 T: git https://github.com/stefanha/qemu.git block
@@ -2879,6 +2932,7 @@ F: include/sysemu/dump.h
 F: qapi/dump.json
 F: scripts/dump-guest-memory.py
 F: stubs/dump.c
+F: docs/specs/vmcoreinfo.rst
 
 Error reporting
 M: Markus Armbruster <armbru@redhat.com>
@@ -2904,7 +2958,7 @@ F: gdbstub/*
 F: include/exec/gdbstub.h
 F: include/gdbstub/*
 F: gdb-xml/
-F: tests/tcg/multiarch/gdbstub/
+F: tests/tcg/multiarch/gdbstub/*
 F: scripts/feature_to_c.py
 F: scripts/probe-gdb-support.py
 
@@ -3126,10 +3180,11 @@ M: Michael Roth <michael.roth@amd.com>
 M: Konstantin Kostiuk <kkostiuk@redhat.com>
 S: Maintained
 F: qga/
+F: contrib/systemd/qemu-guest-agent.service
 F: docs/interop/qemu-ga.rst
 F: docs/interop/qemu-ga-ref.rst
 F: scripts/qemu-guest-agent/
-F: tests/unit/test-qga.c
+F: tests/*/test-qga*
 T: git https://github.com/mdroth/qemu.git qga
 
 QEMU Guest Agent Win32
@@ -4039,7 +4094,7 @@ F: gitdm.config
 F: contrib/gitdm/*
 
 Incompatible changes
-R: libvir-list@redhat.com
+R: devel@lists.libvirt.org
 F: docs/about/deprecated.rst
 
 Build System

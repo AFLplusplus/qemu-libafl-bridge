@@ -525,9 +525,7 @@ static void virtio_mem_activate_memslots_to_plug(VirtIOMEM *vmem,
                                  vmem->memslot_size;
     unsigned int idx;
 
-    if (!vmem->dynamic_memslots) {
-        return;
-    }
+    assert(vmem->dynamic_memslots);
 
     /* Activate all involved memslots in a single transaction. */
     memory_region_transaction_begin();
@@ -547,9 +545,7 @@ static void virtio_mem_deactivate_unplugged_memslots(VirtIOMEM *vmem,
                                  vmem->memslot_size;
     unsigned int idx;
 
-    if (!vmem->dynamic_memslots) {
-        return;
-    }
+    assert(vmem->dynamic_memslots);
 
     /* Deactivate all memslots with unplugged blocks in a single transaction. */
     memory_region_transaction_begin();
@@ -598,7 +594,9 @@ static int virtio_mem_set_block_state(VirtIOMEM *vmem, uint64_t start_gpa,
         virtio_mem_notify_unplug(vmem, offset, size);
         virtio_mem_set_range_unplugged(vmem, start_gpa, size);
         /* Deactivate completely unplugged memslots after updating the state. */
-        virtio_mem_deactivate_unplugged_memslots(vmem, offset, size);
+        if (vmem->dynamic_memslots) {
+            virtio_mem_deactivate_unplugged_memslots(vmem, offset, size);
+        }
         return 0;
     }
 
@@ -635,9 +633,11 @@ static int virtio_mem_set_block_state(VirtIOMEM *vmem, uint64_t start_gpa,
          * blocks we are plugging here. The following notification will inform
          * registered listeners about the blocks we're plugging.
          */
-        virtio_mem_activate_memslots_to_plug(vmem, offset, size);
+        if (vmem->dynamic_memslots) {
+            virtio_mem_activate_memslots_to_plug(vmem, offset, size);
+        }
         ret = virtio_mem_notify_plug(vmem, offset, size);
-        if (ret) {
+        if (ret && vmem->dynamic_memslots) {
             virtio_mem_deactivate_unplugged_memslots(vmem, offset, size);
         }
     }
@@ -749,7 +749,9 @@ static int virtio_mem_unplug_all(VirtIOMEM *vmem)
         notifier_list_notify(&vmem->size_change_notifiers, &vmem->size);
 
         /* Deactivate all memslots after updating the state. */
-        virtio_mem_deactivate_unplugged_memslots(vmem, 0, region_size);
+        if (vmem->dynamic_memslots) {
+            virtio_mem_deactivate_unplugged_memslots(vmem, 0, region_size);
+        }
     }
 
     trace_virtio_mem_unplugged_all();
@@ -1119,8 +1121,8 @@ static void virtio_mem_device_realize(DeviceState *dev, Error **errp)
     host_memory_backend_set_mapped(vmem->memdev, true);
     vmstate_register_ram(&vmem->memdev->mr, DEVICE(vmem));
     if (vmem->early_migration) {
-        vmstate_register(VMSTATE_IF(vmem), VMSTATE_INSTANCE_ID_ANY,
-                         &vmstate_virtio_mem_device_early, vmem);
+        vmstate_register_any(VMSTATE_IF(vmem),
+                             &vmstate_virtio_mem_device_early, vmem);
     }
     qemu_register_reset(virtio_mem_system_reset, vmem);
 

@@ -1,6 +1,8 @@
+gen = decodetree.process('insns.decode')
+
 sparc_ss = ss.source_set()
+sparc_ss.add(gen)
 sparc_ss.add(files(
-  'cc_helper.c',
   'cpu.c',
   'fop_helper.c',
   'gdbstub.c',

@@ -391,11 +391,10 @@ fail:
  * If the L2 entry is invalid return -errno and set @type to
  * QCOW2_SUBCLUSTER_INVALID.
  */
-static int qcow2_get_subcluster_range_type(BlockDriverState *bs,
-                                           uint64_t l2_entry,
-                                           uint64_t l2_bitmap,
-                                           unsigned sc_from,
-                                           QCow2SubclusterType *type)
+static int GRAPH_RDLOCK
+qcow2_get_subcluster_range_type(BlockDriverState *bs, uint64_t l2_entry,
+                                uint64_t l2_bitmap, unsigned sc_from,
+                                QCow2SubclusterType *type)
 {
     BDRVQcow2State *s = bs->opaque;
     uint32_t val;
@@ -442,9 +441,10 @@ static int qcow2_get_subcluster_range_type(BlockDriverState *bs,
  * On failure return -errno and update @l2_index to point to the
  * invalid entry.
  */
-static int count_contiguous_subclusters(BlockDriverState *bs, int nb_clusters,
-                                        unsigned sc_index, uint64_t *l2_slice,
-                                        unsigned *l2_index)
+static int GRAPH_RDLOCK
+count_contiguous_subclusters(BlockDriverState *bs, int nb_clusters,
+                             unsigned sc_index, uint64_t *l2_slice,
+                             unsigned *l2_index)
 {
     BDRVQcow2State *s = bs->opaque;
     int i, count = 0;
@@ -1329,7 +1329,8 @@ calculate_l2_meta(BlockDriverState *bs, uint64_t host_cluster_offset,
  * requires a new allocation (that is, if the cluster is unallocated
  * or has refcount > 1 and therefore cannot be written in-place).
  */
-static bool cluster_needs_new_alloc(BlockDriverState *bs, uint64_t l2_entry)
+static bool GRAPH_RDLOCK
+cluster_needs_new_alloc(BlockDriverState *bs, uint64_t l2_entry)
 {
     switch (qcow2_get_cluster_type(bs, l2_entry)) {
     case QCOW2_CLUSTER_NORMAL:
@@ -1360,9 +1361,9 @@ static bool cluster_needs_new_alloc(BlockDriverState *bs, uint64_t l2_entry)
  * allocated and can be overwritten in-place (this includes clusters
  * of type QCOW2_CLUSTER_ZERO_ALLOC).
  */
-static int count_single_write_clusters(BlockDriverState *bs, int nb_clusters,
-                                       uint64_t *l2_slice, int l2_index,
-                                       bool new_alloc)
+static int GRAPH_RDLOCK
+count_single_write_clusters(BlockDriverState *bs, int nb_clusters,
+                            uint64_t *l2_slice, int l2_index, bool new_alloc)
 {
     BDRVQcow2State *s = bs->opaque;
     uint64_t l2_entry = get_l2_entry(s, l2_slice, l2_index);
@@ -1983,7 +1984,7 @@ discard_in_l2_slice(BlockDriverState *bs, uint64_t offset, uint64_t nb_clusters,
             /* If we keep the reference, pass on the discard still */
             bdrv_pdiscard(s->data_file, old_l2_entry & L2E_OFFSET_MASK,
                           s->cluster_size);
-       }
+        }
     }
 
     qcow2_cache_put(s->l2_table_cache, (void **) &l2_slice);
@@ -2061,8 +2062,14 @@ zero_in_l2_slice(BlockDriverState *bs, uint64_t offset,
         QCow2ClusterType type = qcow2_get_cluster_type(bs, old_l2_entry);
         bool unmap = (type == QCOW2_CLUSTER_COMPRESSED) ||
             ((flags & BDRV_REQ_MAY_UNMAP) && qcow2_cluster_is_allocated(type));
-        uint64_t new_l2_entry = unmap ? 0 : old_l2_entry;
+        bool keep_reference =
+            (s->discard_no_unref && type != QCOW2_CLUSTER_COMPRESSED);
+        uint64_t new_l2_entry = old_l2_entry;
         uint64_t new_l2_bitmap = old_l2_bitmap;
+
+        if (unmap && !keep_reference) {
+            new_l2_entry = 0;
+        }
 
         if (has_subclusters(s)) {
             new_l2_bitmap = QCOW_L2_BITMAP_ALL_ZEROES;
@@ -2081,9 +2088,17 @@ zero_in_l2_slice(BlockDriverState *bs, uint64_t offset,
             set_l2_bitmap(s, l2_slice, l2_index + i, new_l2_bitmap);
         }
 
-        /* Then decrease the refcount */
         if (unmap) {
-            qcow2_free_any_cluster(bs, old_l2_entry, QCOW2_DISCARD_REQUEST);
+            if (!keep_reference) {
+                /* Then decrease the refcount */
+                qcow2_free_any_cluster(bs, old_l2_entry, QCOW2_DISCARD_REQUEST);
+            } else if (s->discard_passthrough[QCOW2_DISCARD_REQUEST] &&
+                       (type == QCOW2_CLUSTER_NORMAL ||
+                        type == QCOW2_CLUSTER_ZERO_ALLOC)) {
+                /* If we keep the reference, pass on the discard still */
+                bdrv_pdiscard(s->data_file, old_l2_entry & L2E_OFFSET_MASK,
+                            s->cluster_size);
+            }
         }
     }
 

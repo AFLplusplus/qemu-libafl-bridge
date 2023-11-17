@@ -38,10 +38,8 @@
 #define MAX_STORAGE_INCREMENTS                  1020
 
 /* CPU hotplug SCLP codes */
-#define SCLP_HAS_CPU_INFO                       0x0C00000000000000ULL
+#define SCLP_HAS_CPU_INFO                       0x0800000000000000ULL
 #define SCLP_CMDW_READ_CPU_INFO                 0x00010001
-#define SCLP_CMDW_CONFIGURE_CPU                 0x00110001
-#define SCLP_CMDW_DECONFIGURE_CPU               0x00100001
 
 /* SCLP PCI codes */
 #define SCLP_HAS_IOA_RECONFIG                   0x0000000040000000ULL
@@ -227,8 +225,7 @@ static inline int sccb_data_len(SCCB *sccb)
 void s390_sclp_init(void);
 void sclp_service_interrupt(uint32_t sccb);
 void raise_irq_cpu_hotplug(void);
-int sclp_service_call(CPUS390XState *env, uint64_t sccb, uint32_t code);
-int sclp_service_call_protected(CPUS390XState *env, uint64_t sccb,
-                                uint32_t code);
+int sclp_service_call(S390CPU *cpu, uint64_t sccb, uint32_t code);
+int sclp_service_call_protected(S390CPU *cpu, uint64_t sccb, uint32_t code);
 
 #endif

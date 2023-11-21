@@ -48,6 +48,7 @@
 #include "tcg/tcg-op.h"
 #include "tcg/tcg-internal.h"
 #include "exec/helper-head.h"
+#include "libafl_extras/exit.h"
 
 #define LIBAFL_TABLES_SIZE 16384
 #define LIBAFL_TABLES_HASH(p) (((13*((size_t)(p))) ^ (((size_t)(p)) >> 15)) % LIBAFL_TABLES_SIZE)
@@ -95,12 +96,6 @@ int libafl_qemu_remove_hook(size_t num, int invalidate);
 struct libafl_hook* libafl_search_hook(target_ulong addr);
 void libafl_flush_jit(void);
 
-#ifdef CONFIG_USER_ONLY
-extern __thread CPUState* libafl_breakpoint_cpu;
-#else
-extern CPUState* libafl_breakpoint_cpu;
-#endif
-
 extern int libafl_restoring_devices;
 
 /*
@@ -146,7 +141,7 @@ CPUState* libafl_qemu_current_cpu(void)
 {
 #ifndef CONFIG_USER_ONLY
     if (current_cpu == NULL) {
-        return libafl_breakpoint_cpu;
+        return libafl_last_exit_cpu();
     }
 #endif
     return current_cpu;

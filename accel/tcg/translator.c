@@ -272,6 +272,13 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 
                         db->pc_next += 4;
                         goto post_translate_insn;
+                    } else if (backdoor == 0x66) {
+                        // First update pc_next to restart at next instruction
+                        db->pc_next += 4;
+
+                        TCGv_i64 tmp0 = tcg_constant_i64((uint64_t)db->pc_next);
+                        gen_helper_libafl_qemu_handle_sync_backdoor(tcg_env, tmp0);
+                        tcg_temp_free_i64(tmp0);
                     }
                 }
             }

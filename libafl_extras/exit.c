@@ -9,12 +9,12 @@
 __thread int libafl_qemu_break_asap = 0;
 __thread CPUState* libafl_breakpoint_cpu;
 __thread vaddr libafl_breakpoint_pc;
-__thread static struct libafl_exit_reason last_exit_reason;
+static __thread struct libafl_exit_reason last_exit_reason;
 #else
 static struct libafl_exit_reason last_exit_reason;
 #endif
 
-#ifdef TARGET_ARM
+#if defined(TARGET_ARM) && !defined(TARGET_AARCH64)
 #define THUMB_MASK(value) (value | cpu_env(libafl_breakpoint_cpu)->thumb)
 #else
 #define THUMB_MASK(value) value

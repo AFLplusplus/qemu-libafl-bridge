@@ -37,6 +37,8 @@
 
 //// --- Begin LibAFL code ---
 
+#include "libafl_extras/exit.h"
+
 #ifndef CONFIG_USER_ONLY
 
 #include "sysemu/runstate.h"
@@ -48,8 +50,6 @@
 #include "sysemu/hw_accel.h"
 #include <stdlib.h>
 #include <string.h>
-
-#include "libafl_extras/exit.h"
 
 void libafl_save_qemu_snapshot(char *name, bool sync);
 void libafl_load_qemu_snapshot(char *name, bool sync);

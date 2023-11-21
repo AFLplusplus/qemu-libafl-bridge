@@ -74,7 +74,7 @@ void cpu_loop(CPUMIPSState *env)
         
 //// --- Begin LibAFL code ---
 
-        if (libafl_qemu_break_asap) return;
+        if (libafl_exit_asap()) return;
 
 //// --- End LibAFL code ---
 
@@ -87,9 +87,9 @@ void cpu_loop(CPUMIPSState *env)
 
 //// --- Begin LibAFL code ---
 
-#define EXCP_LIBAFL_BP 0xf4775747
+#define EXCP_LIBAFL_EXIT 0xf4775747
 
-        case EXCP_LIBAFL_BP:
+        case EXCP_LIBAFL_EXIT:
             return;
 
 //// --- End LibAFL code ---

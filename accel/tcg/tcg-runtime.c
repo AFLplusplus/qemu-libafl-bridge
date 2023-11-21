@@ -49,6 +49,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "libafl_extras/exit.h"
+
 void libafl_save_qemu_snapshot(char *name, bool sync);
 void libafl_load_qemu_snapshot(char *name, bool sync);
 
@@ -130,57 +132,24 @@ void libafl_load_qemu_snapshot(char *name, bool sync)
 
 #endif
 
-#define EXCP_LIBAFL_BP 0xf4775747
+#define EXCP_LIBAFL_EXIT 0xf4775747
 
 #ifdef CONFIG_USER_ONLY
-__thread int libafl_qemu_break_asap = 0;
-__thread CPUState* libafl_breakpoint_cpu;
-__thread vaddr libafl_breakpoint_pc;
+extern __thread int libafl_qemu_break_asap;
 #else
-int libafl_qemu_break_asap = 0;
-CPUState* libafl_breakpoint_cpu;
-vaddr libafl_breakpoint_pc;
+extern int libafl_qemu_break_asap;
 #endif
-
-#ifdef TARGET_ARM
-#define THUMB_MASK(value) (value | cpu_env(libafl_breakpoint_cpu)->thumb)
-#else
-#define THUMB_MASK(value) value
-#endif
-
-void libafl_qemu_trigger_breakpoint(CPUState* cpu);
-
-void libafl_sync_breakpoint_cpu(void);
-
-void libafl_sync_breakpoint_cpu(void)
-{
-    if (libafl_breakpoint_pc) {
-        CPUClass* cc = CPU_GET_CLASS(libafl_breakpoint_cpu);
-        cc->set_pc(libafl_breakpoint_cpu, THUMB_MASK(libafl_breakpoint_pc));
-    }
-    libafl_breakpoint_pc = 0;
-}
-
-void libafl_qemu_trigger_breakpoint(CPUState* cpu)
-{
-  libafl_breakpoint_cpu = cpu;
-#ifndef CONFIG_USER_ONLY
-    qemu_system_debug_request();
-    cpu->stopped = true;
-#endif
-    if (cpu->running) {
-        cpu->exception_index = EXCP_LIBAFL_BP;
-        cpu_loop_exit(cpu);
-    } else {
-        libafl_qemu_break_asap = 1;//TODO add a field to CPU
-    }
-}
 
 void HELPER(libafl_qemu_handle_breakpoint)(CPUArchState *env, uint64_t pc)
 {
     CPUState* cpu = env_cpu(env);
-    libafl_breakpoint_pc = (target_ulong)pc;
-    libafl_qemu_trigger_breakpoint(cpu);
+    libafl_exit_request_breakpoint(cpu, (target_ulong) pc);
+}
+
+void HELPER(libafl_qemu_handle_sync_backdoor)(CPUArchState *env, uint64_t pc)
+{
+    CPUState* cpu = env_cpu(env);
+    libafl_exit_request_sync_backdoor(cpu, (target_ulong) pc);
 }
 
 //// --- End LibAFL code ---

@@ -132,14 +132,6 @@ void libafl_load_qemu_snapshot(char *name, bool sync)
 
 #endif
 
-#define EXCP_LIBAFL_EXIT 0xf4775747
-
-#ifdef CONFIG_USER_ONLY
-extern __thread int libafl_qemu_break_asap;
-#else
-extern int libafl_qemu_break_asap;
-#endif
-
 void HELPER(libafl_qemu_handle_breakpoint)(CPUArchState *env, uint64_t pc)
 {
     CPUState* cpu = env_cpu(env);

@@ -715,15 +715,13 @@ static inline void cpu_handle_debug_exception(CPUState *cpu)
 
 //// --- Begin LibAFL code ---
 
-void libafl_sync_exit_cpu(void);
+#include "libafl_extras/exit.h"
 
 //// --- End LibAFL code ---
 
 static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
 {
     //// --- Begin LibAFL code ---
-
-#define EXCP_LIBAFL_EXIT 0xf4775747
 
     if (cpu->exception_index == EXCP_LIBAFL_EXIT) {
         *ret = cpu->exception_index;
@@ -992,8 +990,6 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
                                   target_ulong dst_block, int exit_n, target_ulong cs_base,
                                   uint32_t flags, int cflags);
 
-extern __thread int libafl_valid_current_cpu;
-
 //// --- End LibAFL code ---
 
 /* main execution loop */
@@ -1102,6 +1098,8 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
             }
 
             if (has_libafl_edge) {
+                // execute the edge to make sure to log it the first execution
+                // the edge will then jump to the translated block
                 cpu_loop_exec_tb(cpu, edge, last_tb_pc, &last_tb, &tb_exit, &last_tb_pc);
             } else {
                 cpu_loop_exec_tb(cpu, tb, pc, &last_tb, &tb_exit, &last_tb_pc);
@@ -1134,12 +1132,6 @@ int cpu_exec(CPUState *cpu)
 
     /* replay_interrupt may need current_cpu */
     current_cpu = cpu;
-
-//// --- Begin LibAFL code ---
-
-    libafl_valid_current_cpu = 1;
-
-//// --- End LibAFL code ---
 
     if (cpu_handle_halt(cpu)) {
         return EXCP_HALTED;

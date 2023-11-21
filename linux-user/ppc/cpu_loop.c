@@ -71,8 +71,20 @@ void cpu_loop(CPUPPCState *env)
     int trapnr, si_signo, si_code;
     target_ulong ret;
 
+//// --- Begin LibAFL code ---
+
+    libafl_exit_signal_vm_start();
+
+//// --- End LibAFL code ---
+
     for(;;) {
         bool arch_interrupt;
+
+//// --- Begin LibAFL code ---
+
+        if (libafl_exit_asap()) return;
+
+//// --- End LibAFL code ---
 
         cpu_exec_start(cs);
         trapnr = cpu_exec(cs);
@@ -83,8 +95,6 @@ void cpu_loop(CPUPPCState *env)
         switch (trapnr) {
 
 //// --- Begin LibAFL code ---
-
-#define EXCP_LIBAFL_EXIT 0xf4775747
 
         case EXCP_LIBAFL_EXIT:
             return;

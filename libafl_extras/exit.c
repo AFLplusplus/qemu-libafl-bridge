@@ -3,40 +3,36 @@
 #include "sysemu/runstate.h"
 #include "cpu.h"
 
-// TODO: merge with definition in tcg-runtime.c
-#define EXCP_LIBAFL_EXIT 0xf4775747
-
 #ifdef CONFIG_USER_ONLY
-__thread int libafl_qemu_break_asap = 0;
-__thread CPUState* libafl_breakpoint_cpu;
-__thread vaddr libafl_breakpoint_pc;
-static __thread struct libafl_exit_reason last_exit_reason;
+#define THREAD_MODIFIER __thread
 #else
-static struct libafl_exit_reason last_exit_reason;
+#define THREAD_MODIFIER
 #endif
+
+static THREAD_MODIFIER struct libafl_exit_reason last_exit_reason;
+static THREAD_MODIFIER bool expected_exit = false;
 
 #if defined(TARGET_ARM) && !defined(TARGET_AARCH64)
-#define THUMB_MASK(value) (value | cpu_env(libafl_breakpoint_cpu)->thumb)
+#define THUMB_MASK(cpu, value) (value | cpu_env(cpu)->thumb)
 #else
-#define THUMB_MASK(value) value
+#define THUMB_MASK(cpu, value) value
 #endif
 
-static bool expected_exit = false;
-
+// called before exiting the cpu exec with the custom exception
 void libafl_sync_exit_cpu(void)
 {
     if (last_exit_reason.next_pc) {
         CPUClass* cc = CPU_GET_CLASS(last_exit_reason.cpu);
-        cc->set_pc(last_exit_reason.cpu, THUMB_MASK(last_exit_reason.next_pc));
+        cc->set_pc(last_exit_reason.cpu, THUMB_MASK(last_exit_reason.cpu, last_exit_reason.next_pc));
     }
     last_exit_reason.next_pc = 0;
 }
 
-bool libafl_exit_asap(void){
-    return last_exit_reason.exit_asap;
+bool libafl_exit_asap(void) {
+    return expected_exit;
 }
 
-static void prepare_qemu_exit(CPUState* cpu, ulong next_pc)
+static void prepare_qemu_exit(CPUState* cpu, target_ulong next_pc)
 {
     expected_exit = true;
     last_exit_reason.cpu = cpu;
@@ -44,13 +40,12 @@ static void prepare_qemu_exit(CPUState* cpu, ulong next_pc)
 
 #ifndef CONFIG_USER_ONLY
     qemu_system_debug_request();
-    cpu->stopped = true;
+    cpu->stopped = true; // TODO check if still needed
 #endif
+    // in usermode, this may be called from the syscall hook, thus already out of the cpu_exec but still in the cpu_loop
     if (cpu->running) {
         cpu->exception_index = EXCP_LIBAFL_EXIT;
         cpu_loop_exit(cpu);
-    } else {
-        last_exit_reason.exit_asap = 1;
     }
 }
 

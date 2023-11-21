@@ -72,8 +72,6 @@ struct libafl_hook {
 struct libafl_hook* libafl_qemu_hooks[LIBAFL_TABLES_SIZE];
 size_t libafl_qemu_hooks_num = 0;
 
-__thread int libafl_valid_current_cpu = 0;
-
 static __thread GByteArray *libafl_qemu_mem_buf = NULL;
 
 target_ulong libafl_page_from_addr(target_ulong addr);

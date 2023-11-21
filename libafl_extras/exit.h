@@ -3,6 +3,8 @@
 #include "qemu/osdep.h"
 #include "exec/cpu-defs.h"
 
+#define EXCP_LIBAFL_EXIT 0xf4775747
+
 enum libafl_exit_reason_kind {
     BREAKPOINT = 0,
     SYNC_BACKDOOR = 1
@@ -18,7 +20,6 @@ struct libafl_exit_reason {
     enum libafl_exit_reason_kind kind;
     CPUState* cpu; // CPU that triggered an exit.
     vaddr next_pc; // The PC that should be stored in the CPU when re-entering.
-    int exit_asap; // TODO: add a field to CPU
     union {
         struct libafl_exit_reason_breakpoint breakpoint; // kind == BREAKPOINT
         struct libafl_exit_reason_sync_backdoor backdoor; // kind == SYNC_BACKDOOR

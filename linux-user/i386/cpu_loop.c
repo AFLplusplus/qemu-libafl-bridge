@@ -209,6 +209,12 @@ void cpu_loop(CPUX86State *env)
     int trapnr;
     abi_ulong ret;
 
+//// --- Begin LibAFL code ---
+
+    libafl_exit_signal_vm_start();
+
+//// --- End LibAFL code ---
+
     for(;;) {
 
 //// --- Begin LibAFL code ---
@@ -225,8 +231,6 @@ void cpu_loop(CPUX86State *env)
         switch(trapnr) {
 
 //// --- Begin LibAFL code ---
-
-#define EXCP_LIBAFL_EXIT 0xf4775747
 
         case EXCP_LIBAFL_EXIT:
             return;

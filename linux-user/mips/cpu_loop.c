@@ -70,6 +70,12 @@ void cpu_loop(CPUMIPSState *env)
     unsigned int syscall_num;
 # endif
 
+//// --- Begin LibAFL code ---
+
+    libafl_exit_signal_vm_start();
+
+//// --- End LibAFL code ---
+
     for(;;) {
         
 //// --- Begin LibAFL code ---
@@ -86,8 +92,6 @@ void cpu_loop(CPUMIPSState *env)
         switch(trapnr) {
 
 //// --- Begin LibAFL code ---
-
-#define EXCP_LIBAFL_EXIT 0xf4775747
 
         case EXCP_LIBAFL_EXIT:
             return;

@@ -4,23 +4,23 @@
 
 #define DEVICE_SAVE_KIND_FULL   0
 
-typedef struct device_save_state_s {
+typedef struct DeviceSaveState {
     uint8_t kind;
     uint8_t* save_buffer;
     size_t save_buffer_size;
-} device_save_state_t;
+} DeviceSaveState;
 
 // Type of device snapshot
-typedef enum device_snapshot_kind_e {
+typedef enum DeviceSnapshotKind {
     DEVICE_SNAPSHOT_ALL,
     DEVICE_SNAPSHOT_ALLOWLIST,
     DEVICE_SNAPSHOT_DENYLIST
-} device_snapshot_kind_t;
+} DeviceSnapshotKind;
 
-device_save_state_t* device_save_all(void);
-device_save_state_t* device_save_kind(device_snapshot_kind_t kind, char** names);
+DeviceSaveState* device_save_all(void);
+DeviceSaveState* device_save_kind(DeviceSnapshotKind kind, char** names);
 
-void device_restore_all(device_save_state_t* device_save_state);
-void device_free_all(device_save_state_t* dss);
+void device_restore_all(DeviceSaveState* device_save_state);
+void device_free_all(DeviceSaveState* dss);
 
 char** device_list_all(void);

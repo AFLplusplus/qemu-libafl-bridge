@@ -1,87 +1,79 @@
+/*
+ * SYX Snapshot
+ *
+ * A speed-oriented snapshot mechanism.
+ *
+ * TODO: complete documentation.
+ */
+
 #pragma once
 #include "qemu/osdep.h"
 #include "qom/object.h"
-#include "device-save.h"
 #include "sysemu/sysemu.h"
+
+#include "device-save.h"
 #include "../syx-misc.h"
 
 /**
  * Saved ramblock
  */
-typedef struct syx_snapshot_ramblock_s {
+typedef struct SyxSnapshotRAMBlock {
     uint8_t* ram; // RAM block
     uint64_t used_length; // Length of the ram block
-    char idstr[256]; // Unique string identifier for the ramblock
-} syx_snapshot_ramblock_t;
+} SyxSnapshotRAMBlock;
 
 /**
  * A root snapshot representation. 
  */
-typedef struct syx_snapshot_root_s {
-    syx_snapshot_ramblock_t* ram_blocks;
-    uint64_t nb_ram_blocks;
-
-    device_save_state_t* dss;
-} syx_snapshot_root_t;
-
-/**
- * A snapshot's dirty list. It only stores dirty addresses
- * (without data). It is the developer's responsibility to
- * to effectively save dirty pages when it is necessary.
- */
-typedef struct syx_snapshot_dirty_list_s {
-    // Dirty pages since the last snapshot
-    // Only physical addresses are stored at this point
-    // Better if a few addresses are marked
-    hwaddr* dirty_addr;
-    uint64_t length;
-    uint64_t capacity;
-} syx_snapshot_dirty_list_t;
+typedef struct SyxSnapshotRoot {
+    GHashTable* rbs_snapshot; // hash map: H(rb) -> SyxSnapshotRAMBlock
+    DeviceSaveState* dss;
+} SyxSnapshotRoot;
 
 /**
  * A list of dirty pages with their old data.
  */
-typedef struct syx_snapshot_dirty_page_s {
-    hwaddr addr;
+typedef struct SyxSnapshotDirtyPage {
+    ram_addr_t offset_within_rb;
     uint8_t* data;
-} syx_snapshot_dirty_page_t;
+} SyxSnapshotDirtyPage;
 
-typedef struct syx_snapshot_dirty_page_list_s {
-    syx_snapshot_dirty_page_t* dirty_pages;
+typedef struct SyxSnapshotDirtyPageList {
+    SyxSnapshotDirtyPage* dirty_pages;
     uint64_t length;
-} syx_snapshot_dirty_page_list_t;
+} SyxSnapshotDirtyPageList;
 
 /**
  * A snapshot increment. It is used to quickly
  * save a VM state.
  */
-typedef struct syx_snapshot_increment_s {
+typedef struct SyxSnapshotIncrement {
     // Back to root snapshot if NULL
-    struct syx_snapshot_increment_s* parent;
+    struct SyxSnapshotIncrement* parent;
 
-    device_save_state_t* dss;
+    DeviceSaveState* dss;
 
-    syx_snapshot_dirty_page_list_t dirty_page_list;
-} syx_snapshot_increment_t;
+    GHashTable* rbs_dirty_pages; // hash map: H(rb) -> SyxSnapshotDirtyPageList
+} SyxSnapshotIncrement;
 
 /**
  * A snapshot. It is the main object used in this API to
- * handle snapshoting.
+ * handle snapshotting.
  */
-typedef struct syx_snapshot_s {
-    syx_snapshot_root_t root_snapshot;
-    syx_snapshot_increment_t* last_incremental_snapshot;
+typedef struct SyxSnapshot {
+    SyxSnapshotRoot root_snapshot;
+    SyxSnapshotIncrement* last_incremental_snapshot;
 
-    syx_snapshot_dirty_list_t dirty_list;
-} syx_snapshot_t;
+    GHashTable* rbs_dirty_list; // hash map: H(rb) -> GHashTable(offset_within_ramblock). Filled lazily.
+} SyxSnapshot;
 
-typedef struct syx_snapshot_tracker_s {
-    syx_snapshot_t** tracked_snapshots;
+typedef struct SyxSnapshotTracker {
+    SyxSnapshot** tracked_snapshots;
     uint64_t length;
     uint64_t capacity;
-} syx_snapshot_tracker_t;
+} SyxSnapshotTracker;
 
-typedef struct syx_snapshot_state_s {
+typedef struct SyxSnapshotState {
     bool is_enabled;
 
     uint64_t page_size;
@@ -89,53 +81,38 @@ typedef struct syx_snapshot_state_s {
  
     // Actively tracked snapshots. Their dirty lists will
     // be updated at each dirty access
-    syx_snapshot_tracker_t tracked_snapshots;
-} syx_snapshot_state_t;
+    SyxSnapshotTracker tracked_snapshots;
+} SyxSnapshotState;
 
-//
-// Namespace API's functions
-//
 
-//void syx_snapshot_init(void* opaque);
 void syx_snapshot_init(void);
-uint64_t syx_snapshot_handler(CPUState* cpu, uint32_t cmd, target_ulong target_opaque);
 
 
 //
 // Snapshot API
 //
 
-syx_snapshot_t* syx_snapshot_create(bool track, device_snapshot_kind_t kind, char** devices);
-void syx_snapshot_free(syx_snapshot_t* snapshot);
-// void syx_snapshot_load(syx_snapshot_t* snapshot);
+SyxSnapshot* syx_snapshot_new(bool track, DeviceSnapshotKind kind, char** devices);
+void syx_snapshot_free(SyxSnapshot* snapshot);
+void syx_snapshot_root_restore(SyxSnapshot* snapshot);
+uint64_t syx_snapshot_check_memory_consistency(SyxSnapshot* snapshot);
 
+// Push the current RAM state and saves it
+void syx_snapshot_increment_push(SyxSnapshot* snapshot, DeviceSnapshotKind kind, char** devices);
 
-//
-// Root snapshot API
-//
+// Restores the last push. Restores the root snapshot if no incremental snapshot is present.
+void syx_snapshot_increment_pop(SyxSnapshot* snapshot);
 
-syx_snapshot_root_t syx_snapshot_root_create(device_snapshot_kind_t kind, char** devices);
-void syx_snapshot_root_restore(syx_snapshot_t* snapshot);
-void syx_snapshot_root_free(syx_snapshot_root_t* root);
+void syx_snapshot_increment_restore_last(SyxSnapshot* snapshot);
 
 
 //
 // Snapshot tracker API
 //
 
-syx_snapshot_tracker_t syx_snapshot_tracker_init(void);
-void syx_snapshot_track(syx_snapshot_tracker_t* tracker, syx_snapshot_t* snapshot);
-void syx_snapshot_stop_track(syx_snapshot_tracker_t* tracker, syx_snapshot_t* snapshot);
-
-
-//
-// Snapshot increment API
-//
-
-void syx_snapshot_increment_push(syx_snapshot_t* snapshot, device_snapshot_kind_t kind, char** devices);
-void syx_snapshot_increment_pop(syx_snapshot_t* snapshot);
-void syx_snapshot_increment_restore_last(syx_snapshot_t* snapshot);
-syx_snapshot_increment_t* syx_snapshot_increment_free(syx_snapshot_increment_t* increment);
+SyxSnapshotTracker syx_snapshot_tracker_init(void);
+void syx_snapshot_track(SyxSnapshotTracker* tracker, SyxSnapshot* snapshot);
+void syx_snapshot_stop_track(SyxSnapshotTracker* tracker, SyxSnapshot* snapshot);
 
 
 //
@@ -149,19 +126,15 @@ bool syx_snapshot_is_enabled(void);
 // Dirty list API
 //
 
-syx_snapshot_dirty_list_t syx_snapshot_dirty_list_create(void);
-void syx_snapshot_dirty_list_free(syx_snapshot_dirty_list_t* dirty_list);
-syx_snapshot_dirty_page_list_t syx_snapshot_dirty_list_to_dirty_page_list(syx_snapshot_dirty_list_t* dirty_list);
-void syx_snapshot_dirty_list_flush(syx_snapshot_dirty_list_t* dirty_list);
-
 void syx_snapshot_dirty_list_add_hostaddr(void* host_addr);
+void syx_snapshot_dirty_list_add_hostaddr_range(void* host_addr, uint64_t len);
 
 /**
  * @brief Add a dirty physical address to the list
  * 
  * @param paddr The physical address to add
  */
-void syx_snapshot_dirty_list_add(hwaddr paddr);
+void syx_snapshot_dirty_list_add_paddr(hwaddr paddr);
 
 /**
  * @brief Same as syx_snapshot_dirty_list_add. The difference

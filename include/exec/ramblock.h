@@ -36,6 +36,9 @@ struct RAMBlock {
     uint32_t flags;
     /* Protected by iothread lock.  */
     char idstr[256];
+//// --- Begin LibAFL code ---
+    guint idstr_hash;
+//// --- End LibAFL code ---
     /* RCU-enabled, writes protected by the ramlist lock */
     QLIST_ENTRY(RAMBlock) next;
     QLIST_HEAD(, RAMBlockNotifier) ramblock_notifiers;

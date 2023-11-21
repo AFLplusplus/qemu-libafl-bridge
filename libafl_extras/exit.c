@@ -1,6 +1,7 @@
 #include "exit.h"
 
 #include "sysemu/runstate.h"
+#include "cpu.h"
 
 // TODO: merge with definition in tcg-runtime.c
 #define EXCP_LIBAFL_EXIT 0xf4775747

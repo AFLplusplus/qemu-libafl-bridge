@@ -3518,8 +3518,10 @@ subdir('bsd-user')
 subdir('linux-user')
 
 # needed for fuzzing binaries
-subdir('tests/qtest/libqos')
-subdir('tests/qtest/fuzz')
+if get_option('tests')
+  subdir('tests/qtest/libqos')
+  subdir('tests/qtest/fuzz')
+endif
 
 # accel modules
 tcg_real_module_ss = ss.source_set()
@@ -4045,7 +4047,9 @@ subdir('scripts')
 subdir('tools')
 subdir('pc-bios')
 subdir('docs')
-subdir('tests')
+if get_option('tests')
+  subdir('tests')
+endif
 if gtk.found()
   subdir('po')
 endif
@@ -4141,6 +4145,7 @@ if enable_modules
   summary_info += {'alternative module path': get_option('module_upgrades')}
 endif
 summary_info += {'fuzzing support':   get_option('fuzzing')}
+summary_info += {'tests support':   get_option('tests')}
 if have_system
   summary_info += {'Audio drivers':     ' '.join(audio_drivers_selected)}
 endif

@@ -315,6 +315,8 @@ _meson_option_parse() {
     --disable-fuse-lseek) printf "%s" -Dfuse_lseek=disabled ;;
     --enable-fuzzing) printf "%s" -Dfuzzing=true ;;
     --disable-fuzzing) printf "%s" -Dfuzzing=false ;;
+    --enable-tests) printf "%s" -Dtests=true ;;
+    --disable-tests) printf "%s" -Dtests=false ;;
     --enable-gcrypt) printf "%s" -Dgcrypt=enabled ;;
     --disable-gcrypt) printf "%s" -Dgcrypt=disabled ;;
     --enable-gettext) printf "%s" -Dgettext=enabled ;;

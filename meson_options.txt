@@ -43,6 +43,8 @@ option('docs', type : 'feature', value : 'auto',
        description: 'Documentations build support')
 option('fuzzing', type : 'boolean', value: false,
        description: 'build fuzzing targets')
+option('tests', type : 'boolean', value: true,
+       description: 'build tests')
 option('gettext', type : 'feature', value : 'auto',
        description: 'Localization of the GTK+ user interface')
 option('modules', type : 'feature', value : 'disabled',

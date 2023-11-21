@@ -18,7 +18,7 @@ extern int vmstate_save(QEMUFile *f, SaveStateEntry *se, JSONWriter *vmdesc);
 extern void save_section_footer(QEMUFile *f, SaveStateEntry *se);
 
 // iothread must be locked
-device_save_state_t* device_save_all(void) {
+DeviceSaveState* device_save_all(void) {
     return device_save_kind(DEVICE_SNAPSHOT_ALL, NULL);
 }
 
@@ -32,8 +32,8 @@ static int is_in_list(char* str, char** list) {
     return 0;
 }
 
-device_save_state_t* device_save_kind(device_snapshot_kind_t kind, char** names) {
-    device_save_state_t* dss = g_new0(device_save_state_t, 1);
+DeviceSaveState* device_save_kind(DeviceSnapshotKind kind, char** names) {
+    DeviceSaveState* dss = g_new0(DeviceSaveState, 1);
     SaveStateEntry *se;
 
     dss->kind = DEVICE_SAVE_KIND_FULL;
@@ -85,7 +85,7 @@ device_save_state_t* device_save_kind(device_snapshot_kind_t kind, char** names)
     return dss;
 }
 
-void device_restore_all(device_save_state_t* dss) {
+void device_restore_all(DeviceSaveState* dss) {
     assert(dss->save_buffer != NULL);
 
     QIOChannelBuffer* bioc = qio_channel_buffer_new_external(dss->save_buffer, QEMU_FILE_RAM_LIMIT, dss->save_buffer_size);
@@ -103,7 +103,7 @@ void device_restore_all(device_save_state_t* dss) {
     qemu_fclose(f);
 }
 
-void device_free_all(device_save_state_t* dss) {
+void device_free_all(DeviceSaveState* dss) {
     g_free(dss->save_buffer);
 }
 

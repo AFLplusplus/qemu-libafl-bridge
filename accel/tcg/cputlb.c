@@ -1472,6 +1472,13 @@ static int probe_access_internal(CPUState *cpu, vaddr addr,
 
     /* Everything else is RAM. */
     *phost = (void *)((uintptr_t)addr + entry->addend);
+//// --- Begin LibAFL code ---
+
+    if (access_type == MMU_DATA_STORE) {
+        syx_snapshot_dirty_list_add_hostaddr(*phost);
+    }
+
+//// --- End LibAFL code ---
     return flags;
 }
 
@@ -1819,10 +1826,10 @@ static bool mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
 
         //// --- Begin LibAFL code ---
 
-        // TODO: check if the second condition solves faulty dirty address report
-        if (type == MMU_DATA_STORE && !(flags & (TLB_INVALID_MASK | TLB_MMIO))) {
+        // TODO: Does not work?
+        // if (type == MMU_DATA_STORE) {
             syx_snapshot_dirty_list_add_hostaddr(l->page[0].haddr);
-        }
+        // }
 
         //// --- End LibAFL code ---
 
@@ -1850,10 +1857,10 @@ static bool mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
 
         //// --- Begin LibAFL code ---
 
-        if (type == MMU_DATA_STORE) {
+        // if (type == MMU_DATA_STORE) {
             syx_snapshot_dirty_list_add_hostaddr(l->page[0].haddr);
             syx_snapshot_dirty_list_add_hostaddr(l->page[1].haddr);
-        }
+        // }
 
         //// --- End LibAFL code ---
 

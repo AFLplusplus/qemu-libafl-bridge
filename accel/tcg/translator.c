@@ -114,44 +114,12 @@ static void gen_tb_end(const TranslationBlock *tb, uint32_t cflags,
 
 //// --- Begin LibAFL code ---
 
-#include "tcg/tcg-internal.h"
-#include "tcg/tcg-temp-internal.h"
+#include "libafl_extras/exit.h"
+#include "libafl_extras/hook.h"
 
 #ifndef TARGET_LONG_BITS
 #error "TARGET_LONG_BITS not defined"
 #endif
-
-void tcg_gen_callN(TCGHelperInfo *info, TCGTemp *ret, TCGTemp **args);
-
-extern target_ulong libafl_gen_cur_pc;
-
-struct libafl_breakpoint {
-    target_ulong addr;
-    struct libafl_breakpoint* next;
-};
-
-extern struct libafl_breakpoint* libafl_qemu_breakpoints;
-
-struct libafl_hook {
-    target_ulong addr;
-    void (*callback)(uint64_t);
-    uint64_t data;
-    TCGHelperInfo helper_info;
-    struct libafl_hook* next;
-};
-
-extern struct libafl_hook* libafl_qemu_hooks;
-
-struct libafl_hook* libafl_search_hook(target_ulong addr);
-
-struct libafl_backdoor_hook {
-    void (*exec)(target_ulong pc, uint64_t data);
-    uint64_t data;
-    TCGHelperInfo helper_info;
-    struct libafl_backdoor_hook* next;
-};
-
-extern struct libafl_backdoor_hook* libafl_backdoor_hooks;
 
 //// --- End LibAFL code ---
 

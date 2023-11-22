@@ -41,7 +41,7 @@ int libafl_qemu_remove_hook(size_t num, int invalidate);
 struct libafl_hook* libafl_search_hook(target_ulong addr);
 
 struct libafl_backdoor_hook {
-    void (*exec)(target_ulong pc, uint64_t data);
+    void (*exec)(uint64_t data, target_ulong pc);
     uint64_t data;
     size_t num;
     TCGHelperInfo helper_info;
@@ -50,7 +50,7 @@ struct libafl_backdoor_hook {
 
 extern struct libafl_backdoor_hook* libafl_backdoor_hooks;
 
-size_t libafl_add_backdoor_hook(void (*exec)(target_ulong pc, uint64_t data),
+size_t libafl_add_backdoor_hook(void (*exec)(uint64_t data, target_ulong pc),
                                 uint64_t data);
 int libafl_qemu_remove_backdoor_hook(size_t num, int invalidate);
 

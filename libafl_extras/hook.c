@@ -161,13 +161,13 @@ int libafl_qemu_remove_##name##_hook(size_t num) \
 static TCGHelperInfo libafl_exec_backdoor_hook_info = {
     .func = NULL, .name = "libafl_exec_backdoor_hook", \
     .flags = dh_callflag(void), \
-    .typemask = dh_typemask(void, 0) | dh_typemask(tl, 1) | dh_typemask(i64, 2)
+    .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(tl, 2)
 };
 
 struct libafl_backdoor_hook* libafl_backdoor_hooks;
 size_t libafl_backdoor_hooks_num = 0;
 
-size_t libafl_add_backdoor_hook(void (*exec)(target_ulong id, uint64_t data),
+size_t libafl_add_backdoor_hook(void (*exec)(uint64_t data, target_ulong pc),
                                 uint64_t data)
 {
     struct libafl_backdoor_hook* hook = calloc(sizeof(struct libafl_backdoor_hook), 1);

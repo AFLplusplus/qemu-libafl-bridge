@@ -34,7 +34,7 @@ struct libafl_hook {
 extern struct libafl_hook* libafl_qemu_hooks[LIBAFL_TABLES_SIZE];
 extern size_t libafl_qemu_hooks_num;
 
-size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(uint64_t, target_ulong),
+size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(uint64_t data, target_ulong pc),
                             uint64_t data, int invalidate);
 size_t libafl_qemu_remove_hooks_at(target_ulong addr, int invalidate);
 int libafl_qemu_remove_hook(size_t num, int invalidate);

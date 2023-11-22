@@ -16,7 +16,7 @@ target_ulong libafl_gen_cur_pc;
 struct libafl_hook* libafl_qemu_hooks[LIBAFL_TABLES_SIZE];
 size_t libafl_qemu_hooks_num = 0;
 
-size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(uint64_t, target_ulong),
+size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(uint64_t data, target_ulong pc),
                             uint64_t data, int invalidate)
 {
     CPUState *cpu;

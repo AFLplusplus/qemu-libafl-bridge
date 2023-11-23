@@ -36,7 +36,7 @@ size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(uint64_t data, tar
     hk->helper_info.func = callback;
     hk->helper_info.name = "libafl_hook";
     hk->helper_info.flags = dh_callflag(void);
-    hk->helper_info.typemask = dh_typemask(void, 0) | dh_typemask(tl, 1) | dh_typemask(i64, 2);
+    hk->helper_info.typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(tl, 2);
     // TODO check for overflow
     hk->num = libafl_qemu_hooks_num++;
     hk->next = libafl_qemu_hooks[idx];

@@ -1601,8 +1601,8 @@ static void handle_query_thread_extra(GArray *params, void *user_ctx)
 
 struct libafl_custom_gdb_cmd* libafl_qemu_gdb_cmds;
 
-void libafl_qemu_add_gdb_cmd(int (*callback)(uint8_t*, size_t, void*), void* data);
-void libafl_qemu_add_gdb_cmd(int (*callback)(uint8_t*, size_t, void*), void* data)
+void libafl_qemu_add_gdb_cmd(int (*callback)(void*, uint8_t*, size_t), void* data);
+void libafl_qemu_add_gdb_cmd(int (*callback)(void*, uint8_t*, size_t), void* data)
 {
     struct libafl_custom_gdb_cmd* c = malloc(sizeof(struct libafl_custom_gdb_cmd));
     c->callback = callback;

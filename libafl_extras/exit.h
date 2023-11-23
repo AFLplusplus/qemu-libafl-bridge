@@ -5,6 +5,19 @@
 
 #define EXCP_LIBAFL_EXIT 0xf4775747
 
+struct libafl_breakpoint {
+    target_ulong addr;
+    struct libafl_breakpoint* next;
+};
+
+extern struct libafl_breakpoint* libafl_qemu_breakpoints;
+
+// in cpu-target.c
+void libafl_breakpoint_invalidate(CPUState *cpu, target_ulong pc);
+
+int libafl_qemu_set_breakpoint(target_ulong pc);
+int libafl_qemu_remove_breakpoint(target_ulong pc);
+
 enum libafl_exit_reason_kind {
     BREAKPOINT = 0,
     SYNC_BACKDOOR = 1

@@ -534,7 +534,7 @@ void gdb_handle_query_rcmd(GArray *params, void *user_ctx)
     struct libafl_custom_gdb_cmd** c = &libafl_qemu_gdb_cmds;
     int recognized = 0;
     while (*c) {
-        recognized |= (*c)->callback(gdbserver_state.mem_buf->data, gdbserver_state.mem_buf->len, (*c)->data);
+        recognized |= (*c)->callback((*c)->data, gdbserver_state.mem_buf->data, gdbserver_state.mem_buf->len);
         c = &(*c)->next;
     }
 

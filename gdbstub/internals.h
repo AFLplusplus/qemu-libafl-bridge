@@ -236,7 +236,7 @@ int gdb_target_memory_rw_debug(CPUState *cs, hwaddr addr,
 //// --- Begin LibAFL code ---
 
 struct libafl_custom_gdb_cmd {
-    int (*callback)(uint8_t*, size_t, void*);
+    int (*callback)(void*, uint8_t*, size_t);
     void* data;
     struct libafl_custom_gdb_cmd* next;
 };

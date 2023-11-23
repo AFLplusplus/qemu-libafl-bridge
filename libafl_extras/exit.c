@@ -9,6 +9,44 @@
 #define THREAD_MODIFIER
 #endif
 
+struct libafl_breakpoint* libafl_qemu_breakpoints = NULL;
+
+int libafl_qemu_set_breakpoint(target_ulong pc)
+{
+    CPUState *cpu;
+
+    CPU_FOREACH(cpu) {
+        libafl_breakpoint_invalidate(cpu, pc);
+    }
+
+    struct libafl_breakpoint* bp = calloc(sizeof(struct libafl_breakpoint), 1);
+    bp->addr = pc;
+    bp->next = libafl_qemu_breakpoints;
+    libafl_qemu_breakpoints = bp;
+    return 1;
+}
+
+int libafl_qemu_remove_breakpoint(target_ulong pc)
+{
+    CPUState *cpu;
+    int r = 0;
+
+    struct libafl_breakpoint** bp = &libafl_qemu_breakpoints;
+    while (*bp) {
+        if ((*bp)->addr == pc) {
+            CPU_FOREACH(cpu) {
+                libafl_breakpoint_invalidate(cpu, pc);
+            }
+
+            *bp = (*bp)->next;
+            r = 1;
+        } else {
+            bp = &(*bp)->next;
+        }
+    }
+    return r;
+}
+
 static THREAD_MODIFIER struct libafl_exit_reason last_exit_reason;
 static THREAD_MODIFIER bool expected_exit = false;
 

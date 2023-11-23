@@ -6522,8 +6522,9 @@ typedef struct {
 
 //// --- Begin LibAFL code ---
 
+#include "libafl_extras/hook.h"
+
 extern __thread CPUArchState *libafl_qemu_env;
-void (*libafl_on_thread_hook)(uint32_t);
 
 //// --- End LibAFL code ---
 
@@ -6560,8 +6561,14 @@ static void *clone_func(void *arg)
     //// --- Begin LibAFL code ---
 
     libafl_qemu_env = env;
-    if (libafl_on_thread_hook) {
-        libafl_on_thread_hook(info->tid);
+    if (libafl_new_thread_hooks) {
+        bool continue_execution = true;
+        struct libafl_new_thread_hook* h = libafl_new_thread_hooks;
+        while (h) {
+            continue_execution = h->callback(h->data, info->tid) && continue_execution;
+            h = h->next;
+        }
+        if (continue_execution) cpu_loop(env);
     } else {
         cpu_loop(env);
     }
@@ -13706,17 +13713,6 @@ IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinf
     }
 }
 
-struct syshook_ret {
-    uint64_t retval;
-    bool skip_syscall;
-};
-struct syshook_ret (*libafl_pre_syscall_hook)(int, uint64_t, uint64_t, uint64_t,
-                                              uint64_t, uint64_t, uint64_t,
-                                              uint64_t, uint64_t);
-uint64_t (*libafl_post_syscall_hook)(uint64_t, int, uint64_t, uint64_t,
-                                     uint64_t, uint64_t, uint64_t, uint64_t,
-                                     uint64_t, uint64_t);
-
 //// --- End LibAFL code ---
 
 abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
@@ -13750,21 +13746,26 @@ abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
 
     //// --- Begin LibAFL code ---
 
-    if (libafl_pre_syscall_hook) {
-        struct syshook_ret hook_ret = libafl_pre_syscall_hook(num,
-                                                          (uint64_t)arg1,
-                                                          (uint64_t)arg2,
-                                                          (uint64_t)arg3,
-                                                          (uint64_t)arg4,
-                                                          (uint64_t)arg5,
-                                                          (uint64_t)arg6,
-                                                          (uint64_t)arg7,
-                                                          (uint64_t)arg8);
-      if (hook_ret.skip_syscall) {
-          ret = (abi_ulong)hook_ret.retval;
-          goto after_syscall;
-      }
+    bool skip_syscall = false;
+    struct libafl_pre_syscall_hook* h = libafl_pre_syscall_hooks;
+    while (h) {
+        // no null check
+        struct syshook_ret hook_ret = h->callback(h->data, num,
+                                                  (target_ulong)arg1,
+                                                  (target_ulong)arg2,
+                                                  (target_ulong)arg3,
+                                                  (target_ulong)arg4,
+                                                  (target_ulong)arg5,
+                                                  (target_ulong)arg6,
+                                                  (target_ulong)arg7,
+                                                  (target_ulong)arg8);
+        if (hook_ret.skip_syscall) {
+            skip_syscall = true;
+            ret = (abi_ulong)hook_ret.retval;
+        }
+        h = h->next;
     }
+    if (skip_syscall) goto after_syscall;
 
     //// --- End LibAFL code ---
 
@@ -13773,19 +13774,22 @@ abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
 
     //// --- Begin LibAFL code ---
 
-after_syscall:
-    if (libafl_post_syscall_hook) {
-        ret = (abi_ulong)libafl_post_syscall_hook((uint64_t)ret, num,
-                                                  (uint64_t)arg1,
-                                                  (uint64_t)arg2,
-                                                  (uint64_t)arg3,
-                                                  (uint64_t)arg4,
-                                                  (uint64_t)arg5,
-                                                  (uint64_t)arg6,
-                                                  (uint64_t)arg7,
-                                                  (uint64_t)arg8);
+after_syscall:;
+    struct libafl_post_syscall_hook* p = libafl_post_syscall_hooks;
+    while (p) {
+        // no null check
+        ret = (abi_ulong)p->callback(p->data, (target_ulong)ret, num,
+                                      (target_ulong)arg1,
+                                      (target_ulong)arg2,
+                                      (target_ulong)arg3,
+                                      (target_ulong)arg4,
+                                      (target_ulong)arg5,
+                                      (target_ulong)arg6,
+                                      (target_ulong)arg7,
+                                      (target_ulong)arg8);
+        p = p->next;
     }
-
+    
     //// --- End LibAFL code ---
 
     if (unlikely(qemu_loglevel_mask(LOG_STRACE))) {

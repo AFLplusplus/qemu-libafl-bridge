@@ -362,7 +362,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
         hook->cur_id = 0;
         if (hook->gen)
             hook->cur_id = hook->gen(hook->data, src_block, dst_block);
-        if (hook->cur_id != (uint64_t)-1 && hook->helper_info.func)
+        if (hook->cur_id != (uint64_t)-1 && (hook->helper_info.func || hook->jit))
             no_exec_hook = 0;
         hook = hook->next;
     }
@@ -417,10 +417,11 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     tcg_ctx->cpu = env_cpu(env);
 
     hook = libafl_edge_hooks;
-    size_t hcount = 0;
+    size_t hcount = 0, hins = 0;
     while (hook) {
         if (hook->cur_id != (uint64_t)-1 && hook->helper_info.func) {
             hcount++;
+            hins++;
             TCGv_i64 tmp0 = tcg_constant_i64(hook->data);
             TCGv_i64 tmp1 = tcg_constant_i64(hook->cur_id);
             TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
@@ -428,12 +429,16 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
             tcg_temp_free_i64(tmp0);
             tcg_temp_free_i64(tmp1);
         }
+        if (hook->cur_id != (uint64_t)-1 && hook->jit) {
+            hcount++;
+            hins += hook->jit(hook->data, hook->cur_id);
+        }
         hook = hook->next;
     }
     tcg_gen_goto_tb(0);
     tcg_gen_exit_tb(tb, 0);
     tb->size = hcount;
-    tb->icount = hcount;
+    tb->icount = hins;
 
     assert(tb->size != 0);
     tcg_ctx->cpu = NULL;

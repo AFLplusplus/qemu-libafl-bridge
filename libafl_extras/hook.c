@@ -221,6 +221,18 @@ size_t libafl_add_edge_hook(uint64_t (*gen)(uint64_t data, target_ulong src, tar
 
 GEN_REMOVE_HOOK(edge)
 
+void libafl_qemu_edge_hook_set_jit(size_t num, size_t (*jit)(uint64_t data, uint64_t id)) {
+    struct libafl_edge_hook* hk = libafl_edge_hooks;
+    while (hk) {
+        if (hk->num == num) {
+            hk->jit = jit;
+            return;
+        } else {
+            hk = hk->next;
+        }
+    }
+}
+
 static TCGHelperInfo libafl_exec_block_hook_info = {
     .func = NULL, .name = "libafl_exec_block_hook", \
     .flags = dh_callflag(void), \

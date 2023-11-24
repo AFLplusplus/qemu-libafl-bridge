@@ -451,6 +451,11 @@ void syx_snapshot_dirty_list_add_hostaddr(void* host_addr)
 
 void syx_snapshot_dirty_list_add_hostaddr_range(void* host_addr, uint64_t len)
 {
+    // early check to know whether we should log the page access or not
+    if (!syx_snapshot_is_enabled()) {
+        return;
+    }
+
     assert(len < INT64_MAX);
     int64_t len_signed = (int64_t) len;
 

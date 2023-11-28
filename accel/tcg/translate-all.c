@@ -541,9 +541,12 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
 
     gen_code_buf = tcg_ctx->code_gen_ptr;
     tb->tc.ptr = tcg_splitwx_to_rx(gen_code_buf);
-    if (!(cflags & CF_PCREL)) {
+//// --- Begin LibAFL code ---
+    // Always include pc for edge hooks
+    //if (!(cflags & CF_PCREL)) {
         tb->pc = pc;
-    }
+    //}
+//// --- End LibAFL code ---
     tb->cs_base = cs_base;
     tb->flags = flags;
     tb->cflags = cflags;

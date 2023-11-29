@@ -50,7 +50,7 @@ int libafl_qemu_remove_breakpoint(target_ulong pc)
 static THREAD_MODIFIER struct libafl_exit_reason last_exit_reason;
 static THREAD_MODIFIER bool expected_exit = false;
 
-#if defined(TARGET_ARM) && !defined(TARGET_AARCH64)
+#if defined(TARGET_ARM)
 #define THUMB_MASK(cpu, value) (value | cpu_env(cpu)->thumb)
 #else
 #define THUMB_MASK(cpu, value) value

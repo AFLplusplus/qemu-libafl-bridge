@@ -7934,7 +7934,9 @@ static Property x86_cpu_properties[] = {
 static const struct SysemuCPUOps i386_sysemu_ops = {
     .get_memory_mapping = x86_cpu_get_memory_mapping,
     .get_paging_enabled = x86_cpu_get_paging_enabled,
+//// --- Begin LibAFL code ---
     .get_paging_id = x86_cpu_get_paging_id,
+//// --- End LibAFL code ---
     .get_phys_page_attrs_debug = x86_cpu_get_phys_page_attrs_debug,
     .asidx_from_attrs = x86_asidx_from_attrs,
     .get_crash_info = x86_cpu_get_crash_info,

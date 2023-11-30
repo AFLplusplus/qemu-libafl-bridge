@@ -167,7 +167,11 @@ int libafl_qemu_num_regs(CPUState* cpu)
 hwaddr libafl_qemu_current_paging_id(CPUState* cpu)
 {
     CPUClass* cc = CPU_GET_CLASS(cpu);
-    return cc->sysemu_ops->get_paging_id(cpu);
+    if (cc->sysemu_ops && cc->sysemu_ops->get_paging_id) {
+        return cc->sysemu_ops->get_paging_id(cpu);
+    } else {
+        return 0;
+    }
 }
 #endif
 

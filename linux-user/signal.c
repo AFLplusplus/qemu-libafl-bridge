@@ -698,22 +698,6 @@ void cpu_loop_exit_sigbus(CPUState *cpu, target_ulong addr,
     cpu_loop_exit_restore(cpu, ra);
 }
 
-//// --- Begin LibAFL code ---
-
-void (*libafl_dump_core_hook)(int target_sig);
-
-/* abort execution with signal */
-static G_NORETURN
-void die_with_signal_nodfl(int host_sig)
-{
-    kill(getpid(), host_sig);
-
-    /* unreachable */
-    _exit(EXIT_FAILURE);
-}
-
-//// --- End LibAFL code ---
-
 /* abort execution with signal */
 static G_NORETURN
 void die_with_signal(int host_sig)
@@ -741,6 +725,12 @@ void die_with_signal(int host_sig)
     /* unreachable */
     _exit(EXIT_FAILURE);
 }
+
+//// --- Begin LibAFL code ---
+
+void (*libafl_dump_core_hook)(int host_sig);
+
+//// --- End LibAFL code ---
 
 static G_NORETURN
 void dump_core_and_abort(CPUArchState *env, int target_sig)
@@ -779,13 +769,13 @@ void dump_core_and_abort(CPUArchState *env, int target_sig)
     
     //// --- Begin LibAFL code ---
 
-    if (libafl_dump_core_hook) libafl_dump_core_hook(target_sig);
+    if (libafl_dump_core_hook) libafl_dump_core_hook(host_sig);
     
-    die_with_signal_nodfl(host_sig); // to trigger LibAFL sig handler
+    // die_with_signal_nodfl(host_sig); // to trigger LibAFL sig handler
 
     //// --- End LibAFL code ---
     
-    // die_with_signal(host_sig);
+    die_with_signal(host_sig);
 }
 
 /* queue a signal so that it will be send to the virtual CPU as soon
@@ -897,6 +887,13 @@ void die_from_signal(siginfo_t *info)
 
     error_report("QEMU internal SIG%s {code=%s, addr=%p}",
                  sig, code, info->si_addr);
+
+    //// --- Begin LibAFL code ---
+    
+    if (libafl_dump_core_hook) libafl_dump_core_hook(info->si_signo);
+    
+    //// --- End LibAFL code ---
+
     die_with_signal(info->si_signo);
 }
 
@@ -976,9 +973,36 @@ static void host_sigbus_handler(CPUState *cpu, siginfo_t *info,
 
 //// --- Begin LibAFL code ---
 
-int libafl_qemu_handle_crash(int host_sig, siginfo_t *info, void *puc);
+// int libafl_qemu_is_tb_protected_write(int host_sig, siginfo_t *info,
+//                                       host_sigcontext *uc);
+void libafl_qemu_handle_crash(int host_sig, siginfo_t *info, void *puc);
 
-int libafl_qemu_handle_crash(int host_sig, siginfo_t *info, void *puc)
+/* int libafl_qemu_is_tb_protected_write(int host_sig, siginfo_t *info,
+                                      host_sigcontext *uc)
+{
+    CPUState *cpu = thread_cpu;
+    uintptr_t host_addr = (uintptr_t)info->si_addr;
+
+    bool is_valid = h2g_valid(host_addr);
+    abi_ptr guest_addr = h2g_nocheck(host_addr);
+    uintptr_t pc = host_signal_pc(uc);
+    bool is_write = host_signal_write(info, uc);
+    MMUAccessType access_type = adjust_signal_pc(&pc, is_write);
+
+    return is_write
+        && is_valid
+        && info->si_code == SEGV_ACCERR
+        && handle_sigsegv_accerr_write(cpu, host_signal_mask(uc),
+                                       pc, guest_addr);
+} */
+
+void libafl_qemu_handle_crash(int host_sig, siginfo_t *info, void *puc) {
+    host_signal_handler(host_sig, info, puc);
+}
+
+//// --- End LibAFL code ---
+
+static void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
 {
     CPUState *cpu = thread_cpu;
     CPUArchState *env = cpu_env(cpu);
@@ -1001,7 +1025,7 @@ int libafl_qemu_handle_crash(int host_sig, siginfo_t *info, void *puc)
         case SIGSEGV:
             /* Only returns on handle_sigsegv_accerr_write success. */
             host_sigsegv_handler(cpu, info, uc);
-            return 0;
+            return;
         case SIGBUS:
             host_sigbus_handler(cpu, info, uc);
             sync_sig = true;
@@ -1016,7 +1040,7 @@ int libafl_qemu_handle_crash(int host_sig, siginfo_t *info, void *puc)
     /* get target signal number */
     guest_sig = host_to_target_signal(host_sig);
     if (guest_sig < 1 || guest_sig > TARGET_NSIG) {
-        return 0;
+        return;
     }
     trace_user_host_signal(env, host_sig, guest_sig);
 
@@ -1058,16 +1082,7 @@ int libafl_qemu_handle_crash(int host_sig, siginfo_t *info, void *puc)
 
     /* interrupt the virtual CPU as soon as possible */
     cpu_exit(thread_cpu);
-    
-    return 1;
 }
-
-static void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
-{
-    libafl_qemu_handle_crash(host_sig, info, puc);
-}
-
-//// --- End LibAFL code ---
 
 /* do_sigaltstack() returns target values and errnos. */
 /* compare linux/kernel/signal.c:do_sigaltstack() */
@@ -1238,15 +1253,14 @@ static void handle_pending_signal(CPUArchState *cpu_env, int sig,
     
     //// --- Start LibAFL code ---
     
-    int ignore_handling = 0;
     if (libafl_force_dfl && (sig == SIGABRT || sig == SIGABRT|| sig == SIGSEGV
                             || sig == SIGILL || sig == SIGBUS)) {
-        ignore_handling = 1;
+        handler = TARGET_SIG_DFL;
     }
     
     //// --- End LibAFL code ---
 
-    if (handler == TARGET_SIG_DFL || ignore_handling) {
+    if (handler == TARGET_SIG_DFL) {
         /* default handler : ignore some signal. The other are job control or fatal */
         if (sig == TARGET_SIGTSTP || sig == TARGET_SIGTTIN || sig == TARGET_SIGTTOU) {
             kill(getpid(),SIGSTOP);

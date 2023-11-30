@@ -25,6 +25,12 @@ typedef struct SysemuCPUOps {
      * @get_paging_enabled: Callback for inquiring whether paging is enabled.
      */
     bool (*get_paging_enabled)(const CPUState *cpu);
+//// --- Begin LibAFL code ---
+    /**
+     * @get_paging_id: Callback for inquiring paging ID (makes sense iif @get_paging_enabled is true).
+     */
+    hwaddr (*get_paging_id)(const CPUState* cpu);
+//// --- End LibAFL code ---
     /**
      * @get_phys_page_debug: Callback for obtaining a physical address.
      */

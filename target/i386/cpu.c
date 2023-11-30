@@ -7654,6 +7654,18 @@ static bool x86_cpu_get_paging_enabled(const CPUState *cs)
 
     return cpu->env.cr[0] & CR0_PG_MASK;
 }
+
+//// --- Begin LibAFL code ---
+
+static hwaddr x86_cpu_get_paging_id(const CPUState *cs)
+{
+    X86CPU *cpu = X86_CPU(cs);
+
+    return cpu->env.cr[3] & CR3_PD_BASE;
+}
+
+//// --- End LibAFL code ---
+
 #endif /* !CONFIG_USER_ONLY */
 
 static void x86_cpu_set_pc(CPUState *cs, vaddr value)
@@ -7922,6 +7934,9 @@ static Property x86_cpu_properties[] = {
 static const struct SysemuCPUOps i386_sysemu_ops = {
     .get_memory_mapping = x86_cpu_get_memory_mapping,
     .get_paging_enabled = x86_cpu_get_paging_enabled,
+//// --- Begin LibAFL code ---
+    .get_paging_id = x86_cpu_get_paging_id,
+//// --- End LibAFL code ---
     .get_phys_page_attrs_debug = x86_cpu_get_phys_page_attrs_debug,
     .asidx_from_attrs = x86_asidx_from_attrs,
     .get_crash_info = x86_cpu_get_crash_info,

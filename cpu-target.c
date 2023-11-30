@@ -61,6 +61,14 @@ int libafl_qemu_write_reg(CPUState* cpu, int reg, uint8_t* val);
 int libafl_qemu_read_reg(CPUState* cpu, int reg, uint8_t* val);
 int libafl_qemu_num_regs(CPUState* cpu);
 
+//// --- Begin LibAFL code ---
+
+#ifndef CONFIG_USER_ONLY
+hwaddr libafl_qemu_current_paging_id(CPUState* cpu);
+#endif
+
+//// --- End LibAFL code ---
+
 void libafl_flush_jit(void);
 
 extern int libafl_restoring_devices;
@@ -152,6 +160,22 @@ int libafl_qemu_num_regs(CPUState* cpu)
     CPUClass *cc = CPU_GET_CLASS(cpu);
     return cc->gdb_num_core_regs;
 }
+
+//// --- Begin LibAFL code ---
+
+#ifndef CONFIG_USER_ONLY
+hwaddr libafl_qemu_current_paging_id(CPUState* cpu)
+{
+    CPUClass* cc = CPU_GET_CLASS(cpu);
+    if (cc->sysemu_ops && cc->sysemu_ops->get_paging_id) {
+        return cc->sysemu_ops->get_paging_id(cpu);
+    } else {
+        return 0;
+    }
+}
+#endif
+
+//// --- End LibAFL code ---
 
 void libafl_flush_jit(void)
 {

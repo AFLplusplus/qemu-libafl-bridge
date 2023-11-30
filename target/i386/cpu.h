@@ -238,6 +238,12 @@ typedef enum X86Seg {
 #define CR0_CD_MASK  (1U << 30)
 #define CR0_PG_MASK  (1U << 31)
 
+//// --- Begin LibAFL code ---
+
+#define CR3_PD_BASE  (~(((((target_ulong) 1U) << 12) - 1)))
+
+//// --- End LibAFL code ---
+
 #define CR4_VME_MASK  (1U << 0)
 #define CR4_PVI_MASK  (1U << 1)
 #define CR4_TSD_MASK  (1U << 2)

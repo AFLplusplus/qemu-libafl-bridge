@@ -71,12 +71,13 @@ size_t libafl_add_edge_hook(uint64_t (*gen)(uint64_t data, target_ulong src, tar
                             void (*exec)(uint64_t data, uint64_t id),
                             uint64_t data);
 int libafl_qemu_remove_edge_hook(size_t num, int invalidate);
-void libafl_qemu_edge_hook_set_jit(size_t num, size_t (*jit)(uint64_t, uint64_t)); // no param names to avoid to be marked as safe
+bool libafl_qemu_edge_hook_set_jit(size_t num, size_t (*jit)(uint64_t, uint64_t)); // no param names to avoid to be marked as safe
 
 struct libafl_block_hook {
     uint64_t (*gen)(uint64_t data, target_ulong pc);
     void (*post_gen)(uint64_t data, target_ulong pc, target_ulong block_length);
     // void (*exec)(uint64_t data, uint64_t id);
+    size_t (*jit)(uint64_t data, uint64_t id); // optional opt
     uint64_t data;
     size_t num;
     TCGHelperInfo helper_info;
@@ -89,6 +90,7 @@ size_t libafl_add_block_hook(uint64_t (*gen)(uint64_t data, target_ulong pc),
                              void (*post_gen)(uint64_t data, target_ulong pc, target_ulong block_length),
                              void (*exec)(uint64_t data, uint64_t id), uint64_t data);
 int libafl_qemu_remove_block_hook(size_t num, int invalidate);
+bool libafl_qemu_block_hook_set_jit(size_t num, size_t (*jit)(uint64_t, uint64_t)); // no param names to avoid to be marked as safe
 
 struct libafl_rw_hook {
     uint64_t (*gen)(uint64_t data, target_ulong pc, MemOpIdx oi);

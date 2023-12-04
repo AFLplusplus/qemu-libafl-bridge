@@ -298,6 +298,9 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
             tcg_temp_free_i64(tmp0);
             tcg_temp_free_i64(tmp1);
         }
+        if (cur_id != (uint64_t)-1 && hook->jit) {
+            hook->jit(hook->data, cur_id);
+        }
         hook = hook->next;
     }
     

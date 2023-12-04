@@ -13,9 +13,7 @@ int libafl_restoring_devices;
 
 extern SaveState savevm_state;
 
-extern void save_section_header(QEMUFile *f, SaveStateEntry *se, uint8_t section_type);
 extern int vmstate_save(QEMUFile *f, SaveStateEntry *se, JSONWriter *vmdesc);
-extern void save_section_footer(QEMUFile *f, SaveStateEntry *se);
 
 // iothread must be locked
 DeviceSaveState* device_save_all(void) {

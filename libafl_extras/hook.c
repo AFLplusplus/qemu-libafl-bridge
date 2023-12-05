@@ -221,16 +221,17 @@ size_t libafl_add_edge_hook(uint64_t (*gen)(uint64_t data, target_ulong src, tar
 
 GEN_REMOVE_HOOK(edge)
 
-void libafl_qemu_edge_hook_set_jit(size_t num, size_t (*jit)(uint64_t data, uint64_t id)) {
+bool libafl_qemu_edge_hook_set_jit(size_t num, size_t (*jit)(uint64_t data, uint64_t id)) {
     struct libafl_edge_hook* hk = libafl_edge_hooks;
     while (hk) {
         if (hk->num == num) {
             hk->jit = jit;
-            return;
+            return true;
         } else {
             hk = hk->next;
         }
     }
+    return false;
 }
 
 static TCGHelperInfo libafl_exec_block_hook_info = {
@@ -269,6 +270,19 @@ size_t libafl_add_block_hook(uint64_t (*gen)(uint64_t data, target_ulong pc),
 }
 
 GEN_REMOVE_HOOK(block)
+
+bool libafl_qemu_block_hook_set_jit(size_t num, size_t (*jit)(uint64_t data, uint64_t id)) {
+    struct libafl_block_hook* hk = libafl_block_hooks;
+    while (hk) {
+        if (hk->num == num) {
+            hk->jit = jit;
+            return true;
+        } else {
+            hk = hk->next;
+        }
+    }
+    return false;
+}
 
 static TCGHelperInfo libafl_exec_read_hook1_info = {
     .func = NULL, .name = "libafl_exec_read_hook1", \

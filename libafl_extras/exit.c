@@ -66,7 +66,8 @@ void libafl_sync_exit_cpu(void)
     last_exit_reason.next_pc = 0;
 }
 
-bool libafl_exit_asap(void) {
+bool libafl_exit_asap(void)
+{
     return expected_exit;
 }
 

@@ -48,6 +48,7 @@ void coroutine_fn no_co_wrapper blk_co_unref(BlockBackend *blk);
 
 void blk_remove_all_bs(void);
 BlockBackend *blk_by_name(const char *name);
+BlockBackend *blk_by_name_hash(guint name_hash);
 BlockBackend *blk_next(BlockBackend *blk);
 BlockBackend *blk_all_next(BlockBackend *blk);
 bool monitor_add_blk(BlockBackend *blk, const char *name, Error **errp);

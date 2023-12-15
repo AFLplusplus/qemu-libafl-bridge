@@ -470,7 +470,7 @@ void QEMU_ERROR("code path is reachable")
 
 /*
  * Round number down to multiple. Requires that d be a power of 2 (see
- * QEMU_ALIGN_UP for a safer but slower version on arbitrary
+ * QEMU_ALIGN_DOWN for a safer but slower version on arbitrary
  * numbers); works even if d is a smaller type than n.
  */
 #ifndef ROUND_DOWN

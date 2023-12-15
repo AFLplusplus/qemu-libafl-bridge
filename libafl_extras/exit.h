@@ -20,7 +20,7 @@ int libafl_qemu_remove_breakpoint(target_ulong pc);
 
 enum libafl_exit_reason_kind {
     BREAKPOINT = 0,
-    SYNC_BACKDOOR = 1
+    SYNC_BACKDOOR = 1,
 };
 
 struct libafl_exit_reason_breakpoint {

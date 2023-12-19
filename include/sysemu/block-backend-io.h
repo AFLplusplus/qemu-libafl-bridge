@@ -24,7 +24,9 @@
  */
 
 const char *blk_name(const BlockBackend *blk);
+//// --- Begin LibAFL code ---
 guint blk_name_hash(const BlockBackend* blk);
+//// --- End LibAFL code ---
 
 BlockDriverState *blk_bs(BlockBackend *blk);
 

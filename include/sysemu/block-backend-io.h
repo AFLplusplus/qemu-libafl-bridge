@@ -24,6 +24,7 @@
  */
 
 const char *blk_name(const BlockBackend *blk);
+guint blk_name_hash(const BlockBackend* blk);
 
 BlockDriverState *blk_bs(BlockBackend *blk);
 

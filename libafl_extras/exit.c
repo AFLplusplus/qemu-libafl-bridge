@@ -97,6 +97,17 @@ CPUState* libafl_last_exit_cpu(void)
     return NULL;
 }
 
+void libafl_exit_request_internal(CPUState* cpu, uint64_t pc, ShutdownCause cause, int signal)
+{
+    last_exit_reason.kind = INTERNAL;
+    last_exit_reason.data.internal.cause = cause;
+    last_exit_reason.data.internal.signal = signal;
+
+    last_exit_reason.cpu = cpu;
+    last_exit_reason.next_pc = pc;
+    expected_exit = true;
+}
+
 void libafl_exit_request_sync_backdoor(CPUState* cpu, target_ulong pc)
 {
     last_exit_reason.kind = SYNC_BACKDOOR;

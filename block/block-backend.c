@@ -27,7 +27,10 @@
 #include "qemu/option.h"
 #include "trace.h"
 #include "migration/misc.h"
+
+//// --- Begin LibAFL code ---
 #include "libafl_extras/syx-snapshot/syx-snapshot.h"
+//// --- End LibAFL code ---
 
 /* Number of coroutines to reserve per attached device model */
 #define COROUTINE_POOL_RESERVATION 64
@@ -714,10 +717,12 @@ bool monitor_add_blk(BlockBackend *blk, const char *name, Error **errp)
         error_setg(errp, "Invalid device name");
         return false;
     }
+//// --- Begin LibAFL code ---
     if (blk_by_name(name)) {
         error_setg(errp, "Device with id '%s' already exists", name);
         return false;
     }
+//// --- End LibAFL code ---
     if (blk_by_name_hash(g_str_hash(name))) {
         error_setg(errp, "Device with name hash '%x' already exists", g_str_hash(name));
         return false;
@@ -766,11 +771,13 @@ const char *blk_name(const BlockBackend *blk)
     return blk->name ?: "";
 }
 
+//// --- Begin LibAFL code ---
 guint blk_name_hash(const BlockBackend* blk)
 {
     IO_CODE();
     return blk->name_hash;
 }
+//// --- End LibAFL code ---
 
 /*
  * Return the BlockBackend with name @name if it exists, else null.
@@ -1660,12 +1667,16 @@ static void coroutine_fn blk_aio_read_entry(void *opaque)
 
     assert(qiov->size == acb->bytes);
 
+//// --- Begin LibAFL code ---
     if (!syx_snapshot_cow_cache_read_entry(rwco->blk, rwco->offset, acb->bytes, qiov, 0, rwco->flags)) {
+//// --- End LibAFL code ---
        rwco->ret = blk_co_do_preadv_part(rwco->blk, rwco->offset, acb->bytes, qiov,
                                       0, rwco->flags);
+//// --- Begin LibAFL code ---
     } else {
        rwco->ret = 0;
     }
+//// --- End LibAFL code ---
 
     blk_aio_complete(acb);
 }

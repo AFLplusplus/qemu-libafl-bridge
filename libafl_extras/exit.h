@@ -17,6 +17,7 @@ void libafl_breakpoint_invalidate(CPUState *cpu, target_ulong pc);
 
 int libafl_qemu_set_breakpoint(target_ulong pc);
 int libafl_qemu_remove_breakpoint(target_ulong pc);
+void libafl_qemu_trigger_breakpoint(CPUState* cpu);
 
 enum libafl_exit_reason_kind {
     INTERNAL = 0,

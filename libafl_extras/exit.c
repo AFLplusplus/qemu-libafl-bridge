@@ -123,6 +123,12 @@ void libafl_exit_request_breakpoint(CPUState* cpu, target_ulong pc)
     prepare_qemu_exit(cpu, pc);
 }
 
+void libafl_qemu_trigger_breakpoint(CPUState* cpu)
+{
+    CPUClass* cc = CPU_GET_CLASS(cpu);
+    libafl_exit_request_breakpoint(cpu, cc->get_pc(cpu));
+}
+
 void libafl_exit_signal_vm_start(void)
 {
     last_exit_reason.cpu = NULL;

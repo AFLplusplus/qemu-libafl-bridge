@@ -1069,7 +1069,7 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
             if (last_tb) {
                 // tb_add_jump(last_tb, tb_exit, tb);
                 
-                //if (last_tb->jmp_reset_offset[1] != TB_JMP_OFFSET_INVALID) {
+                if (last_tb->jmp_reset_offset[1] != TB_JMP_OFFSET_INVALID) {
                     mmap_lock();
                     edge = libafl_gen_edge(cpu, last_tb->pc, pc, tb_exit, cs_base, flags, cflags);
                     mmap_unlock();
@@ -1081,9 +1081,9 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                     } else {
                         tb_add_jump(last_tb, tb_exit, tb);
                     }
-                /*} else {
+                } else {
                     tb_add_jump(last_tb, tb_exit, tb);
-                }*/
+                }
             }
 
             if (has_libafl_edge) {

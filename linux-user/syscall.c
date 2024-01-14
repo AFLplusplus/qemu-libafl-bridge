@@ -6563,9 +6563,10 @@ static void *clone_func(void *arg)
     libafl_qemu_env = env;
     if (libafl_new_thread_hooks) {
         bool continue_execution = true;
+        int tid = sys_gettid();
         struct libafl_new_thread_hook* h = libafl_new_thread_hooks;
         while (h) {
-            continue_execution = h->callback(h->data, info->tid) && continue_execution;
+            continue_execution = h->callback(h->data, tid) && continue_execution;
             h = h->next;
         }
         if (continue_execution) cpu_loop(env);

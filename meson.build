@@ -123,8 +123,17 @@ if get_option('kvm').allowed() and targetos == 'linux'
   kvm_targets_c = '"' + '" ,"'.join(kvm_targets) + '"'
 endif
 config_host_data.set('CONFIG_KVM_TARGETS', kvm_targets_c)
-
 accelerator_targets = { 'CONFIG_KVM': kvm_targets }
+
+if cpu in ['x86', 'x86_64']
+  xen_targets = ['i386-softmmu', 'x86_64-softmmu']
+elif cpu in ['arm', 'aarch64']
+  # i386 emulator provides xenpv machine type for multiple architectures
+  xen_targets = ['i386-softmmu', 'x86_64-softmmu', 'aarch64-softmmu']
+else
+  xen_targets = []
+endif
+accelerator_targets += { 'CONFIG_XEN': xen_targets }
 
 if cpu in ['aarch64']
   accelerator_targets += {
@@ -132,12 +141,6 @@ if cpu in ['aarch64']
   }
 endif
 
-if cpu in ['x86', 'x86_64', 'arm', 'aarch64']
-  # i386 emulator provides xenpv machine type for multiple architectures
-  accelerator_targets += {
-    'CONFIG_XEN': ['i386-softmmu', 'x86_64-softmmu', 'aarch64-softmmu'],
-  }
-endif
 if cpu in ['x86', 'x86_64']
   accelerator_targets += {
     'CONFIG_HVF': ['x86_64-softmmu'],
@@ -2293,6 +2296,7 @@ config_host_data.set('HAVE_GLIB_WITH_SLICE_ALLOCATOR', glib_has_gslice)
 config_host_data.set('HAVE_OPENPTY', cc.has_function('openpty', dependencies: util))
 config_host_data.set('HAVE_STRCHRNUL', cc.has_function('strchrnul'))
 config_host_data.set('HAVE_SYSTEM_FUNCTION', cc.has_function('system', prefix: '#include <stdlib.h>'))
+config_host_data.set('HAVE_GETLOADAVG_FUNCTION', cc.has_function('getloadavg', prefix: '#include <stdlib.h>'))
 if rbd.found()
   config_host_data.set('HAVE_RBD_NAMESPACE_EXISTS',
                        cc.has_function('rbd_namespace_exists',

@@ -199,8 +199,8 @@ REG32(PHYMNTNC, 0x34) /* Phy Maintenance reg */
     FIELD(PHYMNTNC, PHY_ADDR, 23, 5)
     FIELD(PHYMNTNC, OP, 28, 2)
     FIELD(PHYMNTNC, ST, 30, 2)
-#define MDIO_OP_READ    0x3
-#define MDIO_OP_WRITE   0x2
+#define MDIO_OP_READ    0x2
+#define MDIO_OP_WRITE   0x1
 
 REG32(RXPAUSE, 0x38) /* RX Pause Time reg */
 REG32(TXPAUSE, 0x3c) /* TX Pause Time reg */
@@ -225,8 +225,8 @@ REG32(WOLAN, 0xb8) /* Wake on LAN reg */
 REG32(IPGSTRETCH, 0xbc) /* IPG Stretch reg */
 REG32(SVLAN, 0xc0) /* Stacked VLAN reg */
 REG32(MODID, 0xfc) /* Module ID reg */
-REG32(OCTTXLO, 0x100) /* Octects transmitted Low reg */
-REG32(OCTTXHI, 0x104) /* Octects transmitted High reg */
+REG32(OCTTXLO, 0x100) /* Octets transmitted Low reg */
+REG32(OCTTXHI, 0x104) /* Octets transmitted High reg */
 REG32(TXCNT, 0x108) /* Error-free Frames transmitted */
 REG32(TXBCNT, 0x10c) /* Error-free Broadcast Frames */
 REG32(TXMCNT, 0x110) /* Error-free Multicast Frame */
@@ -245,8 +245,8 @@ REG32(EXCESSCOLLCNT, 0x140) /* Excessive Collision Frames */
 REG32(LATECOLLCNT, 0x144) /* Late Collision Frames */
 REG32(DEFERTXCNT, 0x148) /* Deferred Transmission Frames */
 REG32(CSENSECNT, 0x14c) /* Carrier Sense Error Counter */
-REG32(OCTRXLO, 0x150) /* Octects Received register Low */
-REG32(OCTRXHI, 0x154) /* Octects Received register High */
+REG32(OCTRXLO, 0x150) /* Octets Received register Low */
+REG32(OCTRXHI, 0x154) /* Octets Received register High */
 REG32(RXCNT, 0x158) /* Error-free Frames Received */
 REG32(RXBROADCNT, 0x15c) /* Error-free Broadcast Frames RX */
 REG32(RXMULTICNT, 0x160) /* Error-free Multicast Frames RX */
@@ -1743,7 +1743,8 @@ static void gem_realize(DeviceState *dev, Error **errp)
     qemu_macaddr_default_if_unset(&s->conf.macaddr);
 
     s->nic = qemu_new_nic(&net_gem_info, &s->conf,
-                          object_get_typename(OBJECT(dev)), dev->id, s);
+                          object_get_typename(OBJECT(dev)), dev->id,
+                          &dev->mem_reentrancy_guard, s);
 
     if (s->jumbo_max_len > MAX_FRAME_SIZE) {
         error_setg(errp, "jumbo-max-len is greater than %d",

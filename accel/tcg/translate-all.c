@@ -303,7 +303,7 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
         }
         hook = hook->next;
     }
-    
+
     //// --- End LibAFL code ---
 
     gen_intermediate_code(env_cpu(env), tb, max_insns, pc, host_pc);
@@ -320,11 +320,11 @@ static target_ulong reverse_bits(target_ulong num)
 {
     unsigned int count = sizeof(num) * 8 - 1;
     target_ulong reverse_num = num;
-      
-    num >>= 1; 
+
+    num >>= 1;
     while(num)
     {
-       reverse_num <<= 1;       
+       reverse_num <<= 1;
        reverse_num |= num & 1;
        num >>= 1;
        count--;
@@ -358,7 +358,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     (void)existing_tb;
 
     assert_memory_lock();
-    
+
     struct libafl_edge_hook* hook = libafl_edge_hooks;
     int no_exec_hook = 1;
     while (hook) {

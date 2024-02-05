@@ -462,7 +462,6 @@ bool migrate_uri_parse(const char *uri, MigrationChannel **channel,
 {
     g_autoptr(MigrationChannel) val = g_new0(MigrationChannel, 1);
     g_autoptr(MigrationAddress) addr = g_new0(MigrationAddress, 1);
-    SocketAddress *saddr = NULL;
     InetSocketAddress *isock = &addr->u.rdma;
     strList **tail = &addr->u.exec.args;
 
@@ -487,12 +486,14 @@ bool migrate_uri_parse(const char *uri, MigrationChannel **channel,
                 strstart(uri, "vsock:", NULL) ||
                 strstart(uri, "fd:", NULL)) {
         addr->transport = MIGRATION_ADDRESS_TYPE_SOCKET;
-        saddr = socket_parse(uri, errp);
+        SocketAddress *saddr = socket_parse(uri, errp);
         if (!saddr) {
             return false;
         }
         addr->u.socket.type = saddr->type;
         addr->u.socket.u = saddr->u;
+        /* Don't free the objects inside; their ownership moved to "addr" */
+        g_free(saddr);
     } else if (strstart(uri, "file:", NULL)) {
         addr->transport = MIGRATION_ADDRESS_TYPE_FILE;
         addr->u.file.filename = g_strdup(uri + strlen("file:"));
@@ -515,7 +516,7 @@ static void qemu_start_incoming_migration(const char *uri, bool has_channels,
                                           MigrationChannelList *channels,
                                           Error **errp)
 {
-    MigrationChannel *channel = NULL;
+    g_autoptr(MigrationChannel) channel = NULL;
     MigrationAddress *addr = NULL;
     MigrationIncomingState *mis = migration_incoming_get_current();
 
@@ -533,18 +534,18 @@ static void qemu_start_incoming_migration(const char *uri, bool has_channels,
             error_setg(errp, "Channel list has more than one entries");
             return;
         }
-        channel = channels->value;
+        addr = channels->value->addr;
     } else if (uri) {
         /* caller uses the old URI syntax */
         if (!migrate_uri_parse(uri, &channel, errp)) {
             return;
         }
+        addr = channel->addr;
     } else {
         error_setg(errp, "neither 'uri' or 'channels' argument are "
                    "specified in 'migrate-incoming' qmp command ");
         return;
     }
-    addr = channel->addr;
 
     /* transport mechanism not suitable for migration? */
     if (!migration_channels_and_transport_compatible(addr, errp)) {
@@ -1932,7 +1933,7 @@ void qmp_migrate(const char *uri, bool has_channels,
     bool resume_requested;
     Error *local_err = NULL;
     MigrationState *s = migrate_get_current();
-    MigrationChannel *channel = NULL;
+    g_autoptr(MigrationChannel) channel = NULL;
     MigrationAddress *addr = NULL;
 
     /*
@@ -1949,18 +1950,18 @@ void qmp_migrate(const char *uri, bool has_channels,
             error_setg(errp, "Channel list has more than one entries");
             return;
         }
-        channel = channels->value;
+        addr = channels->value->addr;
     } else if (uri) {
         /* caller uses the old URI syntax */
         if (!migrate_uri_parse(uri, &channel, errp)) {
             return;
         }
+        addr = channel->addr;
     } else {
         error_setg(errp, "neither 'uri' or 'channels' argument are "
                    "specified in 'migrate' qmp command ");
         return;
     }
-    addr = channel->addr;
 
     /* transport mechanism not suitable for migration? */
     if (!migration_channels_and_transport_compatible(addr, errp)) {

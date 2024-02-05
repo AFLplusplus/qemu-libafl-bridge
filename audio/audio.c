@@ -1744,7 +1744,7 @@ static AudioState *audio_init(Audiodev *dev, Error **errp)
         if (driver) {
             done = !audio_driver_init(s, driver, dev, errp);
         } else {
-            error_setg(errp, "Unknown audio driver `%s'\n", drvname);
+            error_setg(errp, "Unknown audio driver `%s'", drvname);
         }
         if (!done) {
             goto out;
@@ -1758,12 +1758,15 @@ static AudioState *audio_init(Audiodev *dev, Error **errp)
                 goto out;
             }
             s->dev = dev = e->dev;
+            QSIMPLEQ_REMOVE_HEAD(&default_audiodevs, next);
+            g_free(e);
             drvname = AudiodevDriver_str(dev->driver);
             driver = audio_driver_lookup(drvname);
             if (!audio_driver_init(s, driver, dev, NULL)) {
                 break;
             }
-            QSIMPLEQ_REMOVE_HEAD(&default_audiodevs, next);
+            qapi_free_Audiodev(dev);
+            s->dev = NULL;
         }
     }
 

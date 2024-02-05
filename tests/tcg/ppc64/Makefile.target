@@ -16,6 +16,11 @@ PPC64_TESTS=bcdsub non_signalling_xscv
 endif
 $(PPC64_TESTS): CFLAGS += -mpower8-vector
 
+ifneq ($(CROSS_CC_HAS_POWER8_VECTOR),)
+PPC64_TESTS += vsx_f2i_nan
+endif
+vsx_f2i_nan: CFLAGS += -mpower8-vector -I$(SRC_PATH)/include
+
 PPC64_TESTS += mtfsf
 PPC64_TESTS += mffsce
 
@@ -37,12 +42,5 @@ run-vector: QEMU_OPTS += -cpu POWER10
 PPC64_TESTS += signal_save_restore_xer
 PPC64_TESTS += xxspltw
 PPC64_TESTS += test-aes
-
-ifneq ($(GDB),)
-# Skip for now until vsx registers sorted out
-run-gdbstub-registers:
-	$(call skip-test, $<, "BROKEN reading VSX registers")
-endif
-
 
 TESTS += $(PPC64_TESTS)

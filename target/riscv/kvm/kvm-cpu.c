@@ -87,17 +87,17 @@ static uint64_t kvm_riscv_reg_id(CPURISCVState *env, uint64_t type,
 
 #define KVM_RISCV_GET_CSR(cs, env, csr, reg) \
     do { \
-        int ret = kvm_get_one_reg(cs, RISCV_CSR_REG(env, csr), &reg); \
-        if (ret) { \
-            return ret; \
+        int _ret = kvm_get_one_reg(cs, RISCV_CSR_REG(env, csr), &reg); \
+        if (_ret) { \
+            return _ret; \
         } \
     } while (0)
 
 #define KVM_RISCV_SET_CSR(cs, env, csr, reg) \
     do { \
-        int ret = kvm_set_one_reg(cs, RISCV_CSR_REG(env, csr), &reg); \
-        if (ret) { \
-            return ret; \
+        int _ret = kvm_set_one_reg(cs, RISCV_CSR_REG(env, csr), &reg); \
+        if (_ret) { \
+            return _ret; \
         } \
     } while (0)
 
@@ -533,7 +533,6 @@ static int kvm_riscv_put_regs_core(CPUState *cs)
 
 static int kvm_riscv_get_regs_csr(CPUState *cs)
 {
-    int ret = 0;
     CPURISCVState *env = &RISCV_CPU(cs)->env;
 
     KVM_RISCV_GET_CSR(cs, env, sstatus, env->mstatus);
@@ -545,12 +544,12 @@ static int kvm_riscv_get_regs_csr(CPUState *cs)
     KVM_RISCV_GET_CSR(cs, env, stval, env->stval);
     KVM_RISCV_GET_CSR(cs, env, sip, env->mip);
     KVM_RISCV_GET_CSR(cs, env, satp, env->satp);
-    return ret;
+
+    return 0;
 }
 
 static int kvm_riscv_put_regs_csr(CPUState *cs)
 {
-    int ret = 0;
     CPURISCVState *env = &RISCV_CPU(cs)->env;
 
     KVM_RISCV_SET_CSR(cs, env, sstatus, env->mstatus);
@@ -563,7 +562,7 @@ static int kvm_riscv_put_regs_csr(CPUState *cs)
     KVM_RISCV_SET_CSR(cs, env, sip, env->mip);
     KVM_RISCV_SET_CSR(cs, env, satp, env->satp);
 
-    return ret;
+    return 0;
 }
 
 static int kvm_riscv_get_regs_fp(CPUState *cs)
@@ -833,9 +832,8 @@ static void kvm_riscv_read_multiext_legacy(RISCVCPU *cpu,
                 multi_ext_cfg->supported = false;
                 val = false;
             } else {
-                error_report("Unable to read ISA_EXT KVM register %s, "
-                             "error code: %s", multi_ext_cfg->name,
-                             strerrorname_np(errno));
+                error_report("Unable to read ISA_EXT KVM register %s: %s",
+                             multi_ext_cfg->name, strerror(errno));
                 exit(EXIT_FAILURE);
             }
         } else {
@@ -896,8 +894,8 @@ static void kvm_riscv_init_multiext_cfg(RISCVCPU *cpu, KVMScratchCPU *kvmcpu)
          *
          * Error out if we get any other errno.
          */
-        error_report("Error when accessing get-reg-list, code: %s",
-                     strerrorname_np(errno));
+        error_report("Error when accessing get-reg-list: %s",
+                     strerror(errno));
         exit(EXIT_FAILURE);
     }
 
@@ -906,8 +904,8 @@ static void kvm_riscv_init_multiext_cfg(RISCVCPU *cpu, KVMScratchCPU *kvmcpu)
     reglist->n = rl_struct.n;
     ret = ioctl(kvmcpu->cpufd, KVM_GET_REG_LIST, reglist);
     if (ret) {
-        error_report("Error when reading KVM_GET_REG_LIST, code %s ",
-                     strerrorname_np(errno));
+        error_report("Error when reading KVM_GET_REG_LIST: %s",
+                     strerror(errno));
         exit(EXIT_FAILURE);
     }
 
@@ -928,9 +926,8 @@ static void kvm_riscv_init_multiext_cfg(RISCVCPU *cpu, KVMScratchCPU *kvmcpu)
         reg.addr = (uint64_t)&val;
         ret = ioctl(kvmcpu->cpufd, KVM_GET_ONE_REG, &reg);
         if (ret != 0) {
-            error_report("Unable to read ISA_EXT KVM register %s, "
-                         "error code: %s", multi_ext_cfg->name,
-                         strerrorname_np(errno));
+            error_report("Unable to read ISA_EXT KVM register %s: %s",
+                         multi_ext_cfg->name, strerror(errno));
             exit(EXIT_FAILURE);
         }
 

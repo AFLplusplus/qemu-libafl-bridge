@@ -196,8 +196,10 @@ bdrv_snapshot_fallback(BlockDriverState *bs)
 int bdrv_can_snapshot(BlockDriverState *bs)
 {
     BlockDriver *drv = bs->drv;
+
     GLOBAL_STATE_CODE();
-    if (!drv || !bdrv_is_inserted(bs) || bdrv_is_read_only(bs)) {
+
+    if (!drv || !bdrv_is_inserted(bs) || !bdrv_is_writable(bs)) {
         return 0;
     }
 
@@ -292,7 +294,7 @@ int bdrv_snapshot_goto(BlockDriverState *bs,
         /* .bdrv_open() will re-attach it */
         bdrv_graph_wrlock(NULL);
         bdrv_unref_child(bs, fallback);
-        bdrv_graph_wrunlock();
+        bdrv_graph_wrunlock(NULL);
 
         ret = bdrv_snapshot_goto(fallback_bs, snapshot_id, errp);
         open_ret = drv->bdrv_open(bs, options, bs->open_flags, &local_err);

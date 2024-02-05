@@ -1613,7 +1613,7 @@ static void external_snapshot_abort(void *opaque)
             bdrv_drained_begin(state->new_bs);
             bdrv_graph_wrlock(state->old_bs);
             bdrv_replace_node(state->new_bs, state->old_bs, &error_abort);
-            bdrv_graph_wrunlock();
+            bdrv_graph_wrunlock(state->old_bs);
             bdrv_drained_end(state->new_bs);
 
             bdrv_unref(state->old_bs); /* bdrv_replace_node() ref'ed old_bs */
@@ -2400,8 +2400,9 @@ void coroutine_fn qmp_block_resize(const char *device, const char *node_name,
 
     bdrv_co_lock(bs);
     bdrv_drained_end(bs);
-    blk_co_unref(blk);
     bdrv_co_unlock(bs);
+
+    blk_co_unref(blk);
 }
 
 void qmp_block_stream(const char *job_id, const char *device,
@@ -3692,7 +3693,7 @@ void qmp_x_blockdev_change(const char *parent, const char *child,
     }
 
 out:
-    bdrv_graph_wrunlock();
+    bdrv_graph_wrunlock(NULL);
 }
 
 BlockJobInfoList *qmp_query_block_jobs(Error **errp)

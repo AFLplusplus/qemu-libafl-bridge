@@ -10,8 +10,9 @@
 import os
 import logging
 
-from avocado import skipIf
+from avocado import skipUnless
 from avocado_qemu import BUILD_DIR
+from avocado.utils import datadrainer
 from avocado.utils import gdb
 from avocado.utils import process
 from avocado.utils.network.ports import find_free_port
@@ -52,6 +53,10 @@ class ReverseDebugging(LinuxKernelTest):
         if args:
             vm.add_args(*args)
         vm.launch()
+        console_drainer = datadrainer.LineLogger(vm.console_socket.fileno(),
+                                    logger=self.log.getChild('console'),
+                                    stop_check=(lambda : not vm.is_running()))
+        console_drainer.start()
         return vm
 
     @staticmethod
@@ -201,7 +206,8 @@ class ReverseDebugging_X86_64(ReverseDebugging):
             + self.get_reg_le(g, self.REG_CS) * 0x10
 
     # unidentified gitlab timeout problem
-    @skipIf(os.getenv('GITLAB_CI'), 'Running on GitLab')
+    @skipUnless(os.getenv('QEMU_TEST_FLAKY_TESTS'), 'Test is unstable on GitLab')
+
     def test_x86_64_pc(self):
         """
         :avocado: tags=arch:x86_64
@@ -218,7 +224,8 @@ class ReverseDebugging_AArch64(ReverseDebugging):
     REG_PC = 32
 
     # unidentified gitlab timeout problem
-    @skipIf(os.getenv('GITLAB_CI'), 'Running on GitLab')
+    @skipUnless(os.getenv('QEMU_TEST_FLAKY_TESTS'), 'Test is unstable on GitLab')
+
     def test_aarch64_virt(self):
         """
         :avocado: tags=arch:aarch64
@@ -242,11 +249,13 @@ class ReverseDebugging_ppc64(ReverseDebugging):
     REG_PC = 0x40
 
     # unidentified gitlab timeout problem
-    @skipIf(os.getenv('GITLAB_CI'), 'Running on GitLab')
+    @skipUnless(os.getenv('QEMU_TEST_FLAKY_TESTS'), 'Test is unstable on GitLab')
+
     def test_ppc64_pseries(self):
         """
         :avocado: tags=arch:ppc64
         :avocado: tags=machine:pseries
+        :avocado: tags=flaky
         """
         # SLOF branches back to its entry point, which causes this test
         # to take the 'hit a breakpoint again' path. That's not a problem,
@@ -254,11 +263,14 @@ class ReverseDebugging_ppc64(ReverseDebugging):
         self.endian_is_le = False
         self.reverse_debugging()
 
-    @skipIf(os.getenv('GITLAB_CI'), 'Running on GitLab')
+    # See https://gitlab.com/qemu-project/qemu/-/issues/1992
+    @skipUnless(os.getenv('QEMU_TEST_FLAKY_TESTS'), 'Test is unstable on GitLab')
+
     def test_ppc64_powernv(self):
         """
         :avocado: tags=arch:ppc64
         :avocado: tags=machine:powernv
+        :avocado: tags=flaky
         """
         self.endian_is_le = False
         self.reverse_debugging()

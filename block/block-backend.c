@@ -29,7 +29,9 @@
 #include "migration/misc.h"
 
 //// --- Begin LibAFL code ---
+#ifdef CONFIG_SOFTMMU
 #include "libafl_extras/syx-snapshot/syx-snapshot.h"
+#endif
 //// --- End LibAFL code ---
 
 /* Number of coroutines to reserve per attached device model */
@@ -736,9 +738,7 @@ bool monitor_add_blk(BlockBackend *blk, const char *name, Error **errp)
 
     blk->name = g_strdup(name);
 //// --- Begin LibAFL code ---
-
     blk->name_hash = g_str_hash(blk->name);
-
 //// --- End LibAFL code ---
     QTAILQ_INSERT_TAIL(&monitor_block_backends, blk, monitor_link);
     return true;
@@ -1674,14 +1674,18 @@ static void coroutine_fn blk_aio_read_entry(void *opaque)
     assert(qiov->size == acb->bytes);
 
 //// --- Begin LibAFL code ---
+#ifdef CONFIG_SOFTMMU
     if (!syx_snapshot_cow_cache_read_entry(rwco->blk, rwco->offset, acb->bytes, qiov, 0, rwco->flags)) {
+#endif
 //// --- End LibAFL code ---
        rwco->ret = blk_co_do_preadv_part(rwco->blk, rwco->offset, acb->bytes, qiov,
                                       0, rwco->flags);
 //// --- Begin LibAFL code ---
+#ifdef CONFIG_SOFTMMU
     } else {
        rwco->ret = 0;
     }
+#endif
 //// --- End LibAFL code ---
 
     blk_aio_complete(acb);
@@ -1695,12 +1699,19 @@ static void coroutine_fn blk_aio_write_entry(void *opaque)
 
     assert(!qiov || qiov->size == acb->bytes);
 
+//// --- Begin LibAFL code ---
+#ifdef CONFIG_SOFTMMU
    if (!syx_snapshot_cow_cache_write_entry(rwco->blk, rwco->offset, acb->bytes, qiov, 0, rwco->flags)) {
-        rwco->ret = blk_co_do_pwritev_part(rwco->blk, rwco->offset, acb->bytes,
-                                       qiov, 0, rwco->flags);
+#endif
+//// --- End LibAFL code ---
+        rwco->ret = blk_co_do_pwritev_part(rwco->blk, rwco->offset, acb->bytes, qiov, 0, rwco->flags);
+//// --- Begin LibAFL code ---
+#ifdef CONFIG_SOFTMMU
    } else {
        rwco->ret = 0;
    }
+#endif
+//// --- End LibAFL code ---
 
     blk_aio_complete(acb);
 }

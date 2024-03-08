@@ -11,5 +11,7 @@ jobs:
     runs-on: self-hosted
     container: registry.gitlab.com/qemu-project/qemu/qemu/ubuntu2204:latest
     steps:
-      - name: Setup build directory
-        run: mkdir -p build && cd build && ../configure --enable-werror --disable-docs --enable-fdt=system && make -j$(expr $(nproc) + 1)
+      - name: Show directory
+        run: ls -lah
+      - name: Build QEMU
+        run: mkdir -p build && cd build && ../configure --enable-werror --disable-docs --enable-fdt=system && make -j $(expr $(nproc) + 1)

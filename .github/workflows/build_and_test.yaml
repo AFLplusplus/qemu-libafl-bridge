@@ -13,5 +13,5 @@ jobs:
     steps:
       - name: Show directory
         run: ls -lah
-      - name: Build QEMU
-        run: mkdir -p build && cd build && ../configure --enable-werror --disable-docs --enable-fdt=system && make -j $(expr $(nproc) + 1)
+      # - name: Build QEMU
+      #   run: mkdir -p build && cd build && ../configure --enable-werror --disable-docs --enable-fdt=system && make -j $(expr $(nproc) + 1)

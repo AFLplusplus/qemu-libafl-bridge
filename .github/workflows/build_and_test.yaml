@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     runs-on: self-hosted
-    container: registry.gitlab.com/qemu-project/qemu:latest
+    container: registry.gitlab.com/qemu-project/qemu/qemu/ubuntu2204:latest
     steps:
       - name: Setup build directory
         run: mkdir build && cd build && ../configure --enable-werror --disable-docs --enable-fdt=system && make -j$(expr $(nproc) + 1)

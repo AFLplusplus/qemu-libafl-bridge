@@ -1,0 +1,15 @@
+name: Build and Test QEMU
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: self-hosted
+    container: registry.gitlab.com/qemu-project/qemu:latest
+    steps:
+      - name: Setup build directory
+        run: mkdir build && cd build && ../configure --enable-werror --disable-docs --enable-fdt=system && make -j$(expr $(nproc) + 1)

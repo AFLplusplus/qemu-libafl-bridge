@@ -6,6 +6,11 @@ This raw interface is used in `libafl_qemu` that expose a more Rusty API.
 
 To use `libafl_qemu`, refer to the [LibAFL](https://github.com/AFLplusplus/LibAFL) repository, especially the qemu example fuzzers such as [qemu_launcher](https://github.com/AFLplusplus/LibAFL/tree/main/fuzzers/qemu_launcher).
 
+## Build
+
+Building `qemu-libafl-bridge` out of LibAFL is similar to building QEMU.
+Please have a look at [QEMU's official wiki](https://wiki.qemu.org/Hosts) to get instructions depending on your host platform.
+
 #### License
 
 <sup>

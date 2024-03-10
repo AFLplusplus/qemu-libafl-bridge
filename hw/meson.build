@@ -18,6 +18,9 @@ subdir('intc')
 subdir('ipack')
 subdir('ipmi')
 subdir('isa')
+#### --- Begin LibAFL code ---
+subdir('libafl')
+#### --- End LibAFL code ---
 subdir('mem')
 subdir('misc')
 subdir('net')

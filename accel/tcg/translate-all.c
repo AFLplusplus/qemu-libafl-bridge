@@ -649,6 +649,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     }
     tb->tc.size = gen_code_size;
 
+//// --- Begin LibAFL code ---
     struct libafl_block_hook *hook = libafl_block_hooks;
     while (hook)
     {
@@ -656,6 +657,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
             hook->post_gen(hook->data, pc, tb->size);
         hook = hook->next;
     }
+//// --- End LibAFL code ---
 
     /*
      * For CF_PCREL, attribute all executions of the generated code

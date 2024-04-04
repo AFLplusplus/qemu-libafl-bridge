@@ -856,20 +856,6 @@ void tb_reset_jump(TranslationBlock *tb, int n)
     tb_set_jmp_target(tb, n, addr);
 }
 
-static inline void tb_reset_edge(TranslationBlock *edge) {
-    TranslationBlock *tb;
-    int n;
-
-    qemu_spin_lock(&edge->jmp_lock);
-
-    TB_FOR_EACH_JMP(edge, tb, n) {
-        tb_reset_jump(tb, n);
-        qatomic_and(&tb->jmp_dest[n], (uintptr_t)NULL | 1);
-    }
-
-    qemu_spin_unlock(&edge->jmp_lock);
-}
-
 /* remove any jumps to the TB */
 static inline void tb_jmp_unlink(TranslationBlock *dest)
 {
@@ -880,11 +866,11 @@ static inline void tb_jmp_unlink(TranslationBlock *dest)
 
     TB_FOR_EACH_JMP(dest, tb, n) {
         tb_reset_jump(tb, n);
-        /// libafl code. check if this TB is an edge, in case unlink its predecessor
+        //// --- Begin LibAFL code --- 
         if (tb->flags & 0x04000000) {
-            tb_reset_edge(tb);
+            tb_phys_invalidate(tb, -1);
         }
-        /// libafl_code end
+        //// --- End LibAFL code ---
         qatomic_and(&tb->jmp_dest[n], (uintptr_t)NULL | 1);
         /* No need to clear the list entry; setting the dest ptr is enough */
     }

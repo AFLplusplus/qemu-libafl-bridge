@@ -340,7 +340,7 @@ static TCGHelperInfo libafl_exec_write_hookN_info = {
 struct libafl_rw_hook* libafl_read_hooks;
 size_t libafl_read_hooks_num = 0;
 
-size_t libafl_add_read_hook(uint64_t (*gen)(uint64_t data, target_ulong pc, TCGTemp *addr, MemOpIdx oi),
+size_t libafl_add_read_hook(uint64_t (*gen)(uint64_t data, target_ulong pc, MemOpIdx oi),
                              void (*exec1)(uint64_t data, uint64_t id, target_ulong addr),
                              void (*exec2)(uint64_t data, uint64_t id, target_ulong addr),
                              void (*exec4)(uint64_t data, uint64_t id, target_ulong addr),
@@ -394,7 +394,7 @@ GEN_REMOVE_HOOK(read)
 struct libafl_rw_hook* libafl_write_hooks;
 size_t libafl_write_hooks_num = 0;
 
-size_t libafl_add_write_hook(uint64_t (*gen)(uint64_t data, target_ulong pc, TCGTemp *addr, MemOpIdx oi),
+size_t libafl_add_write_hook(uint64_t (*gen)(uint64_t data, target_ulong pc, MemOpIdx oi),
                              void (*exec1)(uint64_t data, uint64_t id, target_ulong addr),
                              void (*exec2)(uint64_t data, uint64_t id, target_ulong addr),
                              void (*exec4)(uint64_t data, uint64_t id, target_ulong addr),
@@ -452,7 +452,7 @@ static void libafl_gen_rw(TCGTemp *addr, MemOpIdx oi, struct libafl_rw_hook* hoo
     while (hook) {
         uint64_t cur_id = 0;
         if (hook->gen)
-            cur_id = hook->gen(hook->data, libafl_gen_cur_pc, addr, oi);
+            cur_id = hook->gen(hook->data, libafl_gen_cur_pc, oi);
         TCGHelperInfo* info = NULL;
         if (size == 1 && hook->helper_info1.func) info = &hook->helper_info1;
         else if (size == 2 && hook->helper_info2.func) info = &hook->helper_info2;
@@ -685,59 +685,3 @@ size_t libafl_add_new_thread_hook(bool (*callback)(uint64_t data, uint32_t tid),
 }
 
 GEN_REMOVE_HOOK1(new_thread)
-
-#if TARGET_LONG_BITS == 32
-#define SHADOW_BASE (0x20000000)
-#elif TARGET_LONG_BITS == 64
-#define SHADOW_BASE (0x7fff8000)
-#else
-#error Unhandled TARGET_LONG_BITS value
-#endif
-
-void libafl_tcg_gen_asan(TCGTemp * addr, size_t size)
-{
-    if (size == 0)
-        return;
-        
-    TCGv addr_val = temp_tcgv_tl(addr);
-    TCGv k = tcg_temp_new();
-    TCGv shadow_addr = tcg_temp_new();
-    TCGv_ptr shadow_ptr = tcg_temp_new_ptr();
-    TCGv shadow_val = tcg_temp_new();
-    TCGv test_addr = tcg_temp_new();
-    TCGv_ptr test_ptr = tcg_temp_new_ptr();    
-
-    tcg_gen_andi_tl(k, addr_val, 7);
-    tcg_gen_addi_tl(k, k, size - 1);
-
-    tcg_gen_shri_tl(shadow_addr, addr_val, 3);
-    tcg_gen_addi_tl(shadow_addr, shadow_addr, SHADOW_BASE);
-    tcg_gen_tl_ptr(shadow_ptr, shadow_addr);
-    tcg_gen_ld8s_tl(shadow_val, shadow_ptr, 0);
-
-    /*
-     * Making conditional branches here appears to cause QEMU issues with dead
-     * temporaries so we will instead avoid branches. We will cause the guest
-     * to perform a NULL dereference in the event of an ASAN fault. Note that
-     * we will do this by using a store rather than a load, since the TCG may
-     * otherwise determine that the result of the load is unused and simply
-     * discard the operation. In the event that the shadow memory doesn't
-     * detect a fault, we will simply write the value read from the shadow
-     * memory back to it's original location. If, however, the shadow memory
-     * detects an invalid access, we will instead attempt to write the value
-     * at 0x0.
-     */
-    tcg_gen_movcond_tl(TCG_COND_EQ, test_addr,
-        shadow_val, tcg_constant_tl(0),
-        shadow_addr, tcg_constant_tl(0));
-
-    if (size < 8)
-    {
-        tcg_gen_movcond_tl(TCG_COND_GE, test_addr,
-            k, shadow_val,
-            test_addr, shadow_addr);
-    }
-
-    tcg_gen_tl_ptr(test_ptr, test_addr);
-    tcg_gen_st8_tl(shadow_val, test_ptr, 0);
-}

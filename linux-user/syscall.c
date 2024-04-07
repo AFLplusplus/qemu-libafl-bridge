@@ -13679,19 +13679,15 @@ struct libafl_mapinfo {
     int flags, is_priv;
 };
 IntervalTreeNode * libafl_maps_first(IntervalTreeRoot * map_info);
-IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinfo* ret, bool is_root);
+IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinfo* ret);
 
 IntervalTreeNode * libafl_maps_first(IntervalTreeRoot * map_info) {
     return interval_tree_iter_first(map_info, 0, -1);
 }
 
-IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinfo* ret, bool is_root) {
+IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinfo* ret) {
     if (!node || !ret)
         return NULL;
-
-    if (is_root) {
-        return libafl_maps_next(interval_tree_iter_next(node, 0, -1), ret, false);
-    }
 
     MapInfo *e = container_of(node, MapInfo, itree);
 
@@ -13704,7 +13700,7 @@ IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinf
             max : (uintptr_t) g2h_untagged(GUEST_ADDR_MAX) + 1;
 
         if (!page_check_range(h2g(min), max - min, flags)) {
-            return libafl_maps_next(interval_tree_iter_next(node, 0, -1), ret, false);
+            return libafl_maps_next(interval_tree_iter_next(node, 0, -1), ret);
         }
 
         int libafl_flags = 0;
@@ -13721,7 +13717,7 @@ IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinf
 
         return interval_tree_iter_next(node, 0, -1);
     } else {
-        return libafl_maps_next(interval_tree_iter_next(node, 0, -1), ret, false);
+        return libafl_maps_next(interval_tree_iter_next(node, 0, -1), ret);
     }
 }
 

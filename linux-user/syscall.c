@@ -13700,7 +13700,7 @@ IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinf
             max : (uintptr_t) g2h_untagged(GUEST_ADDR_MAX) + 1;
 
         if (!page_check_range(h2g(min), max - min, flags)) {
-            return libafl_maps_next(interval_tree_iter_next(node, 0, -1), ret, false);
+            return libafl_maps_next(interval_tree_iter_next(node, 0, -1), ret);
         }
 
         int libafl_flags = 0;
@@ -13717,7 +13717,7 @@ IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinf
 
         return interval_tree_iter_next(node, 0, -1);
     } else {
-        return libafl_maps_next(interval_tree_iter_next(node, 0, -1), ret, false);
+        return libafl_maps_next(interval_tree_iter_next(node, 0, -1), ret);
     }
 }
 

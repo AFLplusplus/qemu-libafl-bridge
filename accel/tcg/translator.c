@@ -219,22 +219,12 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
                     if (backdoor == 0x44) {
                         struct libafl_backdoor_hook* bhk = libafl_backdoor_hooks;
                         while (bhk) {
-                            TCGv_i64 tmp0 = tcg_constant_i64(bhk->data);
-#if TARGET_LONG_BITS == 32
-                            TCGv_i32 tmp1 = tcg_constant_i32(db->pc_next);
-                            TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i32_temp(tmp1) };
-#else
-                            TCGv_i64 tmp1 = tcg_constant_i64(db->pc_next);
-                            TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
-#endif
-                            // tcg_gen_callN(bhk->exec, NULL, 2, tmp2);
-                            tcg_gen_callN(&bhk->helper_info, NULL, tmp2);
-#if TARGET_LONG_BITS == 32
-                            tcg_temp_free_i32(tmp1);
-#else
-                            tcg_temp_free_i64(tmp1);
-#endif
-                            tcg_temp_free_i64(tmp0);
+                            TCGv_i64 tmp1 = tcg_constant_i64(bhk->data);
+                            TCGv tmp2 = tcg_constant_tl(db->pc_next);
+                            TCGTemp *args[3] = { tcgv_ptr_temp(tcg_env), tcgv_i64_temp(tmp1), tcgv_tl_temp(tmp2) };
+
+                            tcg_gen_callN(&bhk->helper_info, NULL, args);
+
                             bhk = bhk->next;
                         }
 

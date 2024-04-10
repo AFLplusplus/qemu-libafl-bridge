@@ -169,7 +169,7 @@ static TCGHelperInfo libafl_exec_backdoor_hook_info = {
 struct libafl_backdoor_hook* libafl_backdoor_hooks;
 size_t libafl_backdoor_hooks_num = 0;
 
-size_t libafl_add_backdoor_hook(void (*exec)(CPUArchState* cpu, uint64_t data, target_ulong pc),
+size_t libafl_add_backdoor_hook(void (*exec)(uint64_t data, CPUArchState* cpu, target_ulong pc),
                                 uint64_t data)
 {
     struct libafl_backdoor_hook* hook = calloc(sizeof(struct libafl_backdoor_hook), 1);

@@ -219,9 +219,9 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
                     if (backdoor == 0x44) {
                         struct libafl_backdoor_hook* bhk = libafl_backdoor_hooks;
                         while (bhk) {
-                            TCGv_i64 tmp1 = tcg_constant_i64(bhk->data);
+                            TCGv_i64 tmp0 = tcg_constant_i64(bhk->data);
                             TCGv tmp2 = tcg_constant_tl(db->pc_next);
-                            TCGTemp *args[3] = { tcgv_ptr_temp(tcg_env), tcgv_i64_temp(tmp1), tcgv_tl_temp(tmp2) };
+                            TCGTemp *args[3] = { tcgv_i64_temp(tmp0), tcgv_ptr_temp(tcg_env), tcgv_tl_temp(tmp2) };
 
                             tcg_gen_callN(&bhk->helper_info, NULL, args);
 

@@ -8,8 +8,8 @@
 #include "exec/ram_addr.h"
 #include "exec/exec-all.h"
 
-#include "syx-snapshot.h"
-#include "device-save.h"
+#include "libafl/syx-snapshot/syx-snapshot.h"
+#include "libafl/syx-snapshot/device-save.h"
 
 #define SYX_SNAPSHOT_LIST_INIT_SIZE      4096
 #define SYX_SNAPSHOT_LIST_GROW_FACTOR    2

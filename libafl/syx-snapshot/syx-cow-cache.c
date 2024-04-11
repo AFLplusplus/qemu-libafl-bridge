@@ -1,4 +1,4 @@
-#include "syx-cow-cache.h"
+#include "libafl/syx-snapshot/syx-cow-cache.h"
 
 #include "sysemu/block-backend.h"
 

@@ -1,11 +1,12 @@
 #include "qemu/osdep.h"
-#include "device-save.h"
 #include "migration/qemu-file.h"
 #include "io/channel-buffer.h"
-#include "channel-buffer-writeback.h"
 #include "migration/vmstate.h"
 #include "qemu/main-loop.h"
+
 #include "../syx-misc.h"
+#include "libafl/syx-snapshot/channel-buffer-writeback.h"
+#include "libafl/syx-snapshot/device-save.h"
 
 #include "migration/savevm.h"
 

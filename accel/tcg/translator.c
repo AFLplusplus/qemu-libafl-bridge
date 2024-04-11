@@ -114,8 +114,8 @@ static void gen_tb_end(const TranslationBlock *tb, uint32_t cflags,
 
 //// --- Begin LibAFL code ---
 
-#include "libafl_extras/exit.h"
-#include "libafl_extras/hook.h"
+#include "libafl/exit.h"
+#include "libafl/hook.h"
 
 #ifndef TARGET_LONG_BITS
 #error "TARGET_LONG_BITS not defined"

@@ -45,8 +45,8 @@
 
 //// --- Begin LibAFL code ---
 
-#include "libafl_extras/exit.h"
-#include "libafl_extras/hook.h"
+#include "libafl/exit.h"
+#include "libafl/hook.h"
 
 static __thread GByteArray *libafl_qemu_mem_buf = NULL;
 

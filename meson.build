@@ -3256,7 +3256,7 @@ target_user_arch = {}
 
 ### LibAFL extras
 
-subdir('libafl_extras')
+subdir('libafl')
 
 ###############
 # Trace files #

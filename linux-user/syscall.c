@@ -6522,7 +6522,7 @@ typedef struct {
 
 //// --- Begin LibAFL code ---
 
-#include "libafl_extras/hook.h"
+#include "libafl/hook.h"
 
 extern __thread CPUArchState *libafl_qemu_env;
 
@@ -13672,22 +13672,16 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
 
 //// --- Begin LibAFL code ---
 
-struct libafl_mapinfo {
-    target_ulong start, end;
-    target_ulong offset;
-    const char* path;
-    int flags, is_priv;
-};
-IntervalTreeNode * libafl_maps_first(IntervalTreeRoot * map_info);
-IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinfo* ret);
+#include "libafl/user.h"
 
 IntervalTreeNode * libafl_maps_first(IntervalTreeRoot * map_info) {
     return interval_tree_iter_first(map_info, 0, -1);
 }
 
 IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinfo* ret) {
-    if (!node || !ret)
+    if (!node || !ret) {
         return NULL;
+    }
 
     MapInfo *e = container_of(node, MapInfo, itree);
 

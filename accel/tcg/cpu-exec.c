@@ -715,7 +715,7 @@ static inline void cpu_handle_debug_exception(CPUState *cpu)
 
 //// --- Begin LibAFL code ---
 
-#include "libafl_extras/exit.h"
+#include "libafl/exit.h"
 
 //// --- End LibAFL code ---
 

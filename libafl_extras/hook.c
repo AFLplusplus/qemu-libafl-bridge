@@ -157,17 +157,19 @@ int libafl_qemu_remove_##name##_hook(size_t num) \
     return  0; \
 }
 
-
 static TCGHelperInfo libafl_exec_backdoor_hook_info = {
-    .func = NULL, .name = "libafl_exec_backdoor_hook", \
-    .flags = dh_callflag(void), \
-    .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(tl, 2)
+    .func = NULL, .name = "libafl_exec_backdoor_hook",
+    .flags = dh_callflag(void),
+    .typemask = dh_typemask(void, 0)
+                | dh_typemask(env, 1)
+                | dh_typemask(i64, 2)
+                | dh_typemask(tl, 3)
 };
 
 struct libafl_backdoor_hook* libafl_backdoor_hooks;
 size_t libafl_backdoor_hooks_num = 0;
 
-size_t libafl_add_backdoor_hook(void (*exec)(uint64_t data, target_ulong pc),
+size_t libafl_add_backdoor_hook(void (*exec)(uint64_t data, CPUArchState* cpu, target_ulong pc),
                                 uint64_t data)
 {
     struct libafl_backdoor_hook* hook = calloc(sizeof(struct libafl_backdoor_hook), 1);
@@ -186,8 +188,8 @@ size_t libafl_add_backdoor_hook(void (*exec)(uint64_t data, target_ulong pc),
 GEN_REMOVE_HOOK(backdoor)
 
 static TCGHelperInfo libafl_exec_edge_hook_info = {
-    .func = NULL, .name = "libafl_exec_edge_hook", \
-    .flags = dh_callflag(void), \
+    .func = NULL, .name = "libafl_exec_edge_hook",
+    .flags = dh_callflag(void),
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(i64, 2)
 };
 
@@ -285,54 +287,54 @@ bool libafl_qemu_block_hook_set_jit(size_t num, size_t (*jit)(uint64_t data, uin
 }
 
 static TCGHelperInfo libafl_exec_read_hook1_info = {
-    .func = NULL, .name = "libafl_exec_read_hook1", \
-    .flags = dh_callflag(void), \
+    .func = NULL, .name = "libafl_exec_read_hook1",
+    .flags = dh_callflag(void),
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(i64, 2) | dh_typemask(tl, 3)
 };
 static TCGHelperInfo libafl_exec_read_hook2_info = {
-    .func = NULL, .name = "libafl_exec_read_hook2", \
-    .flags = dh_callflag(void), \
+    .func = NULL, .name = "libafl_exec_read_hook2",
+    .flags = dh_callflag(void),
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(i64, 2) | dh_typemask(tl, 3)
 };
 static TCGHelperInfo libafl_exec_read_hook4_info = {
-    .func = NULL, .name = "libafl_exec_read_hook4", \
-    .flags = dh_callflag(void), \
+    .func = NULL, .name = "libafl_exec_read_hook4",
+    .flags = dh_callflag(void),
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(i64, 2) | dh_typemask(tl, 3)
 };
 static TCGHelperInfo libafl_exec_read_hook8_info = {
-    .func = NULL, .name = "libafl_exec_read_hook8", \
-    .flags = dh_callflag(void), \
+    .func = NULL, .name = "libafl_exec_read_hook8",
+    .flags = dh_callflag(void),
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(i64, 2) | dh_typemask(tl, 3)
 };
 static TCGHelperInfo libafl_exec_read_hookN_info = {
-    .func = NULL, .name = "libafl_exec_read_hookN", \
-    .flags = dh_callflag(void), \
+    .func = NULL, .name = "libafl_exec_read_hookN",
+    .flags = dh_callflag(void),
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(i64, 2)
                 | dh_typemask(tl, 3) | dh_typemask(i64, 4)
 };
 static TCGHelperInfo libafl_exec_write_hook1_info = {
-    .func = NULL, .name = "libafl_exec_write_hook1", \
-    .flags = dh_callflag(void), \
+    .func = NULL, .name = "libafl_exec_write_hook1",
+    .flags = dh_callflag(void),
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(i64, 2) | dh_typemask(tl, 3)
 };
 static TCGHelperInfo libafl_exec_write_hook2_info = {
-    .func = NULL, .name = "libafl_exec_write_hook2", \
-    .flags = dh_callflag(void), \
+    .func = NULL, .name = "libafl_exec_write_hook2",
+    .flags = dh_callflag(void),
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(i64, 2) | dh_typemask(tl, 3)
 };
 static TCGHelperInfo libafl_exec_write_hook4_info = {
-    .func = NULL, .name = "libafl_exec_write_hook4", \
-    .flags = dh_callflag(void), \
+    .func = NULL, .name = "libafl_exec_write_hook4",
+    .flags = dh_callflag(void),
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(i64, 2) | dh_typemask(tl, 3)
 };
 static TCGHelperInfo libafl_exec_write_hook8_info = {
-    .func = NULL, .name = "libafl_exec_write_hook8", \
-    .flags = dh_callflag(void), \
+    .func = NULL, .name = "libafl_exec_write_hook8",
+    .flags = dh_callflag(void),
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(i64, 2) | dh_typemask(tl, 3)
 };
 static TCGHelperInfo libafl_exec_write_hookN_info = {
-    .func = NULL, .name = "libafl_exec_write_hookN", \
-    .flags = dh_callflag(void), \
+    .func = NULL, .name = "libafl_exec_write_hookN",
+    .flags = dh_callflag(void),
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(i64, 2)
                 | dh_typemask(tl, 3) | dh_typemask(i64, 4)
 };
@@ -505,26 +507,26 @@ void libafl_gen_write(TCGTemp *addr, MemOpIdx oi)
 }
 
 static TCGHelperInfo libafl_exec_cmp_hook1_info = {
-    .func = NULL, .name = "libafl_exec_cmp_hook1", \
-    .flags = dh_callflag(void), \
+    .func = NULL, .name = "libafl_exec_cmp_hook1",
+    .flags = dh_callflag(void),
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1)
     | dh_typemask(i64, 2) | dh_typemask(tl, 3) | dh_typemask(tl, 4)
 };
 static TCGHelperInfo libafl_exec_cmp_hook2_info = {
-    .func = NULL, .name = "libafl_exec_cmp_hook2", \
-    .flags = dh_callflag(void), \
+    .func = NULL, .name = "libafl_exec_cmp_hook2",
+    .flags = dh_callflag(void),
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1)
     | dh_typemask(i64, 2) | dh_typemask(tl, 3) | dh_typemask(tl, 4)
 };
 static TCGHelperInfo libafl_exec_cmp_hook4_info = {
-    .func = NULL, .name = "libafl_exec_cmp_hook4", \
-    .flags = dh_callflag(void), \
+    .func = NULL, .name = "libafl_exec_cmp_hook4",
+    .flags = dh_callflag(void),
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1)
     | dh_typemask(i64, 2) | dh_typemask(tl, 3) | dh_typemask(tl, 4)
 };
 static TCGHelperInfo libafl_exec_cmp_hook8_info = {
-    .func = NULL, .name = "libafl_exec_cmp_hook8", \
-    .flags = dh_callflag(void), \
+    .func = NULL, .name = "libafl_exec_cmp_hook8",
+    .flags = dh_callflag(void),
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1)
     | dh_typemask(i64, 2) | dh_typemask(i64, 3) | dh_typemask(i64, 4)
 };

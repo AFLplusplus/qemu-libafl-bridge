@@ -93,7 +93,7 @@ int libafl_qemu_remove_block_hook(size_t num, int invalidate);
 bool libafl_qemu_block_hook_set_jit(size_t num, size_t (*jit)(uint64_t, uint64_t)); // no param names to avoid to be marked as safe
 
 struct libafl_rw_hook {
-    uint64_t (*gen)(uint64_t data, target_ulong pc, MemOpIdx oi);
+    uint64_t (*gen)(uint64_t data, target_ulong pc, TCGTemp* addr, MemOpIdx oi);
     /*void (*exec1)(uint64_t data, uint64_t id, target_ulong addr);
     void (*exec2)(uint64_t data, uint64_t id, target_ulong addr);
     void (*exec4)(uint64_t data, uint64_t id, target_ulong addr);
@@ -116,14 +116,14 @@ struct libafl_rw_hook {
 extern struct libafl_rw_hook* libafl_read_hooks;
 extern struct libafl_rw_hook* libafl_write_hooks;
 
-size_t libafl_add_read_hook(uint64_t (*gen)(uint64_t data, target_ulong pc, MemOpIdx oi),
+size_t libafl_add_read_hook(uint64_t (*gen)(uint64_t data, target_ulong pc, TCGTemp *addr, MemOpIdx oi),
                              void (*exec1)(uint64_t data, uint64_t id, target_ulong addr),
                              void (*exec2)(uint64_t data, uint64_t id, target_ulong addr),
                              void (*exec4)(uint64_t data, uint64_t id, target_ulong addr),
                              void (*exec8)(uint64_t data, uint64_t id, target_ulong addr),
                              void (*execN)(uint64_t data, uint64_t id, target_ulong addr, size_t size),
                              uint64_t data);
-size_t libafl_add_write_hook(uint64_t (*gen)(uint64_t data, target_ulong pc, MemOpIdx oi),
+size_t libafl_add_write_hook(uint64_t (*gen)(uint64_t data, target_ulong pc, TCGTemp *addr, MemOpIdx oi),
                              void (*exec1)(uint64_t data, uint64_t id, target_ulong addr),
                              void (*exec2)(uint64_t data, uint64_t id, target_ulong addr),
                              void (*exec4)(uint64_t data, uint64_t id, target_ulong addr),
@@ -222,3 +222,5 @@ extern struct libafl_new_thread_hook* libafl_new_thread_hooks;
 size_t libafl_add_new_thread_hook(bool (*callback)(uint64_t data, uint32_t tid),
                                   uint64_t data);
 int libafl_qemu_remove_new_thread_hook(size_t num);
+
+void libafl_tcg_gen_asan(TCGTemp * addr, size_t size);

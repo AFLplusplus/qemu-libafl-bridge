@@ -1,7 +1,8 @@
 #include "qemu/osdep.h"
 #include "migration/qemu-file.h"
-#include "channel-buffer-writeback.h"
-#include "../syx-misc.h"
+
+#include "libafl/syx-misc.h"
+#include "libafl/syx-snapshot/channel-buffer-writeback.h"
 
 QIOChannelBufferWriteback* qio_channel_buffer_writeback_new(size_t capacity, uint8_t* writeback_buf, size_t writeback_buf_capacity, size_t* writeback_buf_usage) {
     assert(writeback_buf != NULL);

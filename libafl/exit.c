@@ -1,4 +1,4 @@
-#include "exit.h"
+#include "libafl/exit.h"
 
 #include "sysemu/runstate.h"
 #include "cpu.h"

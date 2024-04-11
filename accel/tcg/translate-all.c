@@ -68,7 +68,7 @@
 
 //// --- Begin LibAFL code ---
 
-#include "libafl_extras/hook.h"
+#include "libafl/hook.h"
 
 //// --- End LibAFL code ---
 

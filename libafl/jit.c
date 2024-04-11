@@ -3,7 +3,7 @@
 
 #include "exec/exec-all.h"
 
-#include "jit.h"
+#include "libafl/jit.h"
 
 #ifndef TARGET_LONG_BITS
 #error "TARGET_LONG_BITS not defined"

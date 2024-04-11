@@ -37,7 +37,7 @@
 
 //// --- Begin LibAFL code ---
 
-#include "libafl_extras/exit.h"
+#include "libafl/exit.h"
 
 #ifndef CONFIG_USER_ONLY
 

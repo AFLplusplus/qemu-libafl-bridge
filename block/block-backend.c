@@ -30,7 +30,7 @@
 
 //// --- Begin LibAFL code ---
 #ifdef CONFIG_SOFTMMU
-#include "libafl_extras/syx-snapshot/syx-snapshot.h"
+#include "libafl/syx-snapshot/syx-snapshot.h"
 #endif
 //// --- End LibAFL code ---
 

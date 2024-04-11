@@ -4,7 +4,7 @@
 #include "migration/vmstate.h"
 #include "qemu/main-loop.h"
 
-#include "../syx-misc.h"
+#include "libafl/syx-misc.h"
 #include "libafl/syx-snapshot/channel-buffer-writeback.h"
 #include "libafl/syx-snapshot/device-save.h"
 

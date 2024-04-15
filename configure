@@ -1742,6 +1742,15 @@ if test "$tcg" = "enabled"; then
 fi
 )
 
+#### --- Begin LibAFL code ---
+
+# Remove LibAFL config signature if building manually
+if [ -z ${__LIBAFL_QEMU_CONFIGURE+x} ]; then
+  rm -f libafl_config
+fi
+
+#### --- End LibAFL code ---Z
+
 if test "$skip_meson" = no; then
   cross="config-meson.cross.new"
   meson_quote() {

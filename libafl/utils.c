@@ -1,7 +1,7 @@
 #include "qemu/osdep.h"
 #include "exec/memory.h"
 #include "qemu/rcu.h"
-#include "hw/core/cpu.h"
+#include "cpu.h"
 
 #include "libafl/utils.h"
 
@@ -18,4 +18,9 @@ uint8_t* libafl_paddr2host(CPUState* cpu, hwaddr addr, bool is_write)
     }
 
     return qemu_map_ram_ptr(mr->ram_block, xlat);
+}
+
+uint64_t libafl_guest_page_size(void)
+{
+    return TARGET_PAGE_SIZE;
 }

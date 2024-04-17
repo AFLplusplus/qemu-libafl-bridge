@@ -1,4 +1,6 @@
 #include "qemu/osdep.h"
+
+#ifndef CONFIG_USER_ONLY
 #include "exec/memory.h"
 #include "qemu/rcu.h"
 #include "cpu.h"
@@ -19,3 +21,4 @@ uint8_t* libafl_paddr2host(CPUState* cpu, hwaddr addr, bool is_write)
 
     return qemu_map_ram_ptr(mr->ram_block, xlat);
 }
+#endif

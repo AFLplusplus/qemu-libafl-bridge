@@ -1,7 +1,8 @@
 specific_ss.add(files(
   'exit.c',
   'hook.c',
-  'jit.c'
+  'jit.c',
+  'utils.c',
 ))
 
 specific_ss.add(when: 'CONFIG_SOFTMMU', if_true: [files(

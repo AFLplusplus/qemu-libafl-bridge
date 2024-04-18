@@ -283,26 +283,34 @@ static void vec_gen_ldst(TCGOpcode opc, TCGv_vec r, TCGv_ptr b, TCGArg o)
 
 void tcg_gen_ld_vec(TCGv_vec r, TCGv_ptr b, TCGArg o)
 {
+//// --- Begin LibAFL code ---
     TCGArg ri = tcgv_vec_arg(r);
     TCGTemp *rt = arg_temp(ri);
     TCGType type = rt->base_type;
     MemOpIdx oi = make_memop_idx((type - TCG_TYPE_V64) + MO_64, 0);
+//// --- End LibAFL code ---
 
     vec_gen_ldst(INDEX_op_ld_vec, r, b, o);
 
+//// --- Begin LibAFL code ---
     libafl_gen_read(tcgv_ptr_temp(b), oi);
+//// --- End LibAFL code ---
 }
 
 void tcg_gen_st_vec(TCGv_vec r, TCGv_ptr b, TCGArg o)
 {
+//// --- Begin LibAFL code ---
     TCGArg ri = tcgv_vec_arg(r);
     TCGTemp *rt = arg_temp(ri);
     TCGType type = rt->base_type;
     MemOpIdx oi = make_memop_idx((type - TCG_TYPE_V64) + MO_64, 0);
+//// --- End LibAFL code ---
 
     vec_gen_ldst(INDEX_op_st_vec, r, b, o);
 
+//// --- Begin LibAFL code ---
     libafl_gen_write(tcgv_ptr_temp(b), oi);
+//// --- End LibAFL code ---
 }
 
 void tcg_gen_stl_vec(TCGv_vec r, TCGv_ptr b, TCGArg o, TCGType low_type)

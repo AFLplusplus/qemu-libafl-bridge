@@ -31,6 +31,12 @@
 #include "exec/plugin-gen.h"
 #include "tcg-internal.h"
 
+//// --- Begin LibAFL code ---
+
+void libafl_gen_read(TCGTemp *addr, MemOpIdx oi);
+void libafl_gen_write(TCGTemp *addr, MemOpIdx oi);
+
+//// --- End LibAFL code ---
 
 static void check_max_alignment(unsigned a_bits)
 {
@@ -174,13 +180,6 @@ plugin_gen_mem_callbacks(TCGv_i64 copy_addr, TCGTemp *orig_addr, MemOpIdx oi,
     }
 #endif
 }
-
-//// --- Begin LibAFL code ---
-
-void libafl_gen_read(TCGTemp *addr, MemOpIdx oi);
-void libafl_gen_write(TCGTemp *addr, MemOpIdx oi);
-
-//// --- End LibAFL code ---
 
 static void tcg_gen_qemu_ld_i32_int(TCGv_i32 val, TCGTemp *addr,
                                     TCGArg idx, MemOp memop)

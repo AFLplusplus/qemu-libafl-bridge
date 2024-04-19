@@ -10,6 +10,7 @@ struct libafl_mapinfo {
     const char* path;
     int flags;
     int is_priv;
+    bool is_valid;
 };
 
 IntervalTreeNode * libafl_maps_first(IntervalTreeRoot * map_info);

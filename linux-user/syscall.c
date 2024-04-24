@@ -13679,6 +13679,8 @@ IntervalTreeNode * libafl_maps_first(IntervalTreeRoot * map_info) {
 }
 
 IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinfo* ret) {
+    ret->is_valid = false;
+
     if (!node || !ret) {
         return NULL;
     }
@@ -13702,6 +13704,7 @@ IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinf
         if (flags & PAGE_WRITE_ORG) libafl_flags |= PROT_WRITE;
         if (flags & PAGE_EXEC) libafl_flags |= PROT_EXEC;
 
+        ret->is_valid = true;
         ret->start = (target_ulong)h2g_nocheck(min);
         ret->end = (target_ulong)h2g_nocheck(max);
         ret->offset = (target_ulong)e->offset;

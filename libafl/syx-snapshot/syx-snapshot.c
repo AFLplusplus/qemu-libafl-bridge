@@ -625,11 +625,11 @@ void syx_snapshot_root_restore(SyxSnapshot *snapshot) {
         assert(cpu->stopped);
     }
 
-    bool must_unlock_iothread = false;
+    bool must_unlock_bql = false;
 
-    if (!qemu_mutex_iothread_locked()) {
-        qemu_mutex_lock_iothread();
-        must_unlock_iothread = true;
+    if (!bql_locked()) {
+        bql_lock();
+        must_unlock_bql = true;
     }
 
     // In case, we first restore devices if there is a modification of memory layout
@@ -646,8 +646,8 @@ void syx_snapshot_root_restore(SyxSnapshot *snapshot) {
 
     syx_snapshot_dirty_list_flush(snapshot);
 
-    if (must_unlock_iothread) {
-        qemu_mutex_unlock_iothread();
+    if (must_unlock_bql) {
+        bql_unlock();
     }
 }
 bool syx_snapshot_cow_cache_read_entry(BlockBackend *blk, int64_t offset, int64_t bytes, QEMUIOVector *qiov, size_t qiov_offset,

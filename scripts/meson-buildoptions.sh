@@ -19,6 +19,7 @@ meson_options_help() {
   printf "%s\n" '  --disable-install-blobs  install provided firmware blobs'
   printf "%s\n" '  --disable-qom-cast-debug cast debugging support'
   printf "%s\n" '  --disable-relocatable    toggle relocatable install'
+  printf "%s\n" '  --disable-tests          build tests'
   printf "%s\n" '  --docdir=VALUE           Base directory for documentation installation'
   printf "%s\n" '                           (can be empty) [share/doc]'
   printf "%s\n" '  --enable-block-drv-whitelist-in-tools'
@@ -315,8 +316,6 @@ _meson_option_parse() {
     --disable-fuse-lseek) printf "%s" -Dfuse_lseek=disabled ;;
     --enable-fuzzing) printf "%s" -Dfuzzing=true ;;
     --disable-fuzzing) printf "%s" -Dfuzzing=false ;;
-    --enable-tests) printf "%s" -Dtests=true ;;
-    --disable-tests) printf "%s" -Dtests=false ;;
     --enable-gcrypt) printf "%s" -Dgcrypt=enabled ;;
     --disable-gcrypt) printf "%s" -Dgcrypt=disabled ;;
     --enable-gettext) printf "%s" -Dgettext=enabled ;;
@@ -495,6 +494,8 @@ _meson_option_parse() {
     --disable-tcg) printf "%s" -Dtcg=disabled ;;
     --enable-tcg-interpreter) printf "%s" -Dtcg_interpreter=true ;;
     --disable-tcg-interpreter) printf "%s" -Dtcg_interpreter=false ;;
+    --enable-tests) printf "%s" -Dtests=true ;;
+    --disable-tests) printf "%s" -Dtests=false ;;
     --tls-priority=*) quote_sh "-Dtls_priority=$2" ;;
     --enable-tools) printf "%s" -Dtools=enabled ;;
     --disable-tools) printf "%s" -Dtools=disabled ;;

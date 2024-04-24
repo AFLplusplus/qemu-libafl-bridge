@@ -153,6 +153,12 @@ static PageFlagsNode *pageflags_find(target_ulong start, target_ulong last)
     return n ? container_of(n, PageFlagsNode, itree) : NULL;
 }
 
+//// --- Begin LibAFL code ---
+IntervalTreeRoot * pageflags_get_root(void) {
+    return &pageflags_root;
+}
+//// --- End LibAFL code ---
+
 static PageFlagsNode *pageflags_next(PageFlagsNode *p, target_ulong start,
                                      target_ulong last)
 {

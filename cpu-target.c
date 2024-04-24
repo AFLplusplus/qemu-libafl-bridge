@@ -465,7 +465,9 @@ void list_cpus(void)
 #if defined(CONFIG_USER_ONLY)
 void libafl_breakpoint_invalidate(CPUState *cpu, target_ulong pc)
 {
-  tb_invalidate_phys_addr(pc);
+  mmap_lock();
+  tb_invalidate_phys_range(pc, pc + 1);
+  mmap_unlock();
 }
 #else
 void libafl_breakpoint_invalidate(CPUState *cpu, target_ulong pc)

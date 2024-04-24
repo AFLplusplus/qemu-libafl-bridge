@@ -164,9 +164,6 @@ static bool transport_supports_seeking(MigrationAddress *addr)
     return false;
 }
 
-    return false;
-}
-
 static bool
 migration_channels_and_transport_compatible(MigrationAddress *addr,
                                             Error **errp)
@@ -733,7 +730,6 @@ static void process_incoming_migration_bh(void *opaque)
     migrate_set_state(&mis->state, MIGRATION_STATUS_ACTIVE,
                       MIGRATION_STATUS_COMPLETED);
     migration_incoming_state_destroy();
-    object_unref(OBJECT(migrate_get_current()));
 }
 
 static void coroutine_fn

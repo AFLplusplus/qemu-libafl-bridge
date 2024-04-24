@@ -244,7 +244,9 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
          */
         ops->translate_insn(db, cpu);
 
+//// --- Begin LibAFL code ---
 post_translate_insn:
+//// --- End LibAFL code ---
         /*
          * We can't instrument after instructions that change control
          * flow although this only really affects post-load operations.

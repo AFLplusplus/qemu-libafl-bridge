@@ -12774,7 +12774,9 @@ ARMSecuritySpace arm_security_space(CPUARMState *env)
 
 ARMSecuritySpace arm_security_space_below_el3(CPUARMState *env)
 {
+//// --- Begin LibAFL code ---
     // assert(!arm_feature(env, ARM_FEATURE_M)); // Remove this for LibAFL
+//// --- End LibAFL code ---
 
     /*
      * If EL3 is not supported then the secure state is implementation

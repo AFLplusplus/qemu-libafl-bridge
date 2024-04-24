@@ -701,16 +701,16 @@ bool monitor_add_blk(BlockBackend *blk, const char *name, Error **errp)
         error_setg(errp, "Invalid device name");
         return false;
     }
-//// --- Begin LibAFL code ---
     if (blk_by_name(name)) {
         error_setg(errp, "Device with id '%s' already exists", name);
         return false;
     }
-//// --- End LibAFL code ---
+//// --- Begin LibAFL code ---
     if (blk_by_name_hash(g_str_hash(name))) {
         error_setg(errp, "Device with name hash '%x' already exists", g_str_hash(name));
         return false;
     }
+//// --- End LibAFL code ---
     if (bdrv_find_node(name)) {
         error_setg(errp,
                    "Device name '%s' conflicts with an existing node name",

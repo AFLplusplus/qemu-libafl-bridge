@@ -3454,9 +3454,12 @@ subdir('ui')
 subdir('hw')
 subdir('gdbstub')
 
+#### --- Begin LibAFL code ---
+
 ### LibAFL extras
 subdir('libafl')
 
+#### --- End LibAFL code ---
 
 if enable_modules
   libmodulecommon = static_library('module-common', files('module-common.c') + genh, pic: true, c_args: '-DBUILD_DSO')
@@ -3585,10 +3588,14 @@ subdir('bsd-user')
 subdir('linux-user')
 
 # needed for fuzzing binaries
+#### --- Begin LibAFL code ---
 if get_option('tests')
+#### --- End LibAFL code ---
   subdir('tests/qtest/libqos')
   subdir('tests/qtest/fuzz')
+#### --- Begin LibAFL code ---
 endif
+#### --- End LibAFL code ---
 
 # accel modules
 tcg_real_module_ss = ss.source_set()
@@ -3971,7 +3978,9 @@ foreach target : target_dirs
       exe_name += '-unsigned'
     endif
 
+#### --- Begin LibAFL code ---
   if 'AS_SHARED_LIB' not in config_host and 'AS_STATIC_LIB' not in config_host
+#### --- End LibAFL code ---
     emulator = executable(exe_name, exe['sources'],
                install: true,
                c_args: c_args,
@@ -3980,6 +3989,7 @@ foreach target : target_dirs
                link_depends: [block_syms, qemu_syms],
                link_args: link_args,
                win_subsystem: exe['win_subsystem'])
+#### --- Begin LibAFL code ---
   else
     if 'AS_SHARED_LIB' in config_host
       emulator = shared_library(exe_name, exe['sources'],
@@ -3997,6 +4007,7 @@ foreach target : target_dirs
                objects: lib.extract_all_objects(recursive: true))
     endif
   endif
+#### --- End LibAFL code ---
     if host_os == 'darwin'
       icon = 'pc-bios/qemu.rsrc'
       build_input = [emulator, files(icon)]
@@ -4132,9 +4143,13 @@ subdir('scripts')
 subdir('tools')
 subdir('pc-bios')
 subdir('docs')
+#### --- Begin LibAFL code ---
 if get_option('tests')
+#### --- End LibAFL code ---
   subdir('tests')
+#### --- Begin LibAFL code ---
 endif
+#### --- End LibAFL code ---
 if gtk.found()
   subdir('po')
 endif
@@ -4230,7 +4245,9 @@ if enable_modules
   summary_info += {'alternative module path': get_option('module_upgrades')}
 endif
 summary_info += {'fuzzing support':   get_option('fuzzing')}
-summary_info += {'tests support':   get_option('tests')}
+#### --- Begin LibAFL code ---
+summary_info += {'Build tests':   get_option('tests')}
+#### --- End LibAFL code ---
 if have_system
   summary_info += {'Audio drivers':     ' '.join(audio_drivers_selected)}
 endif

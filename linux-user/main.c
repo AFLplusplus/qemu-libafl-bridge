@@ -636,6 +636,7 @@ static int parse_args(int argc, char **argv)
             r++;
         }
 
+//// --- Begin LibAFL code ---
         if (!strncmp(r, "libafl", 6)) {
             if (optind >= argc) {
                 (void) fprintf(stderr,
@@ -645,6 +646,7 @@ static int parse_args(int argc, char **argv)
             optind++;
             continue;
         }
+//// --- End LibAFL code ---
 
         for (arginfo = arg_table; arginfo->handle_opt != NULL; arginfo++) {
             if (!strcmp(r, arginfo->argv)) {
@@ -675,7 +677,9 @@ static int parse_args(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
+//// --- Begin LibAFL code ---
     exec_path = strdup(argv[optind]);
+//// --- End LibAFL code ---
 
     return optind;
 }
@@ -717,9 +721,11 @@ int main(int argc, char **argv, char **envp)
 #endif
 {
     struct target_pt_regs regs1, *regs = &regs1;
+//// --- Begin LibAFL code ---
     //struct image_info info1, *info = &info1;
     struct image_info *info = &libafl_image_info;
     // struct linux_binprm bprm;
+//// --- End LibAFL code ---
     TaskState *ts;
     CPUArchState *env;
     CPUState *cpu;

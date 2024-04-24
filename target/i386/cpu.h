@@ -2338,12 +2338,6 @@ static inline bool is_mmu_index_32(int mmu_index)
     return mmu_index & 1;
 }
 
-static inline bool is_mmu_index_32(int mmu_index)
-{
-    assert(mmu_index < MMU_PHYS_IDX);
-    return mmu_index & 1;
-}
-
 static inline int cpu_mmu_index_kernel(CPUX86State *env)
 {
     int mmu_index_32 = (env->hflags & HF_LMA_MASK) ? 0 : 1;

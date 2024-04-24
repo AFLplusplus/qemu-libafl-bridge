@@ -4203,6 +4203,10 @@ static bool gen_rri(DisasContext *s, arg_rri_sf *a,
     return true;
 }
 
+/*
+ * PC-rel. addressing
+ */
+
 static bool trans_ADR(DisasContext *s, arg_ri *a)
 {
     gen_pc_plus_diff(s, cpu_reg(s, a->rd), a->imm);

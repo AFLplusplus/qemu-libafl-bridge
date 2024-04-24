@@ -18,4 +18,3 @@ config HPPA_B160L
     select LASIPS2
     select PARALLEL
     select ARTIST
-    select USB_OHCI_PCI

@@ -1811,13 +1811,14 @@ static const GdbCmdParseEntry gdb_gen_query_table[] = {
         .handler = gdb_handle_query_offsets,
         .cmd = "Offsets",
     },
-#endif
+#else
     {
         .handler = gdb_handle_query_rcmd,
         .cmd = "Rcmd,",
         .cmd_startswith = 1,
         .schema = "s0"
     },
+#endif
     {
         .handler = handle_query_supported,
         .cmd = "Supported:",

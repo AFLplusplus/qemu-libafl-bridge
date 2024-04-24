@@ -42,10 +42,14 @@ int qemu_default_main(void)
 
 int (*qemu_main)(void) = qemu_default_main;
 
+//// --- Begin LibAFL code ---
 #ifndef AS_LIB
+//// --- End LibAFL code ---
 int main(int argc, char **argv)
 {
     qemu_init(argc, argv);
     return qemu_main();
 }
+//// --- Begin LibAFL code ---
 #endif
+//// --- End LibAFL code ---

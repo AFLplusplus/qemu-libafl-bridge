@@ -43,8 +43,10 @@ option('docs', type : 'feature', value : 'auto',
        description: 'Documentations build support')
 option('fuzzing', type : 'boolean', value: false,
        description: 'build fuzzing targets')
+#### --- Begin LibAFL code ---
 option('tests', type : 'boolean', value: true,
        description: 'build tests')
+#### --- End LibAFL code ---
 option('gettext', type : 'feature', value : 'auto',
        description: 'Localization of the GTK+ user interface')
 option('modules', type : 'feature', value : 'disabled',

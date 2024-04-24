@@ -2556,7 +2556,6 @@ static Int128 do_ld16_mmu(CPUState *cpu, vaddr addr,
                       MMU_DATA_LOAD, l.memop, ra);
         ret = int128_make128(b, a);
     }
-
     if ((l.memop & MO_BSWAP) == MO_LE) {
         ret = bswap128(ret);
     }

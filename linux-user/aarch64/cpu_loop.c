@@ -83,17 +83,12 @@ void cpu_loop(CPUARMState *env)
     abi_long ret;
 
 //// --- Begin LibAFL code ---
-
     libafl_exit_signal_vm_start();
-
 //// --- End LibAFL code ---
 
     for (;;) {
-
 //// --- Begin LibAFL code ---
-
         if (libafl_exit_asap()) return;
-
 //// --- End LibAFL code ---
 
         cpu_exec_start(cs);
@@ -104,10 +99,8 @@ void cpu_loop(CPUARMState *env)
         switch (trapnr) {
 
 //// --- Begin LibAFL code ---
-
         case EXCP_LIBAFL_EXIT:
             return;
-
 //// --- End LibAFL code ---
 
         case EXCP_SWI:
@@ -210,7 +203,7 @@ void target_cpu_copy_regs(CPUArchState *env, struct target_pt_regs *regs)
 {
     ARMCPU *cpu = env_archcpu(env);
     CPUState *cs = env_cpu(env);
-    TaskState *ts = cs->opaque;
+    TaskState *ts = get_task_state(cs);
     struct image_info *info = ts->info;
     int i;
 

@@ -636,7 +636,7 @@ static void tcg_gen_qemu_ld_i128_int(TCGv_i128 val, TCGTemp *addr,
                            tcg_constant_i32(orig_oi));
     }
 
-//// --- Start LibAFL code ---
+//// --- Begin LibAFL code ---
 
     libafl_gen_read(addr, orig_oi);
 
@@ -758,7 +758,7 @@ static void tcg_gen_qemu_st_i128_int(TCGv_i128 val, TCGTemp *addr,
                            tcg_constant_i32(orig_oi));
     }
 
-//// --- Start LibAFL code ---
+//// --- Begin LibAFL code ---
 
     libafl_gen_write(addr, orig_oi);
 
@@ -1257,13 +1257,13 @@ void tcg_gen_atomic_##NAME##_i32_chk(TCGv_i32 ret, TCGTemp *addr,       \
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);                  \
     tcg_debug_assert((memop & MO_SIZE) <= MO_32);                       \
     if (tcg_ctx->gen_tb->cflags & CF_PARALLEL) {                        \
-/* --- Start LibAFL code --- */                                         \
+/*** --- Begin LibAFL code --- ***/                                     \
         libafl_gen_read(addr, make_memop_idx(memop, 0));                \
-/* --- End LibAFL code --- */                                           \
+/*** --- End LibAFL code --- ***/                                       \
         do_atomic_op_i32(ret, addr, val, idx, memop, table_##NAME);     \
-/* --- Start LibAFL code --- */                                         \
+/*** --- Begin LibAFL code --- ***/                                     \
         libafl_gen_write(addr, make_memop_idx(memop, 0));               \
-/* --- End LibAFL code --- */                                           \
+/*** --- End LibAFL code --- ***/                                       \
     } else {                                                            \
         do_nonatomic_op_i32(ret, addr, val, idx, memop, NEW,            \
                             tcg_gen_##OP##_i32);                        \
@@ -1276,13 +1276,13 @@ void tcg_gen_atomic_##NAME##_i64_chk(TCGv_i64 ret, TCGTemp *addr,       \
     tcg_debug_assert(addr_type == tcg_ctx->addr_type);                  \
     tcg_debug_assert((memop & MO_SIZE) <= MO_64);                       \
     if (tcg_ctx->gen_tb->cflags & CF_PARALLEL) {                        \
-/* --- Start LibAFL code --- */                                         \
+/*** --- Begin LibAFL code --- ***/                                     \
         libafl_gen_read(addr, make_memop_idx(memop, 0));                \
-/* --- End LibAFL code --- */                                           \
+/*** --- End LibAFL code --- ***/                                       \
         do_atomic_op_i64(ret, addr, val, idx, memop, table_##NAME);     \
-/* --- Start LibAFL code --- */                                         \
+/*** --- Begin LibAFL code --- ***/                                     \
         libafl_gen_write(addr, make_memop_idx(memop, 0));               \
-/* --- End LibAFL code --- */                                           \
+/*** --- End LibAFL code --- ***/                                       \
     } else {                                                            \
         do_nonatomic_op_i64(ret, addr, val, idx, memop, NEW,            \
                             tcg_gen_##OP##_i64);                        \

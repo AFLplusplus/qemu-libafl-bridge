@@ -18,20 +18,14 @@
 
 static void set_can_do_io(DisasContextBase *db, bool val)
 {
-    if (db->saved_can_do_io != val) {
-        db->saved_can_do_io = val;
-
-        QEMU_BUILD_BUG_ON(sizeof_field(CPUState, neg.can_do_io) != 1);
-        tcg_gen_st8_i32(tcg_constant_i32(val), tcg_env,
-                        offsetof(ArchCPU, parent_obj.neg.can_do_io) -
-                        offsetof(ArchCPU, env));
-    }
+    QEMU_BUILD_BUG_ON(sizeof_field(CPUState, neg.can_do_io) != 1);
+    tcg_gen_st8_i32(tcg_constant_i32(val), tcg_env,
+                    offsetof(ArchCPU, parent_obj.neg.can_do_io) -
+                    offsetof(ArchCPU, env));
 }
 
 bool translator_io_start(DisasContextBase *db)
 {
-    set_can_do_io(db, true);
-
     /*
      * Ensure that this instruction will be the last in the TB.
      * The target may override this to something more forceful.
@@ -84,13 +78,6 @@ static TCGOp *gen_tb_start(DisasContextBase *db, uint32_t cflags)
                          - offsetof(ArchCPU, env));
     }
 
-    /*
-     * cpu->neg.can_do_io is set automatically here at the beginning of
-     * each translation block.  The cost is minimal, plus it would be
-     * very easy to forget doing it in the translator.
-     */
-    set_can_do_io(db, db->max_insns == 1);
-
     return icount_start_insn;
 }
 
@@ -114,8 +101,8 @@ static void gen_tb_end(const TranslationBlock *tb, uint32_t cflags,
 
 //// --- Begin LibAFL code ---
 
-#include "libafl_extras/exit.h"
-#include "libafl_extras/hook.h"
+#include "libafl/exit.h"
+#include "libafl/hook.h"
 
 #ifndef TARGET_LONG_BITS
 #error "TARGET_LONG_BITS not defined"
@@ -140,6 +127,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 {
     uint32_t cflags = tb_cflags(tb);
     TCGOp *icount_start_insn;
+    TCGOp *first_insn_start = NULL;
     bool plugin_enabled;
 
     /* Initialize DisasContext */
@@ -150,7 +138,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     db->num_insns = 0;
     db->max_insns = *max_insns;
     db->singlestep_enabled = cflags & CF_SINGLE_STEP;
-    db->saved_can_do_io = -1;
+    db->insn_start = NULL;
     db->host_addr[0] = host_pc;
     db->host_addr[1] = NULL;
 
@@ -168,6 +156,10 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     while (true) {
         *max_insns = ++db->num_insns;
         ops->insn_start(db, cpu);
+        db->insn_start = tcg_last_op();
+        if (first_insn_start == NULL) {
+            first_insn_start = db->insn_start;
+        }
         tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
 
         if (plugin_enabled) {
@@ -220,21 +212,11 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
                         struct libafl_backdoor_hook* bhk = libafl_backdoor_hooks;
                         while (bhk) {
                             TCGv_i64 tmp0 = tcg_constant_i64(bhk->data);
-#if TARGET_LONG_BITS == 32
-                            TCGv_i32 tmp1 = tcg_constant_i32(db->pc_next);
-                            TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i32_temp(tmp1) };
-#else
-                            TCGv_i64 tmp1 = tcg_constant_i64(db->pc_next);
-                            TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
-#endif
-                            // tcg_gen_callN(bhk->exec, NULL, 2, tmp2);
-                            tcg_gen_callN(&bhk->helper_info, NULL, tmp2);
-#if TARGET_LONG_BITS == 32
-                            tcg_temp_free_i32(tmp1);
-#else
-                            tcg_temp_free_i64(tmp1);
-#endif
-                            tcg_temp_free_i64(tmp0);
+                            TCGv tmp2 = tcg_constant_tl(db->pc_next);
+                            TCGTemp *args[3] = { tcgv_i64_temp(tmp0), tcgv_ptr_temp(tcg_env), tcgv_tl_temp(tmp2) };
+
+                            tcg_gen_callN(&bhk->helper_info, NULL, args);
+
                             bhk = bhk->next;
                         }
 
@@ -260,13 +242,11 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
          * done next -- either exiting this loop or locate the start of
          * the next instruction.
          */
-        if (db->num_insns == db->max_insns) {
-            /* Accept I/O on the last instruction.  */
-            set_can_do_io(db, true);
-        }
         ops->translate_insn(db, cpu);
 
+//// --- Begin LibAFL code ---
 post_translate_insn:
+//// --- End LibAFL code ---
         /*
          * We can't instrument after instructions that change control
          * flow although this only really affects post-load operations.
@@ -296,6 +276,21 @@ post_translate_insn:
     /* Emit code to exit the TB, as indicated by db->is_jmp.  */
     ops->tb_stop(db, cpu);
     gen_tb_end(tb, cflags, icount_start_insn, db->num_insns);
+
+    /*
+     * Manage can_do_io for the translation block: set to false before
+     * the first insn and set to true before the last insn.
+     */
+    if (db->num_insns == 1) {
+        tcg_debug_assert(first_insn_start == db->insn_start);
+    } else {
+        tcg_debug_assert(first_insn_start != db->insn_start);
+        tcg_ctx->emit_before_op = first_insn_start;
+        set_can_do_io(db, false);
+    }
+    tcg_ctx->emit_before_op = db->insn_start;
+    set_can_do_io(db, true);
+    tcg_ctx->emit_before_op = NULL;
 
     if (plugin_enabled) {
         plugin_gen_tb_end(cpu, db->num_insns);

@@ -68,7 +68,7 @@ typedef struct {
     CoQueue bounce_available;
 
     /* The value of the "mem-region-alignment" property */
-    size_t mem_region_alignment;
+    uint64_t mem_region_alignment;
 
     /* Can we skip adding/deleting blkio_mem_regions? */
     bool needs_mem_regions;
@@ -88,6 +88,9 @@ static int blkio_resize_bounce_pool(BDRVBlkioState *s, int64_t bytes)
 
     /* Pad size to reduce frequency of resize calls */
     bytes += 128 * 1024;
+
+    /* Align the pool size to avoid blkio_alloc_mem_region() failure */
+    bytes = QEMU_ALIGN_UP(bytes, s->mem_region_alignment);
 
     WITH_QEMU_LOCK_GUARD(&s->blkio_lock) {
         int ret;

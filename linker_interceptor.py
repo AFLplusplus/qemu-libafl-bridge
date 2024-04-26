@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import subprocess, shutil, json, sys, os
+import subprocess, shutil, json, sys, os, re
 
 FILTER = ['-shared']
 
@@ -18,7 +18,13 @@ else:
 out_args = []
 shareds = []
 search = []
+rpath = []
+
 is_linking_qemu = False
+
+shared_library_pattern = r"^[^-].*/lib(.*)\.so(\.[0-9].*)?(?!rsp)$"
+rpath_pattern = r"^'.*,-rpath,(.*)'$"
+rpath_link_pattern = r"^.*,-rpath-link,(.*)$"
 
 def process_args(args):
     global out_args, shareds, search, is_linking_qemu
@@ -32,9 +38,17 @@ def process_args(args):
             continue
         elif args[i] in FILTER:
             continue
-        elif args[i].endswith('.so') and not args[i].startswith('-'):
-            name = os.path.basename(args[i])[3:-3] # remove prefix and suffix
+        elif (res := re.match(shared_library_pattern, args[i])) is not None:
+            name = res.group(1)
             shareds.append(name)
+            continue
+        elif (res := re.match(rpath_link_pattern, args[i])) is not None:
+            rpath_link_path = res.group(1)
+            search.append(rpath_link_path)
+            continue
+        elif (res := re.match(rpath_pattern, args[i])) is not None:
+            rpath_path = res.group(1)
+            rpath.append(rpath_path)
             continue
         elif args[i] == '-o':
             prev_o = True
@@ -57,9 +71,10 @@ process_args(args)
 if is_linking_qemu:
     with open(OUT, 'w') as f:
         json.dump({
-          'cmd': out_args,
-          'libs': shareds,
-          'search': search,
+            'cmd': out_args,
+            'libs': shareds,
+            'search': search,
+            'rpath': rpath,
         }, f, indent=2)
 
 r = subprocess.run([cc] + args)

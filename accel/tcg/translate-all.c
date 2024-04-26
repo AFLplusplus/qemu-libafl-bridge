@@ -63,12 +63,12 @@
 #include "tb-context.h"
 #include "internal-common.h"
 #include "internal-target.h"
-#include "perf.h"
+#include "tcg/perf.h"
 #include "tcg/insn-start-words.h"
 
 //// --- Begin LibAFL code ---
 
-#include "libafl_extras/hook.h"
+#include "libafl/hook.h"
 
 //// --- End LibAFL code ---
 
@@ -262,7 +262,6 @@ bool cpu_unwind_state_data(CPUState *cpu, uintptr_t host_pc, uint64_t *data)
 
 void page_init(void)
 {
-    page_size_init();
     page_table_config_init();
 }
 
@@ -651,6 +650,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     }
     tb->tc.size = gen_code_size;
 
+//// --- Begin LibAFL code ---
     struct libafl_block_hook *hook = libafl_block_hooks;
     while (hook)
     {
@@ -658,6 +658,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
             hook->post_gen(hook->data, pc, tb->size);
         hook = hook->next;
     }
+//// --- End LibAFL code ---
 
     /*
      * For CF_PCREL, attribute all executions of the generated code
@@ -865,7 +866,7 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
     cpu->cflags_next_tb = curr_cflags(cpu) | CF_MEMI_ONLY | n;
 
     if (qemu_loglevel_mask(CPU_LOG_EXEC)) {
-        vaddr pc = log_pc(cpu, tb);
+        vaddr pc = cpu->cc->get_pc(cpu);
         if (qemu_log_in_addr_range(pc)) {
             qemu_log("cpu_io_recompile: rewound execution of TB to %016"
                      VADDR_PRIx "\n", pc);
@@ -879,7 +880,7 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
 
 void cpu_interrupt(CPUState *cpu, int mask)
 {
-    g_assert(qemu_mutex_iothread_locked());
+    g_assert(bql_locked());
     cpu->interrupt_request |= mask;
     qatomic_set(&cpu->neg.icount_decr.u16.high, -1);
 }

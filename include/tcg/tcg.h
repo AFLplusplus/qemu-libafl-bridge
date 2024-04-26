@@ -412,7 +412,7 @@ typedef struct TCGTemp {
     unsigned int mem_coherent:1;
     unsigned int mem_allocated:1;
     unsigned int temp_allocated:1;
-    unsigned int temp_subindex:1;
+    unsigned int temp_subindex:2;
 
     int64_t val;
     struct TCGTemp *mem_base;
@@ -552,6 +552,12 @@ struct TCGContext {
 
     QTAILQ_HEAD(, TCGOp) ops, free_ops;
     QSIMPLEQ_HEAD(, TCGLabel) labels;
+
+    /*
+     * When clear, new ops are added to the tail of @ops.
+     * When set, new ops are added in front of @emit_before_op.
+     */
+    TCGOp *emit_before_op;
 
     /* Tells which temporary holds a given register.
        It does not take into account fixed registers */

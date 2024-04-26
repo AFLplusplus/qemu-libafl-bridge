@@ -1,0 +1,16 @@
+name: Build and Test QEMU
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: [self-hosted, qemu]
+    container: registry.gitlab.com/qemu-project/qemu/qemu/ubuntu2204:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build QEMU
+        run: mkdir -p build && cd build && ../configure --enable-werror --disable-docs --enable-fdt=system && make -j $(expr $(nproc) + 1)

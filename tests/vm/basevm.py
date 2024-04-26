@@ -423,6 +423,8 @@ class BaseVM(object):
     def console_sshd_config(self, prompt):
         self.console_wait(prompt)
         self.console_send("echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config\n")
+        self.console_wait(prompt)
+        self.console_send("echo 'UseDNS no' >> /etc/ssh/sshd_config\n")
         for var in self.envvars:
             self.console_wait(prompt)
             self.console_send("echo 'AcceptEnv %s' >> /etc/ssh/sshd_config\n" % var)
@@ -604,7 +606,7 @@ def parse_args(vmcls):
     parser.add_argument("--build-qemu",
                         help="build QEMU from source in guest")
     parser.add_argument("--build-target",
-                        help="QEMU build target", default="check")
+                        help="QEMU build target", default="all check")
     parser.add_argument("--build-path", default=None,
                         help="Path of build directory, "\
                         "for using build tree QEMU binary. ")
@@ -644,9 +646,9 @@ def main(vmcls, config=None):
         vm = vmcls(args, config=config)
         if args.build_image:
             if os.path.exists(args.image) and not args.force:
-                sys.stderr.writelines(["Image file exists: %s\n" % args.image,
+                sys.stderr.writelines(["Image file exists, skipping build: %s\n" % args.image,
                                       "Use --force option to overwrite\n"])
-                return 1
+                return 0
             return vm.build_image(args.image)
         if args.build_qemu:
             vm.add_source_dir(args.build_qemu)

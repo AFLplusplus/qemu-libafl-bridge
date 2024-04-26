@@ -65,13 +65,13 @@ abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
                     abi_long arg5, abi_long arg6, abi_long arg7,
                     abi_long arg8);
 extern __thread CPUState *thread_cpu;
-void cpu_loop(CPUArchState *env);
+/* G_NORETURN */ void cpu_loop(CPUArchState *env);
 abi_long get_errno(abi_long ret);
 const char *target_strerror(int err);
 int get_osversion(void);
 void init_qemu_uname_release(void);
 void fork_start(void);
-void fork_end(int child);
+void fork_end(pid_t pid);
 
 /**
  * probe_guest_base:

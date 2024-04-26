@@ -181,8 +181,8 @@ static int qio_channel_buffer_close(QIOChannel *ioc,
         g_free(bioc->data);
     }
 
-    //// --- End LibAFL code ---
     //g_free(bioc->data);
+    //// --- End LibAFL code ---
     bioc->data = NULL;
     bioc->capacity = bioc->usage = bioc->offset = 0;
 

@@ -25,6 +25,8 @@
 #ifndef TARGET_ARM_SYNDROME_H
 #define TARGET_ARM_SYNDROME_H
 
+#include "qemu/bitops.h"
+
 /* Valid Syndrome Register EC field values */
 enum arm_exception_class {
     EC_UNCATEGORIZED          = 0x00,
@@ -80,15 +82,24 @@ typedef enum {
     SME_ET_InactiveZA,
 } SMEExceptionType;
 
+#define ARM_EL_EC_LENGTH 6
 #define ARM_EL_EC_SHIFT 26
 #define ARM_EL_IL_SHIFT 25
 #define ARM_EL_ISV_SHIFT 24
 #define ARM_EL_IL (1 << ARM_EL_IL_SHIFT)
 #define ARM_EL_ISV (1 << ARM_EL_ISV_SHIFT)
 
+/* In the Data Abort syndrome */
+#define ARM_EL_VNCR (1 << 13)
+
 static inline uint32_t syn_get_ec(uint32_t syn)
 {
     return syn >> ARM_EL_EC_SHIFT;
+}
+
+static inline uint32_t syn_set_ec(uint32_t syn, uint32_t ec)
+{
+    return deposit32(syn, ARM_EL_EC_SHIFT, ARM_EL_EC_LENGTH, ec);
 }
 
 /*
@@ -256,13 +267,12 @@ static inline uint32_t syn_bxjtrap(int cv, int cond, int rm)
         (cv << 24) | (cond << 20) | rm;
 }
 
-static inline uint32_t syn_gpc(int s2ptw, int ind, int gpcsc,
+static inline uint32_t syn_gpc(int s2ptw, int ind, int gpcsc, int vncr,
                                int cm, int s1ptw, int wnr, int fsc)
 {
-    /* TODO: FEAT_NV2 adds VNCR */
     return (EC_GPC << ARM_EL_EC_SHIFT) | ARM_EL_IL | (s2ptw << 21)
-            | (ind << 20) | (gpcsc << 14) | (cm << 8) | (s1ptw << 7)
-            | (wnr << 6) | fsc;
+        | (ind << 20) | (gpcsc << 14) | (vncr << 13) | (cm << 8)
+        | (s1ptw << 7) | (wnr << 6) | fsc;
 }
 
 static inline uint32_t syn_insn_abort(int same_el, int ea, int s1ptw, int fsc)
@@ -293,6 +303,16 @@ static inline uint32_t syn_data_abort_with_iss(int same_el,
            | ARM_EL_ISV | (sas << 22) | (sse << 21) | (srt << 16)
            | (sf << 15) | (ar << 14)
            | (ea << 9) | (cm << 8) | (s1ptw << 7) | (wnr << 6) | fsc;
+}
+
+/*
+ * Faults due to FEAT_NV2 VNCR_EL2-based accesses report as same-EL
+ * Data Aborts with the VNCR bit set.
+ */
+static inline uint32_t syn_data_abort_vncr(int ea, int wnr, int fsc)
+{
+    return (EC_DATAABORT << ARM_EL_EC_SHIFT) | (1 << ARM_EL_EC_SHIFT)
+        | ARM_EL_IL | ARM_EL_VNCR | (wnr << 6) | fsc;
 }
 
 static inline uint32_t syn_swstep(int same_el, int isv, int ex)

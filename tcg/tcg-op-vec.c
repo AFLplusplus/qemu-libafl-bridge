@@ -319,10 +319,17 @@ void tcg_gen_stl_vec(TCGv_vec r, TCGv_ptr b, TCGArg o, TCGType low_type)
     TCGArg bi = tcgv_ptr_arg(b);
     TCGTemp *rt = arg_temp(ri);
     TCGType type = rt->base_type;
+//// --- Begin LibAFL code ---
+    MemOpIdx oi = make_memop_idx((type - TCG_TYPE_V64) + MO_64, 0);
+//// --- End LibAFL code ---
 
     tcg_debug_assert(low_type >= TCG_TYPE_V64);
     tcg_debug_assert(low_type <= type);
     vec_gen_3(INDEX_op_st_vec, low_type, 0, ri, bi, o);
+
+//// --- Begin LibAFL code ---
+    libafl_gen_write(tcgv_ptr_temp(b), oi);
+//// --- End LibAFL code ---
 }
 
 void tcg_gen_and_vec(unsigned vece, TCGv_vec r, TCGv_vec a, TCGv_vec b)

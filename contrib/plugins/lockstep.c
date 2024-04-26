@@ -33,6 +33,7 @@
 
 #include <qemu-plugin.h>
 
+//// --- Begin LibAFL code ---
 static inline gpointer g_memdup2_qemu(gconstpointer mem, gsize byte_size)
 {
 #if GLIB_CHECK_VERSION(2, 68, 0)
@@ -51,6 +52,7 @@ static inline gpointer g_memdup2_qemu(gconstpointer mem, gsize byte_size)
 #endif
 }
 #define g_memdup2(m, s) g_memdup2_qemu(m, s)
+//// --- End LibAFL code ---
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 

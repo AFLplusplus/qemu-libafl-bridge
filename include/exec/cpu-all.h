@@ -25,7 +25,10 @@
 #include "qemu/thread.h"
 #include "hw/core/cpu.h"
 #include "qemu/rcu.h"
+
+//// --- Begin LibAFL code ---
 #include "qemu/interval-tree.h"
+//// --- End LibAFL code ---
 
 /* some important defines:
  *
@@ -192,7 +195,10 @@ int walk_memory_regions(void *, walk_memory_regions_fn);
 int page_get_flags(target_ulong address);
 void page_set_flags(target_ulong start, target_ulong last, int flags);
 void page_reset_target_data(target_ulong start, target_ulong last);
-IntervalTreeRoot * pageflags_get_root(void);
+
+//// --- Begin LibAFL code ---
+IntervalTreeRoot* pageflags_get_root(void);
+//// --- End LibAFL code ---
 
 /**
  * page_check_range

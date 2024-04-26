@@ -17,6 +17,7 @@ else:
 
 out_args = []
 shareds = []
+sources = []
 search = []
 rpath = []
 
@@ -69,12 +70,18 @@ def process_args(args):
 process_args(args)
 
 if is_linking_qemu:
+    with open("compile_commands.json", 'r') as f:
+        compile_commands = json.load(f)
+        for entry in compile_commands:
+            sources.append(entry["file"])
+
     with open(OUT, 'w') as f:
         json.dump({
             'cmd': out_args,
             'libs': shareds,
             'search': search,
             'rpath': rpath,
+            'sources': sources,
         }, f, indent=2)
 
 r = subprocess.run([cc] + args)

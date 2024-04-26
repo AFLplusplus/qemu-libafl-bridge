@@ -332,8 +332,6 @@ static target_ulong reverse_bits(target_ulong num)
     return reverse_num;
 }
 
-#define IS_EDGE                 0x04000000
-
 /* Called with mmap_lock held for user mode emulation.  */
 TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
                                   target_ulong dst_block, int exit_n,
@@ -404,8 +402,8 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
         tb->pc = pc;
     }
     tb->cs_base = cs_base;
-    tb->flags = flags | IS_EDGE;
-    tb->cflags = cflags;
+    tb->flags = flags;
+    tb->cflags = cflags | CF_IS_EDGE;
     //tb_set_page_addr0(tb, phys_pc);
     //tb_set_page_addr1(tb, -1);
     tcg_ctx->gen_tb = tb;

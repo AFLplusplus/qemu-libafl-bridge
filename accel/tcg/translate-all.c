@@ -403,7 +403,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     }
     tb->cs_base = cs_base;
     tb->flags = flags;
-    tb->cflags = cflags;
+    tb->cflags = cflags | CF_IS_EDGE;
     //tb_set_page_addr0(tb, phys_pc);
     //tb_set_page_addr1(tb, -1);
     tcg_ctx->gen_tb = tb;

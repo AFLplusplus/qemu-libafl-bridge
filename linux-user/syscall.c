@@ -13806,26 +13806,32 @@ IntervalTreeNode * libafl_maps_first(IntervalTreeRoot * map_info) {
     return interval_tree_iter_first(map_info, 0, -1);
 }
 
-IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinfo* ret) {
+IntervalTreeNode * libafl_maps_next(IntervalTreeNode *pageflags_maps_node, IntervalTreeRoot *proc_maps_root, struct libafl_mapinfo* ret) {
     ret->is_valid = false;
 
-    if (!node || !ret) {
+    if (!pageflags_maps_node || !ret) {
         return NULL;
     }
 
-    MapInfo *e = container_of(node, MapInfo, itree);
+    MapInfo *e;
+    IntervalTreeNode *proc_map_interval_node;
 
-    if (h2g_valid(e->itree.start)) {
-        unsigned long min = e->itree.start;
-        unsigned long max = e->itree.last + 1;
+    if (h2g_valid(pageflags_maps_node->start)) {
+        unsigned long min = pageflags_maps_node->start;
+        unsigned long max = pageflags_maps_node->last + 1;
         int flags = page_get_flags(h2g(min));
 
         max = h2g_valid(max - 1) ?
             max : (uintptr_t) g2h_untagged(GUEST_ADDR_MAX) + 1;
 
+        // I guess this is useless? we are walking the entire pageflags_root tree, so we should always have a valid node
         if (!page_check_range(h2g(min), max - min, flags)) {
-            return libafl_maps_next(interval_tree_iter_next(node, 0, -1), ret);
+            return libafl_maps_next(interval_tree_iter_next(pageflags_maps_node, 0, -1), proc_maps_root, ret);
         }
+
+        // Should we check for NULL? Not sure, but if an inteval is in pageflags, then it should be in proc_maps too
+        proc_map_interval_node = interval_tree_iter_first(proc_maps_root, min, min);
+        e = container_of(proc_map_interval_node, MapInfo, itree);
 
         int libafl_flags = 0;
         if (flags & PAGE_READ) libafl_flags |= PROT_READ;
@@ -13840,9 +13846,9 @@ IntervalTreeNode * libafl_maps_next(IntervalTreeNode *node, struct libafl_mapinf
         ret->flags = libafl_flags;
         ret->is_priv = e->is_priv;
 
-        return interval_tree_iter_next(node, 0, -1);
+        return interval_tree_iter_next(pageflags_maps_node, 0, -1);
     } else {
-        return libafl_maps_next(interval_tree_iter_next(node, 0, -1), ret);
+        return libafl_maps_next(interval_tree_iter_next(pageflags_maps_node, 0, -1), proc_maps_root, ret);
     }
 }
 

@@ -33,6 +33,25 @@
 
 //// --- Begin LibAFL code ---
 
+/* Copied over from the plugin_maybe_preserve_addr function
+ * The variable needs to be free'd after use
+ *
+ * Only required for loads, where value might overlap addr.
+ */
+static TCGv_i64 libafl_gen_preserve_addr(TCGTemp *addr)
+{
+    /* Save a copy of the vaddr for use after a load.  */
+    TCGv_i64 temp = tcg_temp_ebb_new_i64();
+
+    if (tcg_ctx->addr_type == TCG_TYPE_I32) {
+        tcg_gen_extu_i32_i64(temp, temp_tcgv_i32(addr));
+    } else {
+        tcg_gen_mov_i64(temp, temp_tcgv_i64(addr));
+    }
+
+    return temp;
+}
+
 void libafl_gen_read(TCGTemp *addr, MemOpIdx oi);
 void libafl_gen_write(TCGTemp *addr, MemOpIdx oi);
 
@@ -208,12 +227,20 @@ static void tcg_gen_qemu_ld_i32_int(TCGv_i32 val, TCGTemp *addr,
     } else {
         opc = INDEX_op_qemu_ld_a64_i32;
     }
+
+//// --- Begin LibAFL code ---
+
+    TCGv_i64 libafl_addr = libafl_gen_preserve_addr(addr);
+
+//// --- End LibAFL code ---
+
     gen_ldst(opc, tcgv_i32_temp(val), NULL, addr, oi);
     plugin_gen_mem_callbacks(copy_addr, addr, orig_oi, QEMU_PLUGIN_MEM_R);
 
 //// --- Begin LibAFL code ---
 
-    libafl_gen_read(addr, oi);
+    libafl_gen_read(tcgv_i64_temp(libafl_addr), orig_oi);
+    tcg_temp_free_i64(libafl_addr);
 
 //// --- End LibAFL code ---
 
@@ -341,12 +368,20 @@ static void tcg_gen_qemu_ld_i64_int(TCGv_i64 val, TCGTemp *addr,
     } else {
         opc = INDEX_op_qemu_ld_a64_i64;
     }
+
+//// --- Begin LibAFL code ---
+    
+    TCGv_i64 libafl_addr = libafl_gen_preserve_addr(addr);
+
+//// --- End LibAFL code ---
+
     gen_ldst_i64(opc, val, addr, oi);
     plugin_gen_mem_callbacks(copy_addr, addr, orig_oi, QEMU_PLUGIN_MEM_R);
 
 //// --- Begin LibAFL code ---
 
-    libafl_gen_read(addr, oi);
+    libafl_gen_read(tcgv_i64_temp(libafl_addr), orig_oi);
+    tcg_temp_free_i64(libafl_addr);
 
 //// --- End LibAFL code ---
 

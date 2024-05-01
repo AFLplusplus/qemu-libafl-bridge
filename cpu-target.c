@@ -47,8 +47,12 @@
 
 //// --- Begin LibAFL code ---
 
+#include "exec/gdbstub.h"
+
 #include "libafl/exit.h"
 #include "libafl/hook.h"
+
+int gdb_write_register(CPUState *cpu, uint8_t *mem_buf, int reg);
 
 static __thread GByteArray *libafl_qemu_mem_buf = NULL;
 
@@ -128,29 +132,26 @@ int libafl_qemu_cpu_index(CPUState* cpu)
 
 int libafl_qemu_write_reg(CPUState* cpu, int reg, uint8_t* val)
 {
-    CPUClass *cc = CPU_GET_CLASS(cpu);
-    if (reg < cc->gdb_num_core_regs) {
-        return cc->gdb_write_register(cpu, val, reg);
-    }
-    return 0;
+    return gdb_write_register(cpu, val, reg);
 }
 
 int libafl_qemu_read_reg(CPUState* cpu, int reg, uint8_t* val)
 {
+    int len;
+
     if (libafl_qemu_mem_buf == NULL) {
         libafl_qemu_mem_buf = g_byte_array_sized_new(64);
     }
 
-    CPUClass *cc = CPU_GET_CLASS(cpu);
-    if (reg < cc->gdb_num_core_regs) {
-        g_byte_array_set_size(libafl_qemu_mem_buf, 0);
-        int len = cc->gdb_read_register(cpu, libafl_qemu_mem_buf, reg);
-        if (len > 0) {
-            memcpy(val, libafl_qemu_mem_buf->data, len);
-        }
-        return len;
+    g_byte_array_set_size(libafl_qemu_mem_buf, 0);
+
+    len = gdb_read_register(cpu, libafl_qemu_mem_buf, reg);
+
+    if (len > 0) {
+        memcpy(val, libafl_qemu_mem_buf->data, len);
     }
-    return 0;
+
+    return len;
 }
 
 int libafl_qemu_num_regs(CPUState* cpu)

@@ -533,7 +533,12 @@ int gdb_read_register(CPUState *cpu, GByteArray *buf, int reg)
     return 0;
 }
 
-static int gdb_write_register(CPUState *cpu, uint8_t *mem_buf, int reg)
+
+//// --- Begin LibAFL code ---
+int gdb_write_register(CPUState *cpu, uint8_t *mem_buf, int reg);
+/* static */
+//// --- End LibAFL code ---
+int gdb_write_register(CPUState *cpu, uint8_t *mem_buf, int reg)
 {
     CPUClass *cc = CPU_GET_CLASS(cpu);
     GDBRegisterState *r;

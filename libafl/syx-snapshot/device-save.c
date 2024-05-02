@@ -99,6 +99,7 @@ void device_restore_all(DeviceSaveState* dss) {
     
     libafl_restoring_devices = save_libafl_restoring_devices;
 
+    object_unref(OBJECT(bioc));
     qemu_fclose(f);
 }
 

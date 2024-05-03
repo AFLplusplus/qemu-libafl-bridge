@@ -35,11 +35,11 @@ qio_channel_buffer_new(size_t capacity)
     if (capacity) {
         ioc->data = g_new0(uint8_t, capacity);
         ioc->capacity = capacity;
-        
-        //// --- Begin LibAFL code ---
-        ioc->internal_allocation = true;
-        //// --- End LibAFL code ---
     }
+
+    //// --- Begin LibAFL code ---
+    ioc->internal_allocation = capacity > 0;
+    //// --- End LibAFL code ---
 
     return ioc;
 }
@@ -75,6 +75,7 @@ static void qio_channel_buffer_finalize(Object *obj)
         g_free(ioc->data);
     }
 
+    ioc->data = NULL;
     //// --- End LibAFL code ---
     // g_free(ioc->data);
 
@@ -181,8 +182,8 @@ static int qio_channel_buffer_close(QIOChannel *ioc,
         g_free(bioc->data);
     }
 
-    //g_free(bioc->data);
     //// --- End LibAFL code ---
+    //g_free(bioc->data);
     bioc->data = NULL;
     bioc->capacity = bioc->usage = bioc->offset = 0;
 

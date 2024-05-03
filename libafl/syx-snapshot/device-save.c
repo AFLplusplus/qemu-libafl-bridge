@@ -85,8 +85,6 @@ DeviceSaveState* device_save_kind(DeviceSnapshotKind kind, char** names) {
 }
 
 void device_restore_all(DeviceSaveState* dss) {
-    Error* err = NULL;
-
     assert(dss->save_buffer != NULL);
 
     QIOChannelBuffer* bioc = qio_channel_buffer_new_external(dss->save_buffer, QEMU_FILE_RAM_LIMIT, dss->save_buffer_size);
@@ -101,9 +99,7 @@ void device_restore_all(DeviceSaveState* dss) {
     
     libafl_restoring_devices = save_libafl_restoring_devices;
 
-    qio_channel_close(ioc, &err);
-    assert(!err);
-
+    object_unref(OBJECT(bioc));
     qemu_fclose(f);
 }
 

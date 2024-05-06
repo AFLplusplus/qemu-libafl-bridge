@@ -1,12 +1,12 @@
 #include "qemu/osdep.h"
-
-#ifndef CONFIG_USER_ONLY
-#include "exec/memory.h"
-#include "qemu/rcu.h"
-#include "cpu.h"
-
 #include "libafl/utils.h"
 
+uintptr_t libafl_qemu_host_page_size(void)
+{
+    return qemu_real_host_page_size();
+}
+
+#ifndef CONFIG_USER_ONLY
 uint8_t* libafl_paddr2host(CPUState* cpu, hwaddr addr, bool is_write)
 {
     if (addr == -1) {

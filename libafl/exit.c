@@ -110,7 +110,7 @@ void libafl_exit_request_internal(CPUState* cpu, uint64_t pc, ShutdownCause caus
 
 void libafl_exit_request_sync_backdoor(CPUState* cpu, target_ulong pc)
 {
-    last_exit_reason.kind = SYNC_BACKDOOR;
+    last_exit_reason.kind = SYNC_EXIT;
 
     prepare_qemu_exit(cpu, pc);
 }

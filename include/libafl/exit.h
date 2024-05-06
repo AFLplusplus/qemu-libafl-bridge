@@ -22,7 +22,7 @@ void libafl_qemu_trigger_breakpoint(CPUState* cpu);
 enum libafl_exit_reason_kind {
     INTERNAL = 0,
     BREAKPOINT = 1,
-    SYNC_BACKDOOR = 2,
+    SYNC_EXIT = 2,
 };
 
 // A breakpoint has been triggered.
@@ -31,7 +31,7 @@ struct libafl_exit_reason_breakpoint {
 };
 
 // A synchronous exit has been triggered.
-struct libafl_exit_reason_sync_backdoor { };
+struct libafl_exit_reason_sync_exit { };
 
 // QEMU exited on its own for some reason.
 struct libafl_exit_reason_internal {
@@ -46,7 +46,7 @@ struct libafl_exit_reason {
     union {
         struct libafl_exit_reason_internal internal;
         struct libafl_exit_reason_breakpoint breakpoint; // kind == BREAKPOINT
-        struct libafl_exit_reason_sync_backdoor backdoor; // kind == SYNC_BACKDOOR
+        struct libafl_exit_reason_sync_exit sync_exit; // kind == SYNC_EXIT
     } data;
 };
 

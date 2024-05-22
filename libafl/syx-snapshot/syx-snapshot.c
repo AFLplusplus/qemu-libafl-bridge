@@ -577,7 +577,6 @@ static void root_restore_check_memory_rb(gpointer rb_idstr_hash, gpointer rb_dir
     SyxSnapshot *snapshot = args->snapshot;
     RAMBlock *rb = ramblock_lookup(rb_idstr_hash);
 
-    args->nb_inconsistent_pages = 0;
     if (rb) {
         SYX_PRINTF("Checking memory consistency of %s... ", rb->idstr);
         SyxSnapshotRAMBlock *rb_snapshot = g_hash_table_lookup(snapshot->root_snapshot->rbs_snapshot, rb_idstr_hash);
@@ -610,12 +609,19 @@ static void root_restore_check_memory_rb(gpointer rb_idstr_hash, gpointer rb_dir
     }
 }
 
-uint64_t syx_snapshot_check_memory_consistency(SyxSnapshot *snapshot) {
+SyxSnapshotCheckResult syx_snapshot_check(SyxSnapshot* ref_snapshot) {
     struct rb_check_memory_args args = {
-            .snapshot = snapshot
+            .snapshot = ref_snapshot,
+            .nb_inconsistent_pages = 0,
     };
-    g_hash_table_foreach(snapshot->rbs_dirty_list, root_restore_check_memory_rb, &args);
-    return args.nb_inconsistent_pages;
+
+    g_hash_table_foreach(ref_snapshot->rbs_dirty_list, root_restore_check_memory_rb, &args);
+
+    struct SyxSnapshotCheckResult res = {
+        .nb_inconsistencies = args.nb_inconsistent_pages
+    };
+
+    return res;
 }
 
 void syx_snapshot_root_restore(SyxSnapshot *snapshot) {

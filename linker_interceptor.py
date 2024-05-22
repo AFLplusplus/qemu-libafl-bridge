@@ -27,6 +27,19 @@ shared_library_pattern = r"^[^-].*/lib(.*)\.so(\.[0-9].*)?(?!rsp)$"
 rpath_pattern = r"^'.*,-rpath,(.*)'$"
 rpath_link_pattern = r"^.*,-rpath-link,(.*)$"
 
+linker_interceptor_pattern = r"(\": \")(.*linker_interceptor.py)( )"
+linker_interceptorpp_pattern = r"(\": \")(.*linker_interceptor\+\+.py)( )"
+
+def fix_compile_commands():
+    with open("compile_commands.json", 'r') as f:
+        compile_commands = f.read()
+    
+    res = re.sub(linker_interceptor_pattern, rf"\g<1>{CC}\g<3>", compile_commands)
+    res = re.sub(linker_interceptorpp_pattern, rf"\g<1>{CXX}\g<3>", res)
+
+    with open("compile_commands.json", 'w') as f:
+        f.write(res)
+
 def process_args(args):
     global out_args, shareds, search, is_linking_qemu
     prev_o = False
@@ -74,6 +87,8 @@ if is_linking_qemu:
         compile_commands = json.load(f)
         for entry in compile_commands:
             sources.append(entry["file"])
+
+    fix_compile_commands()
 
     with open(OUT, 'w') as f:
         json.dump({

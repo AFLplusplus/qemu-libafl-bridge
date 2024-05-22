@@ -59,6 +59,10 @@ typedef struct SyxSnapshotState {
     // Root
 } SyxSnapshotState;
 
+typedef struct SyxSnapshotCheckResult {
+    uint64_t nb_inconsistencies;
+} SyxSnapshotCheckResult;
+
 void syx_snapshot_init(bool cached_bdrvs);
 
 //
@@ -71,7 +75,7 @@ void syx_snapshot_free(SyxSnapshot *snapshot);
 
 void syx_snapshot_root_restore(SyxSnapshot *snapshot);
 
-uint64_t syx_snapshot_check_memory_consistency(SyxSnapshot *snapshot);
+SyxSnapshotCheckResult syx_snapshot_check(SyxSnapshot* ref_snapshot);
 
 // Push the current RAM state and saves it
 void syx_snapshot_increment_push(SyxSnapshot *snapshot, DeviceSnapshotKind kind, char **devices);

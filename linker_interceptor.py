@@ -28,7 +28,7 @@ rpath_pattern = r"^'.*,-rpath,(.*)'$"
 rpath_link_pattern = r"^.*,-rpath-link,(.*)$"
 
 linker_interceptor_pattern = r"(\": \")(.*linker_interceptor.py)( )"
-linker_interceptorpp_pattern = r".*linker_interceptor++\.py"
+linker_interceptorpp_pattern = r"(\": \")(.*linker_interceptor\+\+.py)( )"
 
 def fix_compile_commands():
     with open("compile_commands.json", 'r') as f:

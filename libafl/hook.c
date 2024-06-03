@@ -13,11 +13,11 @@
 
 target_ulong libafl_gen_cur_pc;
 
-struct libafl_hook* libafl_qemu_hooks[LIBAFL_TABLES_SIZE];
+struct libafl_hook* libafl_qemu_instruction_hooks[LIBAFL_TABLES_SIZE];
 size_t libafl_qemu_hooks_num = 0;
 
-size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(uint64_t data, target_ulong pc),
-                            uint64_t data, int invalidate)
+size_t libafl_qemu_add_instruction_hooks(target_ulong pc, void (*callback)(uint64_t data, target_ulong pc),
+                                         uint64_t data, int invalidate)
 {
     CPUState *cpu;
 
@@ -39,18 +39,18 @@ size_t libafl_qemu_set_hook(target_ulong pc, void (*callback)(uint64_t data, tar
     hk->helper_info.typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(tl, 2);
     // TODO check for overflow
     hk->num = libafl_qemu_hooks_num++;
-    hk->next = libafl_qemu_hooks[idx];
-    libafl_qemu_hooks[idx] = hk;
+    hk->next = libafl_qemu_instruction_hooks[idx];
+    libafl_qemu_instruction_hooks[idx] = hk;
     return hk->num;
 }
 
-size_t libafl_qemu_remove_hooks_at(target_ulong addr, int invalidate)
+size_t libafl_qemu_remove_instruction_hooks_at(target_ulong addr, int invalidate)
 {
     CPUState *cpu;
     size_t r = 0;
 
     size_t idx = LIBAFL_TABLES_HASH(addr);
-    struct libafl_hook** hk = &libafl_qemu_hooks[idx];
+    struct libafl_hook** hk = &libafl_qemu_instruction_hooks[idx];
     while (*hk) {
         if ((*hk)->addr == addr) {
             if (invalidate) {
@@ -70,13 +70,13 @@ size_t libafl_qemu_remove_hooks_at(target_ulong addr, int invalidate)
     return r;
 }
 
-int libafl_qemu_remove_hook(size_t num, int invalidate)
+int libafl_qemu_remove_instruction_hook(size_t num, int invalidate)
 {
     CPUState *cpu;
     size_t idx;
 
     for (idx = 0; idx < LIBAFL_TABLES_SIZE; ++idx) {
-        struct libafl_hook** hk = &libafl_qemu_hooks[idx];
+        struct libafl_hook** hk = &libafl_qemu_instruction_hooks[idx];
         while (*hk) {
             if ((*hk)->num == num) {
                 if (invalidate) {
@@ -97,11 +97,11 @@ int libafl_qemu_remove_hook(size_t num, int invalidate)
     return 0;
 }
 
-struct libafl_hook* libafl_search_hook(target_ulong addr)
+struct libafl_hook* libafl_search_instruction_hook(target_ulong addr)
 {
     size_t idx = LIBAFL_TABLES_HASH(addr);
 
-    struct libafl_hook* hk = libafl_qemu_hooks[idx];
+    struct libafl_hook* hk = libafl_qemu_instruction_hooks[idx];
     while (hk) {
         if (hk->addr == addr) {
             return hk;

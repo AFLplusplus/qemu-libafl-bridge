@@ -168,7 +168,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 
         //// --- Begin LibAFL code ---
 
-        struct libafl_hook* hk = libafl_search_hook(db->pc_next);
+        struct libafl_hook* hk = libafl_search_instruction_hook(db->pc_next);
         if (hk) {
             TCGv_i64 tmp0 = tcg_constant_i64(hk->data);
 #if TARGET_LONG_BITS == 32

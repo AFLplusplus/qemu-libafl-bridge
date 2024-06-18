@@ -2817,13 +2817,17 @@ static void gen_bnd_jmp(DisasContext *s)
 static void
 do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
 {
+    bool inhibit_reset;
+
     gen_update_cc_op(s);
 
     /* If several instructions disable interrupts, only the first does it.  */
-    if (inhibit && !(s->flags & HF_INHIBIT_IRQ_MASK)) {
-        gen_set_hflag(s, HF_INHIBIT_IRQ_MASK);
-    } else {
+    inhibit_reset = false;
+    if (s->flags & HF_INHIBIT_IRQ_MASK) {
         gen_reset_hflag(s, HF_INHIBIT_IRQ_MASK);
+        inhibit_reset = true;
+    } else if (inhibit) {
+        gen_set_hflag(s, HF_INHIBIT_IRQ_MASK);
     }
 
     if (s->base.tb->flags & HF_RF_MASK) {
@@ -2832,9 +2836,11 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
     if (recheck_tf) {
         gen_helper_rechecking_single_step(tcg_env);
         tcg_gen_exit_tb(NULL, 0);
-    } else if (s->flags & HF_TF_MASK) {
+    } else if ((s->flags & HF_TF_MASK) && !inhibit) {
         gen_helper_single_step(tcg_env);
-    } else if (jr) {
+    } else if (jr &&
+               /* give irqs a chance to happen */
+               !inhibit_reset) {
         tcg_gen_lookup_and_goto_ptr();
     } else {
         tcg_gen_exit_tb(NULL, 0);
@@ -6102,7 +6108,8 @@ static bool disas_insn(DisasContext *s, CPUState *cpu)
             gen_ldst_modrm(env, s, modrm, ot, OR_TMP0, 1);
             break;
         case 0xee: /* rdpkru */
-            if (prefixes & PREFIX_LOCK) {
+            if (s->prefix & (PREFIX_LOCK | PREFIX_DATA
+                             | PREFIX_REPZ | PREFIX_REPNZ)) {
                 goto illegal_op;
             }
             tcg_gen_trunc_tl_i32(s->tmp2_i32, cpu_regs[R_ECX]);
@@ -6110,7 +6117,8 @@ static bool disas_insn(DisasContext *s, CPUState *cpu)
             tcg_gen_extr_i64_tl(cpu_regs[R_EAX], cpu_regs[R_EDX], s->tmp1_i64);
             break;
         case 0xef: /* wrpkru */
-            if (prefixes & PREFIX_LOCK) {
+            if (s->prefix & (PREFIX_LOCK | PREFIX_DATA
+                             | PREFIX_REPZ | PREFIX_REPNZ)) {
                 goto illegal_op;
             }
             tcg_gen_concat_tl_i64(s->tmp1_i64, cpu_regs[R_EAX],
@@ -6818,12 +6826,7 @@ static bool disas_insn(DisasContext *s, CPUState *cpu)
         modrm = x86_ldub_code(env, s);
         reg = ((modrm >> 3) & 7) | REX_R(s);
 
-        if (s->prefix & PREFIX_DATA) {
-            ot = MO_16;
-        } else {
-            ot = mo_64_32(dflag);
-        }
-
+        ot = dflag;
         gen_ldst_modrm(env, s, modrm, ot, OR_TMP0, 0);
         gen_extu(ot, s->T0);
         tcg_gen_mov_tl(cpu_cc_src, s->T0);
@@ -6987,7 +6990,7 @@ static void i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu)
     dc->cpuid_7_1_eax_features = env->features[FEAT_7_1_EAX];
     dc->cpuid_xsave_features = env->features[FEAT_XSAVE];
     dc->jmp_opt = !((cflags & CF_NO_GOTO_TB) ||
-                    (flags & (HF_TF_MASK | HF_INHIBIT_IRQ_MASK)));
+                    (flags & (HF_RF_MASK | HF_TF_MASK | HF_INHIBIT_IRQ_MASK)));
     /*
      * If jmp_opt, we want to handle each string instruction individually.
      * For icount also disable repz optimization so that each iteration

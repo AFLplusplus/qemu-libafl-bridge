@@ -32,13 +32,34 @@ void cpu_loop(CPURISCVState *env)
     int trapnr;
     target_ulong ret;
 
+//// --- Begin LibAFL code ---
+
+    libafl_exit_signal_vm_start();
+
+//// --- End LibAFL code ---
+
     for (;;) {
+
+//// --- Begin LibAFL code ---
+
+        if (libafl_exit_asap()) return;
+
+//// --- End LibAFL code ---
+
         cpu_exec_start(cs);
         trapnr = cpu_exec(cs);
         cpu_exec_end(cs);
         process_queued_cpu_work(cs);
 
         switch (trapnr) {
+
+//// --- Begin LibAFL code ---
+
+        case EXCP_LIBAFL_EXIT:
+            return;
+
+//// --- End LibAFL code ---
+
         case EXCP_INTERRUPT:
             /* just indicate that signals should be handled asap */
             break;

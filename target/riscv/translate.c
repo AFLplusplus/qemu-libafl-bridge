@@ -873,6 +873,13 @@ static bool gen_arith_imm_fn(DisasContext *ctx, arg_i *a, DisasExtend ext,
     return true;
 }
 
+//// --- Begin LibAFL code ---
+
+static void gen_slt(TCGv ret, TCGv s1, TCGv s2);
+static void gen_sltu(TCGv ret, TCGv s1, TCGv s2);
+
+//// --- End LibAFL code ---
+
 static bool gen_arith_imm_tl(DisasContext *ctx, arg_i *a, DisasExtend ext,
                              void (*func)(TCGv, TCGv, TCGv),
                              void (*f128)(TCGv, TCGv, TCGv, TCGv, TCGv, TCGv))

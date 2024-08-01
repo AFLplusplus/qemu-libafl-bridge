@@ -4,7 +4,7 @@ This is a patched version of [QEMU](https://gitlab.com/qemu-project/qemu) that e
 
 This raw interface is used in `libafl_qemu` that expose a more Rusty API.
 
-To use `libafl_qemu`, refer to the [LibAFL](https://github.com/AFLplusplus/LibAFL) repository, especially the qemu example fuzzers such as [qemu_launcher](https://github.com/AFLplusplus/LibAFL/tree/main/fuzzers/qemu_launcher).
+To use `libafl_qemu`, refer to the [LibAFL](https://github.com/AFLplusplus/LibAFL) repository, especially the [qemu](https://github.com/AFLplusplus/LibAFL/tree/main/fuzzers/qemu) fuzzer example.
 
 #### License
 

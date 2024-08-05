@@ -350,7 +350,16 @@ static int libafl_setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
 
     // -- start gen_intermediate_code
     const int num_insns = 1; // do "as-if" we were translating a single target instruction
+
+#ifndef TARGET_INSN_START_EXTRA_WORDS
+    tcg_gen_insn_start(pc);
+#elif TARGET_INSN_START_EXTRA_WORDS == 1
     tcg_gen_insn_start(pc, 0);
+#elif TARGET_INSN_START_EXTRA_WORDS == 2
+    tcg_gen_insn_start(pc, 0, 0);
+#else
+#error Unhandled TARGET_INSN_START_EXTRA_WORDS value
+#endif
 
     struct libafl_edge_hook* hook = libafl_edge_hooks;
     while (hook) {

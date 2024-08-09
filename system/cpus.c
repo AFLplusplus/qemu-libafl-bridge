@@ -647,6 +647,12 @@ const AccelOpsClass *cpus_get_accel(void)
     return cpus_accel;
 }
 
+//// --- Begin LibAFL code ---
+
+// #include "libafl/hooks/thread.h"
+
+//// --- End LibAFL code ---
+
 void qemu_init_vcpu(CPUState *cpu)
 {
     MachineState *ms = MACHINE(qdev_get_machine());
@@ -671,6 +677,23 @@ void qemu_init_vcpu(CPUState *cpu)
     while (!cpu->created) {
         qemu_cond_wait(&qemu_cpu_cond, &bql);
     }
+
+    //// --- Begin LibAFL code ---
+
+    // if (libafl_new_thread_hooks) {
+    //     bool continue_execution = true;
+    //     struct libafl_new_thread_hook* h = libafl_new_thread_hooks;
+    //     while (h) {
+    //         continue_execution &= h->callback(h->data, cpu, 0); // TODO: should we keep TID in systemmode? could be useful for identification
+    //         h = h->next;
+    //     }
+    //     if (!continue_execution) {
+    //         // TODO: check if this is correct
+    //         qemu_cpu_stop(cpu, true);
+    //     }
+    // }
+
+    //// --- End LibAFL code ---
 }
 
 void cpu_stop_current(void)

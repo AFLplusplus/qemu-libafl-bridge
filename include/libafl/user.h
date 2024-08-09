@@ -1,7 +1,7 @@
 #pragma once
 
-#include "qemu/osdep.h"
 #include "qapi/error.h"
+#include "qemu/osdep.h"
 
 struct libafl_mapinfo {
     target_ulong start;
@@ -13,5 +13,9 @@ struct libafl_mapinfo {
     bool is_valid;
 };
 
-IntervalTreeNode * libafl_maps_first(IntervalTreeRoot * map_info);
-IntervalTreeNode * libafl_maps_next(IntervalTreeNode *pageflags_maps_node, IntervalTreeRoot *proc_maps_node, struct libafl_mapinfo* ret);
+void libafl_qemu_handle_crash(int host_sig, siginfo_t* info, void* puc);
+
+IntervalTreeNode* libafl_maps_first(IntervalTreeRoot* map_info);
+IntervalTreeNode* libafl_maps_next(IntervalTreeNode* pageflags_maps_node,
+                                   IntervalTreeRoot* proc_maps_node,
+                                   struct libafl_mapinfo* ret);

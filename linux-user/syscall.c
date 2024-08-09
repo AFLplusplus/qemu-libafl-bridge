@@ -54,6 +54,11 @@
 #include <sys/sysinfo.h>
 #include <sys/signalfd.h>
 //#include <sys/user.h>
+//// --- Begin LibAFL code ---
+
+#include "libafl/hooks/syscall.h"
+
+//// --- End LibAFL code ---
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
@@ -6529,9 +6534,7 @@ typedef struct {
 
 //// --- Begin LibAFL code ---
 
-#include "libafl/hook.h"
-
-extern __thread CPUArchState *libafl_qemu_env;
+#include "libafl/hooks/thread.h"
 
 //// --- End LibAFL code ---
 
@@ -6567,17 +6570,7 @@ static void *clone_func(void *arg)
 
     //// --- Begin LibAFL code ---
 
-    libafl_qemu_env = env;
-    if (libafl_new_thread_hooks) {
-        bool continue_execution = true;
-        int tid = sys_gettid();
-        struct libafl_new_thread_hook* h = libafl_new_thread_hooks;
-        while (h) {
-            continue_execution = h->callback(h->data, tid) && continue_execution;
-            h = h->next;
-        }
-        if (continue_execution) cpu_loop(env);
-    } else {
+    if (libafl_hook_new_thread_run(env)) {
         cpu_loop(env);
     }
 
@@ -13886,25 +13879,7 @@ abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
 
     //// --- Begin LibAFL code ---
 
-    bool skip_syscall = false;
-    struct libafl_pre_syscall_hook* h = libafl_pre_syscall_hooks;
-    while (h) {
-        // no null check
-        struct syshook_ret hook_ret = h->callback(h->data, num,
-                                                  (target_ulong)arg1,
-                                                  (target_ulong)arg2,
-                                                  (target_ulong)arg3,
-                                                  (target_ulong)arg4,
-                                                  (target_ulong)arg5,
-                                                  (target_ulong)arg6,
-                                                  (target_ulong)arg7,
-                                                  (target_ulong)arg8);
-        if (hook_ret.skip_syscall) {
-            skip_syscall = true;
-            ret = (abi_ulong)hook_ret.retval;
-        }
-        h = h->next;
-    }
+    bool skip_syscall = libafl_hook_syscall_pre_run(cpu_env, num, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, &ret);
     if (skip_syscall) goto after_syscall;
 
     //// --- End LibAFL code ---
@@ -13915,21 +13890,8 @@ abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
     //// --- Begin LibAFL code ---
 
 after_syscall:;
-    struct libafl_post_syscall_hook* p = libafl_post_syscall_hooks;
-    while (p) {
-        // no null check
-        ret = (abi_ulong)p->callback(p->data, (target_ulong)ret, num,
-                                      (target_ulong)arg1,
-                                      (target_ulong)arg2,
-                                      (target_ulong)arg3,
-                                      (target_ulong)arg4,
-                                      (target_ulong)arg5,
-                                      (target_ulong)arg6,
-                                      (target_ulong)arg7,
-                                      (target_ulong)arg8);
-        p = p->next;
-    }
-    
+    libafl_hook_syscall_post_run(num, arg1, arg2, arg3, arg4,
+                      arg5, arg6, arg7, arg8, &ret);
     //// --- End LibAFL code ---
 
     if (unlikely(qemu_loglevel_mask(LOG_STRACE))) {

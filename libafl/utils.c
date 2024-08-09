@@ -7,6 +7,7 @@ uintptr_t libafl_qemu_host_page_size(void)
 }
 
 #ifndef CONFIG_USER_ONLY
+
 uint8_t* libafl_paddr2host(CPUState* cpu, hwaddr addr, bool is_write)
 {
     if (addr == -1) {
@@ -15,10 +16,13 @@ uint8_t* libafl_paddr2host(CPUState* cpu, hwaddr addr, bool is_write)
 
     hwaddr xlat;
     MemoryRegion* mr;
-    WITH_RCU_READ_LOCK_GUARD() {
-        mr = address_space_translate(cpu->as, addr, &xlat, NULL, is_write, MEMTXATTRS_UNSPECIFIED);
+    WITH_RCU_READ_LOCK_GUARD()
+    {
+        mr = address_space_translate(cpu->as, addr, &xlat, NULL, is_write,
+                                     MEMTXATTRS_UNSPECIFIED);
     }
 
     return qemu_map_ram_ptr(mr->ram_block, xlat);
 }
+
 #endif

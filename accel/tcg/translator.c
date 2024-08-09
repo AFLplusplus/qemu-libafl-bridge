@@ -104,6 +104,9 @@ static void gen_tb_end(const TranslationBlock *tb, uint32_t cflags,
 #include "libafl/exit.h"
 #include "libafl/hook.h"
 
+#include "libafl/hooks/tcg/instruction.h"
+#include "libafl/hooks/tcg/backdoor.h"
+
 #ifndef TARGET_LONG_BITS
 #error "TARGET_LONG_BITS not defined"
 #endif
@@ -168,37 +171,10 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 
         //// --- Begin LibAFL code ---
 
-        struct libafl_hook* hk = libafl_search_instruction_hook(db->pc_next);
-        if (hk) {
-            TCGv_i64 tmp0 = tcg_constant_i64(hk->data);
-#if TARGET_LONG_BITS == 32
-            TCGv_i32 tmp1 = tcg_constant_i32(db->pc_next);
-            TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i32_temp(tmp1) };
-#else
-            TCGv_i64 tmp1 = tcg_constant_i64(db->pc_next);
-            TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
-#endif
-            // tcg_gen_callN(hk->callback, NULL, 2, tmp2);
-            tcg_gen_callN(&hk->helper_info, NULL, tmp2);
-#if TARGET_LONG_BITS == 32
-            tcg_temp_free_i32(tmp1);
-#else
-            tcg_temp_free_i64(tmp1);
-#endif
-            tcg_temp_free_i64(tmp0);
-        }
-
-        struct libafl_breakpoint* bp = libafl_qemu_breakpoints;
-        while (bp) {
-            if (bp->addr == db->pc_next) {
-                TCGv_i64 tmp0 = tcg_constant_i64((uint64_t)db->pc_next);
-                gen_helper_libafl_qemu_handle_breakpoint(tcg_env, tmp0);
-                tcg_temp_free_i64(tmp0);
-            }
-            bp = bp->next;
-        }
+        libafl_qemu_hook_instruction_run(db->pc_next);
 
         libafl_gen_cur_pc = db->pc_next;
+        libafl_qemu_breakpoint_run(libafl_gen_cur_pc);
 
         // 0x0f, 0x3a, 0xf2, 0x44
         uint8_t backdoor = translator_ldub(cpu_env(cpu), db, db->pc_next);
@@ -209,16 +185,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
                 if (backdoor == 0xf2) {
                     backdoor = translator_ldub(cpu_env(cpu), db, db->pc_next +3);
                     if (backdoor == 0x44) {
-                        struct libafl_backdoor_hook* bhk = libafl_backdoor_hooks;
-                        while (bhk) {
-                            TCGv_i64 tmp0 = tcg_constant_i64(bhk->data);
-                            TCGv tmp2 = tcg_constant_tl(db->pc_next);
-                            TCGTemp *args[3] = { tcgv_i64_temp(tmp0), tcgv_ptr_temp(tcg_env), tcgv_tl_temp(tmp2) };
-
-                            tcg_gen_callN(&bhk->helper_info, NULL, args);
-
-                            bhk = bhk->next;
-                        }
+                        libafl_qemu_hook_backdoor_run(db->pc_next);
 
                         db->pc_next += 4;
                         goto post_translate_insn;

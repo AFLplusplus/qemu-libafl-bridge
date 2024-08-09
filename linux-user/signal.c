@@ -977,7 +977,6 @@ static uintptr_t host_sigbus_handler(CPUState *cpu, siginfo_t *info,
 
 // int libafl_qemu_is_tb_protected_write(int host_sig, siginfo_t *info,
 //                                       host_sigcontext *uc);
-void libafl_qemu_handle_crash(int host_sig, siginfo_t *info, void *puc);
 
 /* int libafl_qemu_is_tb_protected_write(int host_sig, siginfo_t *info,
                                       host_sigcontext *uc)
@@ -997,6 +996,8 @@ void libafl_qemu_handle_crash(int host_sig, siginfo_t *info, void *puc);
         && handle_sigsegv_accerr_write(cpu, host_signal_mask(uc),
                                        pc, guest_addr);
 } */
+
+#include "libafl/user.h"
 
 void libafl_qemu_handle_crash(int host_sig, siginfo_t *info, void *puc) {
     host_signal_handler(host_sig, info, puc);

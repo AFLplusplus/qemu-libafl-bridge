@@ -4,13 +4,18 @@
 #include "libafl/syx-misc.h"
 #include "libafl/syx-snapshot/channel-buffer-writeback.h"
 
-QIOChannelBufferWriteback* qio_channel_buffer_writeback_new(size_t capacity, uint8_t* writeback_buf, size_t writeback_buf_capacity, size_t* writeback_buf_usage) {
+QIOChannelBufferWriteback*
+qio_channel_buffer_writeback_new(size_t capacity, uint8_t* writeback_buf,
+                                 size_t writeback_buf_capacity,
+                                 size_t* writeback_buf_usage)
+{
     assert(writeback_buf != NULL);
     assert(writeback_buf_usage != NULL);
 
-    QIOChannelBufferWriteback *ioc;
+    QIOChannelBufferWriteback* ioc;
 
-    ioc = QIO_CHANNEL_BUFFER_WRITEBACK(object_new(TYPE_QIO_CHANNEL_BUFFER_WRITEBACK));
+    ioc = QIO_CHANNEL_BUFFER_WRITEBACK(
+        object_new(TYPE_QIO_CHANNEL_BUFFER_WRITEBACK));
 
     assert(writeback_buf != NULL);
 
@@ -27,16 +32,19 @@ QIOChannelBufferWriteback* qio_channel_buffer_writeback_new(size_t capacity, uin
     return ioc;
 }
 
-QIOChannelBufferWriteback*
-qio_channel_buffer_writeback_new_external(uint8_t* buf, size_t capacity, size_t usage, uint8_t* writeback_buf, size_t writeback_buf_capacity, size_t* writeback_buf_usage) {
+QIOChannelBufferWriteback* qio_channel_buffer_writeback_new_external(
+    uint8_t* buf, size_t capacity, size_t usage, uint8_t* writeback_buf,
+    size_t writeback_buf_capacity, size_t* writeback_buf_usage)
+{
     assert(buf != NULL);
     assert(usage <= capacity);
     assert(writeback_buf != NULL);
     assert(writeback_buf_usage != NULL);
 
-    QIOChannelBufferWriteback *ioc;
+    QIOChannelBufferWriteback* ioc;
 
-    ioc = QIO_CHANNEL_BUFFER_WRITEBACK(object_new(TYPE_QIO_CHANNEL_BUFFER_WRITEBACK));
+    ioc = QIO_CHANNEL_BUFFER_WRITEBACK(
+        object_new(TYPE_QIO_CHANNEL_BUFFER_WRITEBACK));
 
     assert(writeback_buf != NULL);
 
@@ -52,8 +60,8 @@ qio_channel_buffer_writeback_new_external(uint8_t* buf, size_t capacity, size_t 
     return ioc;
 }
 
-
-static void qio_channel_buffer_writeback_finalize(Object *obj) {
+static void qio_channel_buffer_writeback_finalize(Object* obj)
+{
     QIOChannelBufferWriteback* bwioc = QIO_CHANNEL_BUFFER_WRITEBACK(obj);
 
     assert(bwioc->writeback_buf_capacity >= bwioc->usage);
@@ -70,14 +78,11 @@ static void qio_channel_buffer_writeback_finalize(Object *obj) {
     }
 }
 
-
-static ssize_t qio_channel_buffer_writeback_readv(QIOChannel *ioc,
-                                                    const struct iovec *iov,
-                                                    size_t niov,
-                                                    int **fds,
-                                                    size_t *nfds,
-                                                    int flags,
-                                                    Error **errp)
+static ssize_t qio_channel_buffer_writeback_readv(QIOChannel* ioc,
+                                                  const struct iovec* iov,
+                                                  size_t niov, int** fds,
+                                                  size_t* nfds, int flags,
+                                                  Error** errp)
 {
     QIOChannelBufferWriteback* bwioc = QIO_CHANNEL_BUFFER_WRITEBACK(ioc);
     ssize_t ret = 0;
@@ -90,7 +95,7 @@ static ssize_t qio_channel_buffer_writeback_readv(QIOChannel *ioc,
             break;
         }
 
-        if ((bwioc->offset + want) > bwioc->usage)  {
+        if ((bwioc->offset + want) > bwioc->usage) {
             want = bwioc->usage - bwioc->offset;
         }
 
@@ -103,12 +108,10 @@ static ssize_t qio_channel_buffer_writeback_readv(QIOChannel *ioc,
 }
 
 static ssize_t qio_channel_buffer_writeback_writev(QIOChannel* ioc,
-                                    const struct iovec *iov,
-                                    size_t niov,
-                                    int *fds,
-                                    size_t nfds,
-                                    int flags,
-                                    Error **errp)
+                                                   const struct iovec* iov,
+                                                   size_t niov, int* fds,
+                                                   size_t nfds, int flags,
+                                                   Error** errp)
 {
     QIOChannelBufferWriteback* bwioc = QIO_CHANNEL_BUFFER_WRITEBACK(ioc);
     ssize_t ret = 0;
@@ -123,9 +126,7 @@ static ssize_t qio_channel_buffer_writeback_writev(QIOChannel* ioc,
     assert(bwioc->offset <= bwioc->usage);
 
     for (i = 0; i < niov; i++) {
-        memcpy(bwioc->data + bwioc->offset,
-               iov[i].iov_base,
-               iov[i].iov_len);
+        memcpy(bwioc->data + bwioc->offset, iov[i].iov_base, iov[i].iov_len);
         bwioc->offset += iov[i].iov_len;
         bwioc->usage += iov[i].iov_len;
         ret += iov[i].iov_len;
@@ -134,33 +135,32 @@ static ssize_t qio_channel_buffer_writeback_writev(QIOChannel* ioc,
     return ret;
 }
 
-static int qio_channel_buffer_writeback_set_blocking(QIOChannel *ioc G_GNUC_UNUSED,
-                                           bool enabled G_GNUC_UNUSED,
-                                           Error **errp G_GNUC_UNUSED)
+static int
+qio_channel_buffer_writeback_set_blocking(QIOChannel* ioc G_GNUC_UNUSED,
+                                          bool enabled G_GNUC_UNUSED,
+                                          Error** errp G_GNUC_UNUSED)
 {
     return 0;
 }
 
-static off_t qio_channel_buffer_writeback_seek(QIOChannel *ioc,
-                                     off_t offset,
-                                     int whence,
-                                     Error **errp)
+static off_t qio_channel_buffer_writeback_seek(QIOChannel* ioc, off_t offset,
+                                               int whence, Error** errp)
 {
-    QIOChannelBufferWriteback *bwioc = QIO_CHANNEL_BUFFER_WRITEBACK(ioc);
+    QIOChannelBufferWriteback* bwioc = QIO_CHANNEL_BUFFER_WRITEBACK(ioc);
     off_t new_pos;
 
-    switch(whence) {
-        case SEEK_SET:
-            new_pos = offset;
-            break;
-        case SEEK_CUR:
-            new_pos = (off_t) bwioc->offset + offset;
-            break;
-        case SEEK_END:
-            new_pos = (off_t) bwioc->usage + offset;
-            break;
-        default:
-            assert(false);
+    switch (whence) {
+    case SEEK_SET:
+        new_pos = offset;
+        break;
+    case SEEK_CUR:
+        new_pos = (off_t)bwioc->offset + offset;
+        break;
+    case SEEK_END:
+        new_pos = (off_t)bwioc->usage + offset;
+        break;
+    default:
+        assert(false);
     }
 
     assert(new_pos >= 0 && new_pos <= bwioc->usage);
@@ -170,8 +170,7 @@ static off_t qio_channel_buffer_writeback_seek(QIOChannel *ioc,
     return new_pos;
 }
 
-static int qio_channel_buffer_writeback_close(QIOChannel *ioc,
-                                              Error **errp)
+static int qio_channel_buffer_writeback_close(QIOChannel* ioc, Error** errp)
 {
     QIOChannelBufferWriteback* bwioc = QIO_CHANNEL_BUFFER_WRITEBACK(ioc);
 
@@ -194,67 +193,65 @@ static int qio_channel_buffer_writeback_close(QIOChannel *ioc,
 typedef struct QIOChannelBufferWritebackSource QIOChannelBufferWritebackSource;
 struct QIOChannelBufferWritebackSource {
     GSource parent;
-    QIOChannelBufferWriteback *bioc;
+    QIOChannelBufferWriteback* bioc;
     GIOCondition condition;
 };
 
-static gboolean
-qio_channel_buffer_writeback_source_prepare(GSource *source,
-                                  gint *timeout)
+static gboolean qio_channel_buffer_writeback_source_prepare(GSource* source,
+                                                            gint* timeout)
 {
-    QIOChannelBufferWritebackSource *bsource = (QIOChannelBufferWritebackSource *)source;
+    QIOChannelBufferWritebackSource* bsource =
+        (QIOChannelBufferWritebackSource*)source;
 
     *timeout = -1;
 
     return (G_IO_IN | G_IO_OUT) & bsource->condition;
 }
 
-static gboolean
-qio_channel_buffer_writeback_source_check(GSource *source)
+static gboolean qio_channel_buffer_writeback_source_check(GSource* source)
 {
-    QIOChannelBufferWritebackSource *bsource = (QIOChannelBufferWritebackSource *)source;
+    QIOChannelBufferWritebackSource* bsource =
+        (QIOChannelBufferWritebackSource*)source;
 
     return (G_IO_IN | G_IO_OUT) & bsource->condition;
 }
 
-static gboolean
-qio_channel_buffer_writeback_source_dispatch(GSource *source,
-                                   GSourceFunc callback,
-                                   gpointer user_data)
+static gboolean qio_channel_buffer_writeback_source_dispatch(
+    GSource* source, GSourceFunc callback, gpointer user_data)
 {
     QIOChannelFunc func = (QIOChannelFunc)callback;
-    QIOChannelBufferWritebackSource *bsource = (QIOChannelBufferWritebackSource *)source;
+    QIOChannelBufferWritebackSource* bsource =
+        (QIOChannelBufferWritebackSource*)source;
 
     return (*func)(QIO_CHANNEL(bsource->bioc),
-                   ((G_IO_IN | G_IO_OUT) & bsource->condition),
-                   user_data);
+                   ((G_IO_IN | G_IO_OUT) & bsource->condition), user_data);
 }
 
-static void
-qio_channel_buffer_writeback_source_finalize(GSource *source)
+static void qio_channel_buffer_writeback_source_finalize(GSource* source)
 {
-    QIOChannelBufferWritebackSource *ssource = (QIOChannelBufferWritebackSource *)source;
+    QIOChannelBufferWritebackSource* ssource =
+        (QIOChannelBufferWritebackSource*)source;
 
     object_unref(OBJECT(ssource->bioc));
 }
 
 GSourceFuncs qio_channel_buffer_writeback_source_funcs = {
-        qio_channel_buffer_writeback_source_prepare,
-        qio_channel_buffer_writeback_source_check,
-        qio_channel_buffer_writeback_source_dispatch,
-        qio_channel_buffer_writeback_source_finalize
-};
+    qio_channel_buffer_writeback_source_prepare,
+    qio_channel_buffer_writeback_source_check,
+    qio_channel_buffer_writeback_source_dispatch,
+    qio_channel_buffer_writeback_source_finalize};
 
-static GSource *qio_channel_buffer_writeback_create_watch(QIOChannel *ioc,
-                                                GIOCondition condition)
+static GSource*
+qio_channel_buffer_writeback_create_watch(QIOChannel* ioc,
+                                          GIOCondition condition)
 {
-    QIOChannelBufferWriteback *bioc = QIO_CHANNEL_BUFFER_WRITEBACK(ioc);
-    QIOChannelBufferWritebackSource *ssource;
-    GSource *source;
+    QIOChannelBufferWriteback* bioc = QIO_CHANNEL_BUFFER_WRITEBACK(ioc);
+    QIOChannelBufferWritebackSource* ssource;
+    GSource* source;
 
     source = g_source_new(&qio_channel_buffer_writeback_source_funcs,
                           sizeof(QIOChannelBufferWritebackSource));
-    ssource = (QIOChannelBufferWritebackSource *)source;
+    ssource = (QIOChannelBufferWritebackSource*)source;
 
     ssource->bioc = bioc;
     object_ref(OBJECT(bioc));
@@ -264,10 +261,11 @@ static GSource *qio_channel_buffer_writeback_create_watch(QIOChannel *ioc,
     return source;
 }
 
-static void qio_channel_buffer_writeback_class_init(ObjectClass *klass,
-                                          void *class_data G_GNUC_UNUSED)
+static void
+qio_channel_buffer_writeback_class_init(ObjectClass* klass,
+                                        void* class_data G_GNUC_UNUSED)
 {
-    QIOChannelClass *ioc_klass = QIO_CHANNEL_CLASS(klass);
+    QIOChannelClass* ioc_klass = QIO_CHANNEL_CLASS(klass);
 
     ioc_klass->io_writev = qio_channel_buffer_writeback_writev;
     ioc_klass->io_readv = qio_channel_buffer_writeback_readv;
@@ -278,11 +276,11 @@ static void qio_channel_buffer_writeback_class_init(ObjectClass *klass,
 }
 
 static const TypeInfo qio_channel_buffer_writeback_info = {
-        .parent = TYPE_QIO_CHANNEL,
-        .name = TYPE_QIO_CHANNEL_BUFFER_WRITEBACK,
-        .instance_size = sizeof(QIOChannelBufferWriteback),
-        .instance_finalize = qio_channel_buffer_writeback_finalize,
-        .class_init = qio_channel_buffer_writeback_class_init,
+    .parent = TYPE_QIO_CHANNEL,
+    .name = TYPE_QIO_CHANNEL_BUFFER_WRITEBACK,
+    .instance_size = sizeof(QIOChannelBufferWriteback),
+    .instance_finalize = qio_channel_buffer_writeback_finalize,
+    .class_init = qio_channel_buffer_writeback_class_init,
 };
 
 static void qio_channel_buffer_writeback_register_types(void)

@@ -2,7 +2,7 @@
 
 #include "qemu/osdep.h"
 
-#define DEVICE_SAVE_KIND_FULL   0
+#define DEVICE_SAVE_KIND_FULL 0
 
 typedef struct DeviceSaveState {
     uint8_t kind;

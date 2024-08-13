@@ -1,6 +1,11 @@
 #include "libafl/exit.h"
 
+#include "tcg/tcg.h"
+#include "tcg/tcg-op.h"
+#include "tcg/tcg-temp-internal.h"
 #include "sysemu/runstate.h"
+#include "exec/translator.h"
+
 #include "cpu.h"
 
 #ifdef CONFIG_USER_ONLY
@@ -13,11 +18,9 @@ struct libafl_breakpoint* libafl_qemu_breakpoints = NULL;
 
 int libafl_qemu_set_breakpoint(target_ulong pc)
 {
-    CPUState *cpu;
+    CPUState* cpu;
 
-    CPU_FOREACH(cpu) {
-        libafl_breakpoint_invalidate(cpu, pc);
-    }
+    CPU_FOREACH(cpu) { libafl_breakpoint_invalidate(cpu, pc); }
 
     struct libafl_breakpoint* bp = calloc(sizeof(struct libafl_breakpoint), 1);
     bp->addr = pc;
@@ -28,15 +31,13 @@ int libafl_qemu_set_breakpoint(target_ulong pc)
 
 int libafl_qemu_remove_breakpoint(target_ulong pc)
 {
-    CPUState *cpu;
+    CPUState* cpu;
     int r = 0;
 
     struct libafl_breakpoint** bp = &libafl_qemu_breakpoints;
     while (*bp) {
         if ((*bp)->addr == pc) {
-            CPU_FOREACH(cpu) {
-                libafl_breakpoint_invalidate(cpu, pc);
-            }
+            CPU_FOREACH(cpu) { libafl_breakpoint_invalidate(cpu, pc); }
 
             *bp = (*bp)->next;
             r = 1;
@@ -61,15 +62,13 @@ void libafl_sync_exit_cpu(void)
 {
     if (last_exit_reason.next_pc) {
         CPUClass* cc = CPU_GET_CLASS(last_exit_reason.cpu);
-        cc->set_pc(last_exit_reason.cpu, THUMB_MASK(last_exit_reason.cpu, last_exit_reason.next_pc));
+        cc->set_pc(last_exit_reason.cpu,
+                   THUMB_MASK(last_exit_reason.cpu, last_exit_reason.next_pc));
     }
     last_exit_reason.next_pc = 0;
 }
 
-bool libafl_exit_asap(void)
-{
-    return expected_exit;
-}
+bool libafl_exit_asap(void) { return expected_exit; }
 
 static void prepare_qemu_exit(CPUState* cpu, target_ulong next_pc)
 {
@@ -81,7 +80,8 @@ static void prepare_qemu_exit(CPUState* cpu, target_ulong next_pc)
     qemu_system_debug_request();
     cpu->stopped = true; // TODO check if still needed
 #endif
-    // in usermode, this may be called from the syscall hook, thus already out of the cpu_exec but still in the cpu_loop
+    // in usermode, this may be called from the syscall hook, thus already out
+    // of the cpu_exec but still in the cpu_loop
     if (cpu->running) {
         cpu->exception_index = EXCP_LIBAFL_EXIT;
         cpu_loop_exit(cpu);
@@ -97,7 +97,8 @@ CPUState* libafl_last_exit_cpu(void)
     return NULL;
 }
 
-void libafl_exit_request_internal(CPUState* cpu, uint64_t pc, ShutdownCause cause, int signal)
+void libafl_exit_request_internal(CPUState* cpu, uint64_t pc,
+                                  ShutdownCause cause, int signal)
 {
     last_exit_reason.kind = INTERNAL;
     last_exit_reason.data.internal.cause = cause;
@@ -142,4 +143,17 @@ struct libafl_exit_reason* libafl_get_exit_reason(void)
     }
 
     return NULL;
+}
+
+void libafl_qemu_breakpoint_run(vaddr pc_next)
+{
+    struct libafl_breakpoint* bp = libafl_qemu_breakpoints;
+    while (bp) {
+        if (bp->addr == pc_next) {
+            TCGv_i64 tmp0 = tcg_constant_i64((uint64_t)pc_next);
+            gen_helper_libafl_qemu_handle_breakpoint(tcg_env, tmp0);
+            tcg_temp_free_i64(tmp0);
+        }
+        bp = bp->next;
+    }
 }

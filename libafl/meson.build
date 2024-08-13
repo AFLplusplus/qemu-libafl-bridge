@@ -1,14 +1,30 @@
 specific_ss.add(files(
-  'exit.c',
-  'hook.c',
-  'jit.c',
-  'utils.c',
-))
+                    'exit.c',
+                    'hook.c',
+                    'jit.c',
+                    'utils.c',
 
-specific_ss.add(when: 'CONFIG_SOFTMMU', if_true: [files(
-  'syx-snapshot/device-save.c',
-  'syx-snapshot/syx-snapshot.c',
-  'syx-snapshot/syx-cow-cache.c',
-  'syx-snapshot/channel-buffer-writeback.c',
-)])
+                    # TCG-related hooks
+                    'hooks/tcg/backdoor.c',
+                    'hooks/tcg/block.c',
+                    'hooks/tcg/cmp.c',
+                    'hooks/tcg/edge.c',
+                    'hooks/tcg/instruction.c',
+                    'hooks/tcg/read_write.c',
+
+                    # General hooks
+                    'hooks/cpu_run.c',
+                ))
+
+specific_ss.add(when : 'CONFIG_SOFTMMU', if_true : [files(
+                                                        'syx-snapshot/device-save.c',
+                                                        'syx-snapshot/syx-snapshot.c',
+                                                        'syx-snapshot/syx-cow-cache.c',
+                                                        'syx-snapshot/channel-buffer-writeback.c',
+                                                    )])
+
+specific_ss.add(when : 'CONFIG_USER_ONLY', if_true : [files(
+                                                          'hooks/syscall.c',
+                                                          'hooks/thread.c',
+                                                    )])
 

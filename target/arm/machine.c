@@ -741,10 +741,14 @@ static int cpu_pre_save(void *opaque)
     }
 
     cpu->cpreg_vmstate_array_len = cpu->cpreg_array_len;
-    memcpy(cpu->cpreg_vmstate_indexes, cpu->cpreg_indexes,
-           cpu->cpreg_array_len * sizeof(uint64_t));
-    memcpy(cpu->cpreg_vmstate_values, cpu->cpreg_values,
-           cpu->cpreg_array_len * sizeof(uint64_t));
+
+    // Some ARM cpus like Cortex M do not have coprocessors
+    if (cpu->cpreg_array_len > 0) {
+        memcpy(cpu->cpreg_vmstate_indexes, cpu->cpreg_indexes,
+               cpu->cpreg_array_len * sizeof(uint64_t));
+        memcpy(cpu->cpreg_vmstate_values, cpu->cpreg_values,
+               cpu->cpreg_array_len * sizeof(uint64_t));
+    }
 
     return 0;
 }

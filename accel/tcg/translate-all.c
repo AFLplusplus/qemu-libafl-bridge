@@ -68,7 +68,8 @@
 
 //// --- Begin LibAFL code ---
 
-#include "libafl/hook.h"
+#include "libafl/hooks/tcg/block.h"
+#include "libafl/hooks/tcg/edge.h"
 
 //// --- End LibAFL code ---
 
@@ -284,24 +285,7 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
 
     //// --- Begin LibAFL code ---
 
-    struct libafl_block_hook* hook = libafl_block_hooks;
-    while (hook) {
-        uint64_t cur_id = 0;
-        if (hook->gen)
-            cur_id = hook->gen(hook->data, pc);
-        if (cur_id != (uint64_t)-1 && hook->helper_info.func) {
-            TCGv_i64 tmp0 = tcg_constant_i64(hook->data);
-            TCGv_i64 tmp1 = tcg_constant_i64(cur_id);
-            TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
-            tcg_gen_callN(&hook->helper_info, NULL, tmp2);
-            tcg_temp_free_i64(tmp0);
-            tcg_temp_free_i64(tmp1);
-        }
-        if (cur_id != (uint64_t)-1 && hook->jit) {
-            hook->jit(hook->data, cur_id);
-        }
-        hook = hook->next;
-    }
+    libafl_qemu_hook_block_run(pc);
 
     //// --- End LibAFL code ---
 
@@ -361,21 +345,9 @@ static int libafl_setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
 #error Unhandled TARGET_INSN_START_EXTRA_WORDS value
 #endif
 
-    struct libafl_edge_hook* hook = libafl_edge_hooks;
-    while (hook) {
-        if (hook->cur_id != (uint64_t)-1 && hook->helper_info.func) {
-            TCGv_i64 tmp0 = tcg_constant_i64(hook->data);
-            TCGv_i64 tmp1 = tcg_constant_i64(hook->cur_id);
-            TCGTemp *tmp2[2] = { tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1) };
-            tcg_gen_callN(&hook->helper_info, NULL, tmp2);
-            tcg_temp_free_i64(tmp0);
-            tcg_temp_free_i64(tmp1);
-        }
-        if (hook->cur_id != (uint64_t)-1 && hook->jit) {
-            hook->jit(hook->data, hook->cur_id);
-        }
-        hook = hook->next;
-    }
+    // run edge hooks
+    libafl_qemu_hook_edge_run();
+
     tcg_gen_goto_tb(0);
     tcg_gen_exit_tb(tb, 0);
 
@@ -430,16 +402,7 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     QEMU_BUILD_BUG_ON(CF_COUNT_MASK + 1 != TCG_MAX_INSNS);
 
     // edge hooks generation callbacks
-    struct libafl_edge_hook* hook = libafl_edge_hooks;
-    int no_exec_hook = 1;
-    while (hook) {
-        hook->cur_id = 0;
-        if (hook->gen)
-            hook->cur_id = hook->gen(hook->data, src_block, dst_block);
-        if (hook->cur_id != (uint64_t)-1 && (hook->helper_info.func || hook->jit))
-            no_exec_hook = 0;
-        hook = hook->next;
-    }
+    bool no_exec_hook = libafl_qemu_hook_edge_gen(src_block, dst_block);
     if (no_exec_hook)
         return NULL;
 
@@ -749,13 +712,9 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tb->tc.size = gen_code_size;
 
 //// --- Begin LibAFL code ---
-    struct libafl_block_hook *hook = libafl_block_hooks;
-    while (hook)
-    {
-        if (hook->post_gen)
-            hook->post_gen(hook->data, pc, tb->size);
-        hook = hook->next;
-    }
+
+    libafl_qemu_hook_block_post_gen(tb, pc);
+
 //// --- End LibAFL code ---
 
     /*

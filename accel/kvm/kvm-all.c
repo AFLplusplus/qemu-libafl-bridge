@@ -52,6 +52,12 @@
 #include "hw/boards.h"
 #include "sysemu/stats.h"
 
+//// --- Begin LibAFL code ---
+
+#include "libafl/hooks/cpu_run.h"
+
+//// --- End LibAFL code ---
+
 /* This check must be after config-host.h is included */
 #ifdef CONFIG_EVENTFD
 #include <sys/eventfd.h>
@@ -2866,9 +2872,21 @@ int kvm_cpu_exec(CPUState *cpu)
          */
         smp_rmb();
 
+        //// --- Begin LibAFL code ---
+
+        libafl_hook_cpu_run_pre_exec(cpu);
+
+        //// --- End LibAFL code ---
+
         run_ret = kvm_vcpu_ioctl(cpu, KVM_RUN, 0);
 
         attrs = kvm_arch_post_run(cpu, run);
+
+        //// --- Begin LibAFL code ---
+
+        libafl_hook_cpu_run_post_exec(cpu);
+
+        //// --- End LibAFL code ---
 
 #ifdef KVM_HAVE_MCE_INJECTION
         if (unlikely(have_sigbus_pending)) {

@@ -1,7 +1,9 @@
 #pragma once
 
 #include "qemu/osdep.h"
+
 #include "exec/cpu-defs.h"
+#include "exec/translator.h"
 
 #define EXCP_LIBAFL_EXIT 0xf4775747
 
@@ -10,14 +12,13 @@ struct libafl_breakpoint {
     struct libafl_breakpoint* next;
 };
 
-extern struct libafl_breakpoint* libafl_qemu_breakpoints;
-
 // in cpu-target.c
-void libafl_breakpoint_invalidate(CPUState *cpu, target_ulong pc);
+void libafl_breakpoint_invalidate(CPUState* cpu, target_ulong pc);
 
 int libafl_qemu_set_breakpoint(target_ulong pc);
 int libafl_qemu_remove_breakpoint(target_ulong pc);
 void libafl_qemu_trigger_breakpoint(CPUState* cpu);
+void libafl_qemu_breakpoint_run(vaddr pc_next);
 
 enum libafl_exit_reason_kind {
     INTERNAL = 0,
@@ -31,7 +32,8 @@ struct libafl_exit_reason_breakpoint {
 };
 
 // A synchronous exit has been triggered.
-struct libafl_exit_reason_sync_exit { };
+struct libafl_exit_reason_sync_exit {
+};
 
 // QEMU exited on its own for some reason.
 struct libafl_exit_reason_internal {
@@ -46,7 +48,7 @@ struct libafl_exit_reason {
     union {
         struct libafl_exit_reason_internal internal;
         struct libafl_exit_reason_breakpoint breakpoint; // kind == BREAKPOINT
-        struct libafl_exit_reason_sync_exit sync_exit; // kind == SYNC_EXIT
+        struct libafl_exit_reason_sync_exit sync_exit;   // kind == SYNC_EXIT
     } data;
 };
 
@@ -58,7 +60,8 @@ void libafl_exit_signal_vm_start(void);
 bool libafl_exit_asap(void);
 void libafl_sync_exit_cpu(void);
 
-void libafl_exit_request_internal(CPUState* cpu, uint64_t pc, ShutdownCause cause, int signal);
+void libafl_exit_request_internal(CPUState* cpu, uint64_t pc,
+                                  ShutdownCause cause, int signal);
 void libafl_exit_request_sync_backdoor(CPUState* cpu, target_ulong pc);
 void libafl_exit_request_breakpoint(CPUState* cpu, target_ulong pc);
 struct libafl_exit_reason* libafl_get_exit_reason(void);

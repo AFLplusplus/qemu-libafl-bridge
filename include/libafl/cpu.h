@@ -24,6 +24,8 @@ int libafl_qemu_num_regs(CPUState* cpu);
 void libafl_flush_jit(void);
 void libafl_breakpoint_invalidate(CPUState* cpu, target_ulong pc);
 
+#ifdef CONFIG_USER_ONLY
 int libafl_qemu_main(void);
 int libafl_qemu_run(void);
 void libafl_set_qemu_env(CPUArchState* env);
+#endif

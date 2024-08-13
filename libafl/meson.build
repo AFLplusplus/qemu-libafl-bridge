@@ -19,6 +19,7 @@ specific_ss.add(files(
                 ))
 
 specific_ss.add(when : 'CONFIG_SOFTMMU', if_true : [files(
+                                                        'qemu_snapshot.c',
                                                         'syx-snapshot/device-save.c',
                                                         'syx-snapshot/syx-snapshot.c',
                                                         'syx-snapshot/syx-cow-cache.c',

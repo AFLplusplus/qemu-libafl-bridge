@@ -1,6 +1,9 @@
 #include "qemu/osdep.h"
+
+#ifdef CONFIG_USER_ONLY
 #include "qemu.h"
 #include "user-internals.h"
+#endif
 
 #include "exec/gdbstub.h"
 #include "exec/cpu-defs.h"
@@ -16,7 +19,10 @@
 int gdb_write_register(CPUState* cpu, uint8_t* mem_buf, int reg);
 
 static __thread GByteArray* libafl_qemu_mem_buf = NULL;
+
+#ifdef CONFIG_USER_ONLY
 static __thread CPUArchState* libafl_qemu_env;
+#endif
 
 #ifndef CONFIG_USER_ONLY
 uint8_t* libafl_paddr2host(CPUState* cpu, hwaddr addr, bool is_write)
@@ -137,6 +143,7 @@ void libafl_flush_jit(void)
     CPU_FOREACH(cpu) { tb_flush(cpu); }
 }
 
+#ifdef CONFIG_USER_ONLY
 __attribute__((weak)) int libafl_qemu_main(void)
 {
     libafl_qemu_run();
@@ -150,3 +157,4 @@ int libafl_qemu_run(void)
 }
 
 void libafl_set_qemu_env(CPUArchState* env) { libafl_qemu_env = env; }
+#endif

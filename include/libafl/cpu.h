@@ -22,7 +22,7 @@ int libafl_qemu_write_reg(CPUState* cpu, int reg, uint8_t* val);
 int libafl_qemu_read_reg(CPUState* cpu, int reg, uint8_t* val);
 int libafl_qemu_num_regs(CPUState* cpu);
 void libafl_flush_jit(void);
-void libafl_breakpoint_invalidate(CPUState *cpu, target_ulong pc);
+void libafl_breakpoint_invalidate(CPUState* cpu, target_ulong pc);
 
 int libafl_qemu_main(void);
 int libafl_qemu_run(void);

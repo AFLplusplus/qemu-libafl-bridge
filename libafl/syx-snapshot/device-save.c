@@ -16,9 +16,7 @@ extern int vmstate_save(QEMUFile* f, SaveStateEntry* se, JSONWriter* vmdesc);
 
 static bool libafl_restoring_devices = false;
 
-bool libafl_devices_is_restoring(void) {
-    return libafl_restoring_devices;
-}
+bool libafl_devices_is_restoring(void) { return libafl_restoring_devices; }
 
 // iothread must be locked
 DeviceSaveState* device_save_all(void)

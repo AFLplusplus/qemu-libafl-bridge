@@ -30,4 +30,3 @@ struct image_info* libafl_get_image_info(void);
 
 uint64_t libafl_get_brk(void);
 uint64_t libafl_set_brk(uint64_t new_brk);
-

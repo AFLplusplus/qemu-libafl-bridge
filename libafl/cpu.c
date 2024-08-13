@@ -13,10 +13,10 @@
 #include "libafl/exit.h"
 #include "libafl/hook.h"
 
-int gdb_write_register(CPUState *cpu, uint8_t *mem_buf, int reg);
+int gdb_write_register(CPUState* cpu, uint8_t* mem_buf, int reg);
 
-static __thread GByteArray *libafl_qemu_mem_buf = NULL;
-static __thread CPUArchState *libafl_qemu_env;
+static __thread GByteArray* libafl_qemu_mem_buf = NULL;
+static __thread CPUArchState* libafl_qemu_env;
 
 #ifndef CONFIG_USER_ONLY
 uint8_t* libafl_paddr2host(CPUState* cpu, hwaddr addr, bool is_write)
@@ -46,28 +46,30 @@ hwaddr libafl_qemu_current_paging_id(CPUState* cpu)
     }
 }
 
-void libafl_breakpoint_invalidate(CPUState *cpu, target_ulong pc)
+void libafl_breakpoint_invalidate(CPUState* cpu, target_ulong pc)
 {
     // TODO invalidate only the virtual pages related to the TB
     tb_flush(cpu);
 }
 #else
-void libafl_breakpoint_invalidate(CPUState *cpu, target_ulong pc)
+void libafl_breakpoint_invalidate(CPUState* cpu, target_ulong pc)
 {
-  mmap_lock();
-  tb_invalidate_phys_range(pc, pc + 1);
-  mmap_unlock();
+    mmap_lock();
+    tb_invalidate_phys_range(pc, pc + 1);
+    mmap_unlock();
 }
 #endif
 
-target_ulong libafl_page_from_addr(target_ulong addr) {
+target_ulong libafl_page_from_addr(target_ulong addr)
+{
     return addr & TARGET_PAGE_MASK;
 }
 
 CPUState* libafl_qemu_get_cpu(int cpu_index)
 {
-    CPUState *cpu;
-    CPU_FOREACH(cpu) {
+    CPUState* cpu;
+    CPU_FOREACH(cpu)
+    {
         if (cpu->cpu_index == cpu_index)
             return cpu;
     }
@@ -76,11 +78,9 @@ CPUState* libafl_qemu_get_cpu(int cpu_index)
 
 int libafl_qemu_num_cpus(void)
 {
-    CPUState *cpu;
+    CPUState* cpu;
     int num = 0;
-    CPU_FOREACH(cpu) {
-        num++;
-    }
+    CPU_FOREACH(cpu) { num++; }
     return num;
 }
 
@@ -96,7 +96,8 @@ CPUState* libafl_qemu_current_cpu(void)
 
 int libafl_qemu_cpu_index(CPUState* cpu)
 {
-    if (cpu) return cpu->cpu_index;
+    if (cpu)
+        return cpu->cpu_index;
     return -1;
 }
 
@@ -126,16 +127,14 @@ int libafl_qemu_read_reg(CPUState* cpu, int reg, uint8_t* val)
 
 int libafl_qemu_num_regs(CPUState* cpu)
 {
-    CPUClass *cc = CPU_GET_CLASS(cpu);
+    CPUClass* cc = CPU_GET_CLASS(cpu);
     return cc->gdb_num_core_regs;
 }
 
 void libafl_flush_jit(void)
 {
-    CPUState *cpu;
-    CPU_FOREACH(cpu) {
-        tb_flush(cpu);
-    }
+    CPUState* cpu;
+    CPU_FOREACH(cpu) { tb_flush(cpu); }
 }
 
 __attribute__((weak)) int libafl_qemu_main(void)
@@ -150,6 +149,4 @@ int libafl_qemu_run(void)
     return 1;
 }
 
-void libafl_set_qemu_env(CPUArchState* env) {
-    libafl_qemu_env = env;
-}
+void libafl_set_qemu_env(CPUArchState* env) { libafl_qemu_env = env; }

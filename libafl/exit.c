@@ -7,6 +7,7 @@
 #include "exec/translator.h"
 
 #include "cpu.h"
+#include "libafl/cpu.h"
 
 #ifdef CONFIG_USER_ONLY
 #define THREAD_MODIFIER __thread

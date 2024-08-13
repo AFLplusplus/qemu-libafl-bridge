@@ -47,138 +47,9 @@
 
 //// --- Begin LibAFL code ---
 
-#include "exec/gdbstub.h"
-
-#include "libafl/exit.h"
-#include "libafl/hook.h"
-
-int gdb_write_register(CPUState *cpu, uint8_t *mem_buf, int reg);
-
-static __thread GByteArray *libafl_qemu_mem_buf = NULL;
-
-target_ulong libafl_page_from_addr(target_ulong addr);
-
-CPUState* libafl_qemu_get_cpu(int cpu_index);
-int libafl_qemu_num_cpus(void);
-CPUState* libafl_qemu_current_cpu(void);
-int libafl_qemu_cpu_index(CPUState*);
-
-int libafl_qemu_write_reg(CPUState* cpu, int reg, uint8_t* val);
-int libafl_qemu_read_reg(CPUState* cpu, int reg, uint8_t* val);
-int libafl_qemu_num_regs(CPUState* cpu);
-
 #ifndef CONFIG_USER_ONLY
-hwaddr libafl_qemu_current_paging_id(CPUState* cpu);
+#include "libafl/syx-snapshot/device-save.h"
 #endif
-
-void libafl_flush_jit(void);
-
-extern int libafl_restoring_devices;
-
-/*
-void* libafl_qemu_g2h(CPUState *cpu, target_ulong x);
-target_ulong libafl_qemu_h2g(CPUState *cpu, void* x);
-
-void* libafl_qemu_g2h(CPUState *cpu, target_ulong x)
-{
-    return g2h(cpu, x);
-}
-
-target_ulong libafl_qemu_h2g(CPUState *cpu, void* x)
-{
-    return h2g(cpu, x);
-}
-*/
-
-target_ulong libafl_page_from_addr(target_ulong addr) {
-    return addr & TARGET_PAGE_MASK;
-}
-
-CPUState* libafl_qemu_get_cpu(int cpu_index)
-{
-    CPUState *cpu;
-    CPU_FOREACH(cpu) {
-        if (cpu->cpu_index == cpu_index)
-            return cpu;
-    }
-    return NULL;
-}
-
-int libafl_qemu_num_cpus(void)
-{
-    CPUState *cpu;
-    int num = 0;
-    CPU_FOREACH(cpu) {
-        num++;
-    }
-    return num;
-}
-
-CPUState* libafl_qemu_current_cpu(void)
-{
-#ifndef CONFIG_USER_ONLY
-    if (current_cpu == NULL) {
-        return libafl_last_exit_cpu();
-    }
-#endif
-    return current_cpu;
-}
-
-int libafl_qemu_cpu_index(CPUState* cpu)
-{
-    if (cpu) return cpu->cpu_index;
-    return -1;
-}
-
-int libafl_qemu_write_reg(CPUState* cpu, int reg, uint8_t* val)
-{
-    return gdb_write_register(cpu, val, reg);
-}
-
-int libafl_qemu_read_reg(CPUState* cpu, int reg, uint8_t* val)
-{
-    int len;
-
-    if (libafl_qemu_mem_buf == NULL) {
-        libafl_qemu_mem_buf = g_byte_array_sized_new(64);
-    }
-
-    g_byte_array_set_size(libafl_qemu_mem_buf, 0);
-
-    len = gdb_read_register(cpu, libafl_qemu_mem_buf, reg);
-
-    if (len > 0) {
-        memcpy(val, libafl_qemu_mem_buf->data, len);
-    }
-
-    return len;
-}
-
-int libafl_qemu_num_regs(CPUState* cpu)
-{
-    CPUClass *cc = CPU_GET_CLASS(cpu);
-    return cc->gdb_num_core_regs;
-}
-
-#ifndef CONFIG_USER_ONLY
-hwaddr libafl_qemu_current_paging_id(CPUState* cpu)
-{
-    CPUClass* cc = CPU_GET_CLASS(cpu);
-    if (cc->sysemu_ops && cc->sysemu_ops->get_paging_id) {
-        return cc->sysemu_ops->get_paging_id(cpu);
-    } else {
-        return 0;
-    }
-}
-#endif
-
-void libafl_flush_jit(void)
-{
-    CPUState *cpu;
-    CPU_FOREACH(cpu) {
-        tb_flush(cpu);
-    }
-}
 
 //// --- End LibAFL code ---
 
@@ -203,7 +74,9 @@ static int cpu_common_post_load(void *opaque, int version_id)
 
     // flushing the TBs every restore makes it really slow
     // TODO handle writes to X code with specific calls to tb_invalidate_phys_addr
-    if (!libafl_restoring_devices) tb_flush(cpu);
+    if (!libafl_devices_is_restoring()) {
+        tb_flush(cpu);
+    }
 
 //// --- End LibAFL code ---
 
@@ -461,23 +334,6 @@ void list_cpus(void)
 {
     cpu_list();
 }
-
-//// --- Begin LibAFL code ---
-#if defined(CONFIG_USER_ONLY)
-void libafl_breakpoint_invalidate(CPUState *cpu, target_ulong pc)
-{
-  mmap_lock();
-  tb_invalidate_phys_range(pc, pc + 1);
-  mmap_unlock();
-}
-#else
-void libafl_breakpoint_invalidate(CPUState *cpu, target_ulong pc)
-{
-  // TODO invalidate only the virtual pages related to the TB
-  tb_flush(cpu);
-}
-#endif
-//// --- End LibAFL code ---
 
 /* enable or disable single step mode. EXCP_DEBUG is returned by the
    CPU loop after each instruction */

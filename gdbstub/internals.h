@@ -240,16 +240,4 @@ void gdb_breakpoint_remove_all(CPUState *cs);
 int gdb_target_memory_rw_debug(CPUState *cs, hwaddr addr,
                                uint8_t *buf, int len, bool is_write);
 
-//// --- Begin LibAFL code ---
-
-struct libafl_custom_gdb_cmd {
-    int (*callback)(void*, uint8_t*, size_t);
-    void* data;
-    struct libafl_custom_gdb_cmd* next;
-};
-
-extern struct libafl_custom_gdb_cmd* libafl_qemu_gdb_cmds;
-
-//// --- End LibAFL code ---
-
 #endif /* GDBSTUB_INTERNALS_H */

@@ -1,8 +1,10 @@
 specific_ss.add(files(
+                    'cpu.c',
                     'exit.c',
                     'hook.c',
                     'jit.c',
                     'utils.c',
+                    'gdb.c',
 
                     # TCG-related hooks
                     'hooks/tcg/backdoor.c',
@@ -24,6 +26,7 @@ specific_ss.add(when : 'CONFIG_SOFTMMU', if_true : [files(
                                                     )])
 
 specific_ss.add(when : 'CONFIG_USER_ONLY', if_true : [files(
+                                                          'user.c',
                                                           'hooks/syscall.c',
                                                           'hooks/thread.c',
                                                     )])

@@ -30,6 +30,10 @@
 #include "trace.h"
 #include "internals.h"
 
+//// --- Begin LibAFL code ---
+#include "libafl/gdb.h"
+//// --- End LibAFL code ---
+
 /* System emulation specific state */
 typedef struct {
     CharBackend chr;
@@ -531,14 +535,7 @@ void gdb_handle_query_rcmd(GArray *params, void *ctx)
     
     //// --- Begin LibAFL code ---
 
-    struct libafl_custom_gdb_cmd** c = &libafl_qemu_gdb_cmds;
-    int recognized = 0;
-    while (*c) {
-        recognized |= (*c)->callback((*c)->data, gdbserver_state.mem_buf->data, gdbserver_state.mem_buf->len);
-        c = &(*c)->next;
-    }
-
-    if (recognized) {
+    if (libafl_qemu_gdb_exec()) {
         gdb_put_packet("OK");
         return;
     }

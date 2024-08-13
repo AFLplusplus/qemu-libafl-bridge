@@ -1,8 +1,7 @@
 #include "libafl/hooks/thread.h"
+#include "libafl/cpu.h"
 
 #include <linux/unistd.h>
-
-extern __thread CPUArchState* libafl_qemu_env;
 
 struct libafl_new_thread_hook* libafl_new_thread_hooks;
 size_t libafl_new_thread_hooks_num = 0;
@@ -27,7 +26,7 @@ size_t libafl_add_new_thread_hook(bool (*callback)(uint64_t data,
 
 bool libafl_hook_new_thread_run(CPUArchState* env)
 {
-    libafl_qemu_env = env;
+    libafl_set_qemu_env(env);
 
     if (libafl_new_thread_hooks) {
         bool continue_execution = true;

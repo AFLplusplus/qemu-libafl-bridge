@@ -1,5 +1,7 @@
 #include "libafl/hooks/tcg/instruction.h"
 
+#include "libafl/cpu.h"
+
 target_ulong libafl_gen_cur_pc;
 struct libafl_instruction_hook*
     libafl_qemu_instruction_hooks[LIBAFL_TABLES_SIZE];

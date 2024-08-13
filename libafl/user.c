@@ -4,7 +4,7 @@
 
 #include "libafl/user.h"
 
-static void (*libafl_dump_core_hook)(int host_sig) = NULL;
+void (*libafl_dump_core_hook)(int host_sig) = NULL;
 static struct image_info libafl_image_info;
 
 extern abi_ulong target_brk, initial_target_brk;

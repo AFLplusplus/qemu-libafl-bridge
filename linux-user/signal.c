@@ -34,12 +34,21 @@
 #include "user/safe-syscall.h"
 #include "tcg/tcg.h"
 
+//// --- Begin LibAFL code ---
+
+#include "libafl/user.h"
+
+//// --- End LibAFL code ---
+
 /* target_siginfo_t must fit in gdbstub's siginfo save area. */
 QEMU_BUILD_BUG_ON(sizeof(target_siginfo_t) > MAX_SIGINFO_LENGTH);
 
 static struct target_sigaction sigact_table[TARGET_NSIG];
 
-static void host_signal_handler(int host_signum, siginfo_t *info,
+//// --- Begin LibAFL code ---
+/* static */
+//// --- End LibAFL code ---
+void host_signal_handler(int host_signum, siginfo_t *info,
                                 void *puc);
 
 /* Fallback addresses into sigtramp page. */
@@ -729,7 +738,6 @@ void die_with_signal(int host_sig)
 
 //// --- Begin LibAFL code ---
 
-void (*libafl_dump_core_hook)(int host_sig);
 
 //// --- End LibAFL code ---
 
@@ -770,8 +778,8 @@ void dump_core_and_abort(CPUArchState *env, int target_sig)
     
     //// --- Begin LibAFL code ---
 
-    if (libafl_dump_core_hook) libafl_dump_core_hook(host_sig);
-    
+    libafl_dump_core_exec(host_sig);
+
     // die_with_signal_nodfl(host_sig); // to trigger LibAFL sig handler
 
     //// --- End LibAFL code ---
@@ -890,9 +898,9 @@ void die_from_signal(siginfo_t *info)
                  sig, code, info->si_addr);
 
     //// --- Begin LibAFL code ---
-    
-    if (libafl_dump_core_hook) libafl_dump_core_hook(info->si_signo);
-    
+
+    libafl_dump_core_exec(info->si_signo);
+
     //// --- End LibAFL code ---
 
     die_with_signal(info->si_signo);
@@ -997,15 +1005,12 @@ static uintptr_t host_sigbus_handler(CPUState *cpu, siginfo_t *info,
                                        pc, guest_addr);
 } */
 
-#include "libafl/user.h"
-
-void libafl_qemu_handle_crash(int host_sig, siginfo_t *info, void *puc) {
-    host_signal_handler(host_sig, info, puc);
-}
-
 //// --- End LibAFL code ---
 
-static void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
+//// --- Begin LibAFL code ---
+/* static */
+//// --- End LibAFL code ---
+void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
 {
     CPUState *cpu = thread_cpu;
     CPUArchState *env = cpu_env(cpu);

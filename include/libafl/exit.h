@@ -12,9 +12,6 @@ struct libafl_breakpoint {
     struct libafl_breakpoint* next;
 };
 
-// in cpu-target.c
-void libafl_breakpoint_invalidate(CPUState* cpu, target_ulong pc);
-
 int libafl_qemu_set_breakpoint(target_ulong pc);
 int libafl_qemu_remove_breakpoint(target_ulong pc);
 void libafl_qemu_trigger_breakpoint(CPUState* cpu);

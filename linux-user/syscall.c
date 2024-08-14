@@ -805,30 +805,16 @@ static inline int host_to_target_sock_type(int host_type)
     return target_type;
 }
 
-static abi_ulong target_brk, initial_target_brk;
+//// --- Begin LibAFL code ---
+/* static */
+//// --- End LibAFL code ---
+abi_ulong target_brk, initial_target_brk;
 
 void target_set_brk(abi_ulong new_brk)
 {
     target_brk = TARGET_PAGE_ALIGN(new_brk);
     initial_target_brk = target_brk;
 }
-
-//// --- Begin LibAFL code ---
-
-uint64_t libafl_get_brk(void);
-uint64_t libafl_set_brk(uint64_t new_brk);
-
-uint64_t libafl_get_brk(void) {
-  return (uint64_t)target_brk;
-}
-
-uint64_t libafl_set_brk(uint64_t new_brk) {
-  uint64_t old_brk = (uint64_t)target_brk;
-  target_brk = (abi_ulong)new_brk;
-  return old_brk;
-}
-
-//// --- End LibAFL code ---
 
 /* do_brk() must return target values and target errnos. */
 abi_long do_brk(abi_ulong brk_val)

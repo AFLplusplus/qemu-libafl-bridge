@@ -57,6 +57,11 @@
 #include "tcg/perf.h"
 #include "exec/page-vary.h"
 
+//// --- End LibAFL code ---
+#include "libafl/cpu.h"
+#include "libafl/user.h"
+//// --- Begin LibAFL code ---
+
 #ifdef CONFIG_SEMIHOSTING
 #include "semihosting/semihost.h"
 #endif
@@ -685,45 +690,22 @@ static int parse_args(int argc, char **argv)
 }
 
 //// --- Begin LibAFL code ---
-
-uint64_t libafl_load_addr(void);
-int libafl_qemu_main(void);
-int libafl_qemu_run(void);
-
-__thread CPUArchState *libafl_qemu_env;
-
-struct image_info libafl_image_info;
 struct linux_binprm bprm;
-
-uint64_t libafl_load_addr(void) {
-    return libafl_image_info.load_addr;
-}
-
-__attribute__((weak)) int libafl_qemu_main(void)
-{
-    libafl_qemu_run();
-    return 0;
-}
-
-int libafl_qemu_run(void)
-{
-    cpu_loop(libafl_qemu_env);
-    return 1;
-}
-
-//// --- End LibAFL code ---
 
 #ifdef AS_LIB
 int qemu_user_init(int argc, char **argv, char **envp);
 int qemu_user_init(int argc, char **argv, char **envp)
 #else
+//// --- End LibAFL code ---
 int main(int argc, char **argv, char **envp)
+//// --- Begin LibAFL code ---
 #endif
+//// --- End LibAFL code ---
 {
     struct target_pt_regs regs1, *regs = &regs1;
 //// --- Begin LibAFL code ---
     //struct image_info info1, *info = &info1;
-    struct image_info *info = &libafl_image_info;
+    struct image_info *info = libafl_get_image_info();
     // struct linux_binprm bprm;
 //// --- End LibAFL code ---
     TaskState *ts;
@@ -1076,7 +1058,7 @@ int main(int argc, char **argv, char **envp)
 
     //// --- Begin LibAFL code ---
 
-    libafl_qemu_env = env;
+    libafl_set_qemu_env(env);
 
 #ifndef AS_LIB
     return libafl_qemu_main();

@@ -24,3 +24,5 @@ void device_restore_all(DeviceSaveState* device_save_state);
 void device_free_all(DeviceSaveState* dss);
 
 char** device_list_all(void);
+
+bool libafl_devices_is_restoring(void);

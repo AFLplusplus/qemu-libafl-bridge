@@ -11,11 +11,12 @@
 
 #include "migration/savevm.h"
 
-int libafl_restoring_devices;
-
 extern SaveState savevm_state;
-
 extern int vmstate_save(QEMUFile* f, SaveStateEntry* se, JSONWriter* vmdesc);
+
+static bool libafl_restoring_devices = false;
+
+bool libafl_devices_is_restoring(void) { return libafl_restoring_devices; }
 
 // iothread must be locked
 DeviceSaveState* device_save_all(void)
@@ -101,8 +102,8 @@ void device_restore_all(DeviceSaveState* dss)
 
     QEMUFile* f = qemu_file_new_input(ioc);
 
-    int save_libafl_restoring_devices = libafl_restoring_devices;
-    libafl_restoring_devices = 1;
+    bool save_libafl_restoring_devices = libafl_restoring_devices;
+    libafl_restoring_devices = true;
 
     qemu_load_device_state(f);
 

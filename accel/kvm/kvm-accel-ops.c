@@ -26,6 +26,12 @@
 #include <linux/kvm.h>
 #include "kvm-cpus.h"
 
+//// --- Begin LibAFL code ---
+
+#include "libafl/hooks/thread.h"
+
+//// --- End LibAFL code ---
+
 static void *kvm_vcpu_thread_fn(void *arg)
 {
     CPUState *cpu = arg;
@@ -40,6 +46,12 @@ static void *kvm_vcpu_thread_fn(void *arg)
 
     r = kvm_init_vcpu(cpu, &error_fatal);
     kvm_init_cpu_signals(cpu);
+
+//// --- Begin LibAFL code ---
+
+    libafl_hook_new_thread_run(cpu_env(cpu), cpu->thread_id);
+
+//// --- End LibAFL code ---
 
     /* signal CPU creation */
     cpu_thread_signal_created(cpu);

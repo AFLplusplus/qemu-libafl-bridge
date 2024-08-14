@@ -24,13 +24,14 @@ size_t libafl_add_new_thread_hook(bool (*callback)(uint64_t data,
     return hook->num;
 }
 
-bool libafl_hook_new_thread_run(CPUArchState* env)
+bool libafl_hook_new_thread_run(CPUArchState* env, uint32_t tid)
 {
+#ifdef CONFIG_USER_ONLY
     libafl_set_qemu_env(env);
+#endif
 
     if (libafl_new_thread_hooks) {
         bool continue_execution = true;
-        int tid = gettid();
 
         struct libafl_new_thread_hook* h = libafl_new_thread_hooks;
         while (h) {

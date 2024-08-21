@@ -28,4 +28,4 @@ size_t libafl_add_new_thread_hook(bool (*callback)(uint64_t data,
                                   uint64_t data);
 int libafl_qemu_remove_new_thread_hook(size_t num);
 
-bool libafl_hook_new_thread_run(CPUArchState* env);
+bool libafl_hook_new_thread_run(CPUArchState* env, uint32_t tid);

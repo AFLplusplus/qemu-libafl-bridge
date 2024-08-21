@@ -6556,7 +6556,7 @@ static void *clone_func(void *arg)
 
     //// --- Begin LibAFL code ---
 
-    if (libafl_hook_new_thread_run(env)) {
+    if (libafl_hook_new_thread_run(env, info->tid)) {
         cpu_loop(env);
     }
 

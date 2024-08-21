@@ -693,8 +693,7 @@ static int parse_args(int argc, char **argv)
 struct linux_binprm bprm;
 
 #ifdef AS_LIB
-int qemu_user_init(int argc, char **argv, char **envp);
-int qemu_user_init(int argc, char **argv, char **envp)
+int _libafl_qemu_user_init(int argc, char **argv, char **envp)
 #else
 //// --- End LibAFL code ---
 int main(int argc, char **argv, char **envp)

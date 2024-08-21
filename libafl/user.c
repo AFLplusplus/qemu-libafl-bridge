@@ -36,8 +36,10 @@ uint64_t libafl_set_brk(uint64_t new_brk)
     return old_brk;
 }
 
+#ifdef AS_LIB
 void libafl_qemu_init(int argc, char** argv)
 {
     // main function in usermode has an env parameter but is unused in practice.
     _libafl_qemu_user_init(argc, argv, NULL);
 }
+#endif

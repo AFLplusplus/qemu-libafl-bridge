@@ -56,15 +56,22 @@ bool libafl_qemu_hook_edge_gen(target_ulong src_block, target_ulong dst_block)
 {
     struct libafl_edge_hook* hook = libafl_edge_hooks;
     bool no_exec_hook = true;
+
     while (hook) {
         hook->cur_id = 0;
-        if (hook->gen)
+
+        if (hook->gen) {
             hook->cur_id = hook->gen(hook->data, src_block, dst_block);
+        }
+
         if (hook->cur_id != (uint64_t)-1 &&
-            (hook->helper_info.func || hook->jit))
+            (hook->helper_info.func || hook->jit)) {
             no_exec_hook = false;
+        }
+
         hook = hook->next;
     }
+
     return no_exec_hook;
 }
 

@@ -71,8 +71,11 @@ void libafl_qemu_hook_block_run(target_ulong pc)
 
     while (hook) {
         uint64_t cur_id = 0;
-        if (hook->gen)
+
+        if (hook->gen) {
             cur_id = hook->gen(hook->data, pc);
+        }
+
         if (cur_id != (uint64_t)-1 && hook->helper_info.func) {
             TCGv_i64 tmp0 = tcg_constant_i64(hook->data);
             TCGv_i64 tmp1 = tcg_constant_i64(cur_id);
@@ -81,9 +84,11 @@ void libafl_qemu_hook_block_run(target_ulong pc)
             tcg_temp_free_i64(tmp0);
             tcg_temp_free_i64(tmp1);
         }
+
         if (cur_id != (uint64_t)-1 && hook->jit) {
             hook->jit(hook->data, cur_id);
         }
+
         hook = hook->next;
     }
 }

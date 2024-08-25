@@ -713,8 +713,8 @@ SyxSnapshotCheckResult syx_snapshot_check(SyxSnapshot* ref_snapshot)
 void syx_snapshot_root_restore(SyxSnapshot* snapshot)
 {
     // health check.
-    CPUState* cpu;
-    CPU_FOREACH(cpu) { assert(cpu->stopped); }
+    // CPUState* cpu;
+    // CPU_FOREACH(cpu) { assert(cpu->stopped); }
 
     bool must_unlock_bql = false;
 

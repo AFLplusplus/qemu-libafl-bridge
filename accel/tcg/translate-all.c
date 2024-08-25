@@ -378,11 +378,20 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
     int64_t ti;
     void *host_pc;
 
+    // edge hooks generation callbacks
+    // early check if it should be skipped or not
+    bool no_exec_hook = libafl_qemu_hook_edge_gen(src_block, dst_block);
+    if (no_exec_hook) {
+        // no exec hooks to run for edges, not point in generating a TB
+        return NULL;
+    }
+
     target_ulong pc = src_block ^ reverse_bits((target_ulong)exit_n);
 
     assert_memory_lock();
     qemu_thread_jit_write();
 
+    // TODO: this (get_page_addr_code_hostp) is a bottleneck in systemmode, investigate why
     phys_pc = get_page_addr_code_hostp(env, src_block, &host_pc);
     phys_pc ^= reverse_bits((tb_page_addr_t)exit_n);
 
@@ -400,11 +409,6 @@ TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
         max_insns = TCG_MAX_INSNS;
     }
     QEMU_BUILD_BUG_ON(CF_COUNT_MASK + 1 != TCG_MAX_INSNS);
-
-    // edge hooks generation callbacks
-    bool no_exec_hook = libafl_qemu_hook_edge_gen(src_block, dst_block);
-    if (no_exec_hook)
-        return NULL;
 
  buffer_overflow:
     assert_no_pages_locked();

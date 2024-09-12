@@ -16,6 +16,9 @@ struct libafl_mapinfo {
     bool is_valid;
 };
 
+extern void (*libafl_dump_core_hook)(int host_sig);
+extern int libafl_force_dfl;
+
 void libafl_dump_core_exec(int signal);
 
 void libafl_qemu_handle_crash(int host_sig, siginfo_t* info, void* puc);

@@ -736,11 +736,6 @@ void die_with_signal(int host_sig)
     _exit(EXIT_FAILURE);
 }
 
-//// --- Begin LibAFL code ---
-
-
-//// --- End LibAFL code ---
-
 static G_NORETURN
 void dump_core_and_abort(CPUArchState *env, int target_sig)
 {

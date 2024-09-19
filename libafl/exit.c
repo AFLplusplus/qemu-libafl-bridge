@@ -126,6 +126,7 @@ void libafl_exit_request_breakpoint(CPUState* cpu, target_ulong pc)
     prepare_qemu_exit(cpu, pc);
 }
 
+#ifndef CONFIG_USER_ONLY
 void libafl_exit_request_timeout(void)
 {
     expected_exit = true;
@@ -134,6 +135,7 @@ void libafl_exit_request_timeout(void)
 
     qemu_system_debug_request();
 }
+#endif
 
 void libafl_qemu_trigger_breakpoint(CPUState* cpu)
 {

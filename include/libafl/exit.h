@@ -65,6 +65,9 @@ void libafl_exit_request_internal(CPUState* cpu, uint64_t pc,
                                   ShutdownCause cause, int signal);
 void libafl_exit_request_breakpoint(CPUState* cpu, target_ulong pc);
 void libafl_exit_request_sync_backdoor(CPUState* cpu, target_ulong pc);
+
+#ifndef CONFIG_USER_ONLY
 void libafl_exit_request_timeout(void);
+#endif
 
 struct libafl_exit_reason* libafl_get_exit_reason(void);

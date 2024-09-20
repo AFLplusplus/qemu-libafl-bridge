@@ -81,6 +81,7 @@ static void prepare_qemu_exit(CPUState* cpu, target_ulong next_pc)
     qemu_system_debug_request();
     cpu->stopped = true; // TODO check if still needed
 #endif
+
     // in usermode, this may be called from the syscall hook, thus already out
     // of the cpu_exec but still in the cpu_loop
     if (cpu->running) {
@@ -124,6 +125,17 @@ void libafl_exit_request_breakpoint(CPUState* cpu, target_ulong pc)
 
     prepare_qemu_exit(cpu, pc);
 }
+
+#ifndef CONFIG_USER_ONLY
+void libafl_exit_request_timeout(void)
+{
+    expected_exit = true;
+    last_exit_reason.kind = TIMEOUT;
+    last_exit_reason.cpu = current_cpu;
+
+    qemu_system_debug_request();
+}
+#endif
 
 void libafl_qemu_trigger_breakpoint(CPUState* cpu)
 {

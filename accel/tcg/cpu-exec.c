@@ -1039,13 +1039,13 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
 
             //// --- Begin LibAFL code ---
 
-            int has_libafl_edge = 0;
+            bool libafl_edge_generated = false;
             TranslationBlock *edge;
 
             /* See if we can patch the calling TB. */
             if (last_tb) {
                 // tb_add_jump(last_tb, tb_exit, tb);
-                
+
                 if (last_tb->jmp_reset_offset[1] != TB_JMP_OFFSET_INVALID) {
                     mmap_lock();
                     edge = libafl_gen_edge(cpu, last_tb->pc, pc, tb_exit, cs_base, flags, cflags);
@@ -1054,7 +1054,7 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                     if (edge) {
                         tb_add_jump(last_tb, tb_exit, edge);
                         tb_add_jump(edge, 0, tb);
-                        has_libafl_edge = 1;
+                        libafl_edge_generated = true;
                     } else {
                         tb_add_jump(last_tb, tb_exit, tb);
                     }
@@ -1063,7 +1063,7 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 }
             }
 
-            if (has_libafl_edge) {
+            if (libafl_edge_generated) {
                 // execute the edge to make sure to log it the first execution
                 // the edge will then jump to the translated block
                 cpu_loop_exec_tb(cpu, edge, pc, &last_tb, &tb_exit);

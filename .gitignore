@@ -1,5 +1,3 @@
-/qemu_libafl_bridge/Cargo.lock
-/qemu_libafl_bridge/target/
 /GNUmakefile
 /build/
 /.cache/
@@ -22,3 +20,8 @@ GTAGS
 *.swp
 *.patch
 *.gcov
+
+# --- Begin LibAFL code ---
+/.idea
+/compile_commands.json
+# --- End LibAFL code ---

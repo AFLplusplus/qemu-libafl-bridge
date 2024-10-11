@@ -40,7 +40,8 @@ def fix_compile_commands():
     with open("compile_commands.json", 'w') as f:
         f.write(res)
 
-    os.symlink("build/compile_commands.json", "../compile_commands.json")
+    if not os.path.isfile("../compile_commands.json"):
+        os.symlink("build/compile_commands.json", "../compile_commands.json")
 
 def process_args(args):
     global out_args, shareds, search, is_linking_qemu

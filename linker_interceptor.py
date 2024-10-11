@@ -24,7 +24,7 @@ rpath = []
 is_linking_qemu = False
 
 shared_library_pattern = r"^[^-].*/lib(.*)\.so(\.[0-9].*)?(?!rsp)$"
-rpath_pattern = r"^'.*,-rpath,(.*)'$"
+rpath_pattern = r".*,-rpath,(.*)'?.*"
 rpath_link_pattern = r"^.*,-rpath-link,(.*)$"
 
 linker_interceptor_pattern = r"(\": \")(.*linker_interceptor.py)( )"
@@ -39,6 +39,9 @@ def fix_compile_commands():
 
     with open("compile_commands.json", 'w') as f:
         f.write(res)
+
+    if not os.path.isfile("../compile_commands.json"):
+        os.symlink("build/compile_commands.json", "../compile_commands.json")
 
 def process_args(args):
     global out_args, shareds, search, is_linking_qemu

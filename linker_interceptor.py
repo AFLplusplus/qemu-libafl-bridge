@@ -24,7 +24,7 @@ rpath = []
 is_linking_qemu = False
 
 shared_library_pattern = r"^[^-].*/lib(.*)\.so(\.[0-9].*)?(?!rsp)$"
-rpath_pattern = r"^'.*,-rpath,(.*)'$"
+rpath_pattern = r".*,-rpath,(.*)'?.*"
 rpath_link_pattern = r"^.*,-rpath-link,(.*)$"
 
 linker_interceptor_pattern = r"(\": \")(.*linker_interceptor.py)( )"

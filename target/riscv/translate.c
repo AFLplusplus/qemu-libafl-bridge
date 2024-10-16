@@ -123,6 +123,12 @@ static inline bool has_ext(DisasContext *ctx, uint32_t ext)
     return ctx->misa_ext & ext;
 }
 
+//// --- Begin LibAFL code ---
+
+void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot);
+
+//// --- End LibAFL code ---
+
 #ifdef TARGET_RISCV32
 #define get_xl(ctx)    MXL_RV32
 #elif defined(CONFIG_USER_ONLY)
@@ -867,6 +873,13 @@ static bool gen_arith_imm_fn(DisasContext *ctx, arg_i *a, DisasExtend ext,
     return true;
 }
 
+//// --- Begin LibAFL code ---
+
+static void gen_slt(TCGv ret, TCGv s1, TCGv s2);
+static void gen_sltu(TCGv ret, TCGv s1, TCGv s2);
+
+//// --- End LibAFL code ---
+
 static bool gen_arith_imm_tl(DisasContext *ctx, arg_i *a, DisasExtend ext,
                              void (*func)(TCGv, TCGv, TCGv),
                              void (*f128)(TCGv, TCGv, TCGv, TCGv, TCGv, TCGv))
@@ -876,6 +889,16 @@ static bool gen_arith_imm_tl(DisasContext *ctx, arg_i *a, DisasExtend ext,
     TCGv src2 = tcg_constant_tl(a->imm);
 
     if (get_ol(ctx) < MXL_RV128) {
+
+        //// --- Begin LibAFL code ---
+
+        if (func == gen_slt || func == gen_sltu) {
+            MemOp memop = get_ol(ctx) == MXL_RV32 ? MO_32 : MO_64;
+            libafl_gen_cmp(ctx->base.pc_next, src1, src2, memop);
+        }
+
+        //// --- End LibAFL code ---
+
         func(dest, src1, src2);
         gen_set_gpr(ctx, a->rd, dest);
     } else {
@@ -902,6 +925,16 @@ static bool gen_arith(DisasContext *ctx, arg_r *a, DisasExtend ext,
     TCGv src2 = get_gpr(ctx, a->rs2, ext);
 
     if (get_ol(ctx) < MXL_RV128) {
+
+        //// --- Begin LibAFL code ---
+
+        if (func == gen_slt || func == gen_sltu) {
+            MemOp memop = get_ol(ctx) == MXL_RV32 ? MO_32 : MO_64;
+            libafl_gen_cmp(ctx->base.pc_next, src1, src2, memop);
+        }
+
+        //// --- End LibAFL code ---
+
         func(dest, src1, src2);
         gen_set_gpr(ctx, a->rd, dest);
     } else {

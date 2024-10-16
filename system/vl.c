@@ -134,6 +134,8 @@
 #include "qemu/guest-random.h"
 #include "qemu/keyval.h"
 
+#include "libafl/syx-snapshot/syx-cow-cache.h"
+
 #define MAX_VIRTIO_CONSOLES 1
 
 typedef struct BlockdevOptionsQueueEntry {
@@ -3668,7 +3670,9 @@ void qemu_init(int argc, char **argv)
     qemu_disable_default_devices();
     qemu_setup_display();
     qemu_create_default_devices();
+    syx_cow_cache_check_files_ro();
     qemu_create_early_backends();
+    syx_cow_cache_check_files_ro();
 
     qemu_apply_legacy_machine_options(machine_opts_dict);
     qemu_apply_machine_options(machine_opts_dict);
@@ -3710,6 +3714,7 @@ void qemu_init(int argc, char **argv)
      * over memory-backend-file objects).
      */
     qemu_create_late_backends();
+    syx_cow_cache_check_files_ro();
     phase_advance(PHASE_LATE_BACKENDS_CREATED);
 
     /*

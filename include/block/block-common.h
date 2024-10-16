@@ -226,6 +226,7 @@ typedef enum {
                                      writes in a snapshot */
 #define BDRV_O_TEMPORARY   0x0010 /* delete the file after use */
 #define BDRV_O_NOCACHE     0x0020 /* do not use the host page cache */
+#define BDRV_O_NOSYX       0x0040
 #define BDRV_O_NATIVE_AIO  0x0080 /* use native AIO instead of the
                                      thread pool */
 #define BDRV_O_NO_BACKING  0x0100 /* don't open the backing file */

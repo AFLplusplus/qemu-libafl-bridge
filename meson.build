@@ -3433,6 +3433,9 @@ util_ss = ss.source_set()
 qtest_module_ss = ss.source_set()
 tcg_module_ss = ss.source_set()
 
+# libafl module
+libafl_ss = ss.source_set()
+
 modules = {}
 target_modules = {}
 hw_arch = {}
@@ -3930,9 +3933,22 @@ foreach target : target_dirs
   arch_srcs += target_specific.sources()
   arch_deps += target_specific.dependencies()
 
+  libafl_ss = libafl_ss.apply(config_target, strict: false)
+  liblibafl = static_library('libafl-' + target,
+                             sources: libafl_ss.sources() + genh,
+                             dependencies: arch_deps,
+                             objects: objects,
+                             include_directories: target_inc,
+                             c_args: c_args,
+                             build_by_default: false,
+                             name_suffix: 'fa',
+                             pic: 'AS_SHARED_LIB' in config_host)
+  libafl = declare_dependency(link_whole: [liblibafl],
+                              link_args: '@libafl.syms')
+
   lib = static_library('qemu-' + target,
                  sources: arch_srcs + genh,
-                 dependencies: arch_deps,
+                 dependencies: arch_deps + libafl,
                  objects: objects,
                  include_directories: target_inc,
                  c_args: c_args,

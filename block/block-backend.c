@@ -28,12 +28,6 @@
 #include "trace.h"
 #include "migration/misc.h"
 
-//// --- Begin LibAFL code ---
-#ifdef CONFIG_SOFTMMU
-#include "libafl/syx-snapshot/syx-snapshot.h"
-#endif
-//// --- End LibAFL code ---
-
 /* Number of coroutines to reserve per attached device model */
 #define COROUTINE_POOL_RESERVATION 64
 
@@ -48,9 +42,6 @@ typedef struct BlockBackendAioNotifier {
 
 struct BlockBackend {
     char *name;
-//// --- Begin LibAFL code ---
-    guint name_hash;
-//// --- End LibAFL code ---
     int refcnt;
     BdrvChild *root;
     AioContext *ctx; /* access with atomic operations only */
@@ -705,12 +696,6 @@ bool monitor_add_blk(BlockBackend *blk, const char *name, Error **errp)
         error_setg(errp, "Device with id '%s' already exists", name);
         return false;
     }
-//// --- Begin LibAFL code ---
-    if (blk_by_name_hash(g_str_hash(name))) {
-        error_setg(errp, "Device with name hash '%x' already exists", g_str_hash(name));
-        return false;
-    }
-//// --- End LibAFL code ---
     if (bdrv_find_node(name)) {
         error_setg(errp,
                    "Device name '%s' conflicts with an existing node name",
@@ -719,9 +704,6 @@ bool monitor_add_blk(BlockBackend *blk, const char *name, Error **errp)
     }
 
     blk->name = g_strdup(name);
-//// --- Begin LibAFL code ---
-    blk->name_hash = g_str_hash(blk->name);
-//// --- End LibAFL code ---
     QTAILQ_INSERT_TAIL(&monitor_block_backends, blk, monitor_link);
     return true;
 }
@@ -753,14 +735,6 @@ const char *blk_name(const BlockBackend *blk)
     return blk->name ?: "";
 }
 
-//// --- Begin LibAFL code ---
-guint blk_name_hash(const BlockBackend* blk)
-{
-    IO_CODE();
-    return blk->name_hash;
-}
-//// --- End LibAFL code ---
-
 /*
  * Return the BlockBackend with name @name if it exists, else null.
  * @name must not be null.
@@ -773,22 +747,6 @@ BlockBackend *blk_by_name(const char *name)
     assert(name);
     while ((blk = blk_next(blk)) != NULL) {
         if (!strcmp(name, blk->name)) {
-            return blk;
-        }
-    }
-    return NULL;
-}
-
-/*
- * Return the BlockBackend with name hash @name_hash if it exists, else null.
- */
-BlockBackend *blk_by_name_hash(guint name_hash)
-{
-    BlockBackend *blk = NULL;
-
-    GLOBAL_STATE_CODE();
-    while ((blk = blk_next(blk)) != NULL) {
-        if (name_hash == blk->name_hash) {
             return blk;
         }
     }
@@ -1648,21 +1606,8 @@ static void coroutine_fn blk_aio_read_entry(void *opaque)
 
     assert(qiov->size == acb->bytes);
 
-//// --- Begin LibAFL code ---
-#ifdef CONFIG_SOFTMMU
-    if (!syx_snapshot_cow_cache_read_entry(rwco->blk, rwco->offset, acb->bytes, qiov, 0, rwco->flags)) {
-#endif
-//// --- End LibAFL code ---
-       rwco->ret = blk_co_do_preadv_part(rwco->blk, rwco->offset, acb->bytes, qiov,
-                                      0, rwco->flags);
-//// --- Begin LibAFL code ---
-#ifdef CONFIG_SOFTMMU
-    } else {
-       rwco->ret = 0;
-    }
-#endif
-//// --- End LibAFL code ---
-
+    rwco->ret = blk_co_do_preadv_part(rwco->blk, rwco->offset, acb->bytes, qiov,
+                                   0, rwco->flags);
     blk_aio_complete(acb);
 }
 
@@ -1674,19 +1619,7 @@ static void coroutine_fn blk_aio_write_entry(void *opaque)
 
     assert(!qiov || qiov->size == acb->bytes);
 
-//// --- Begin LibAFL code ---
-#ifdef CONFIG_SOFTMMU
-   if (!syx_snapshot_cow_cache_write_entry(rwco->blk, rwco->offset, acb->bytes, qiov, 0, rwco->flags)) {
-#endif
-//// --- End LibAFL code ---
-        rwco->ret = blk_co_do_pwritev_part(rwco->blk, rwco->offset, acb->bytes, qiov, 0, rwco->flags);
-//// --- Begin LibAFL code ---
-#ifdef CONFIG_SOFTMMU
-   } else {
-       rwco->ret = 0;
-   }
-#endif
-//// --- End LibAFL code ---
+    rwco->ret = blk_co_do_pwritev_part(rwco->blk, rwco->offset, acb->bytes, qiov, 0, rwco->flags);
 
     blk_aio_complete(acb);
 }

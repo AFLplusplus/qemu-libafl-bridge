@@ -144,7 +144,7 @@ struct rb_check_memory_args {
     uint64_t nb_inconsistent_pages; // OUT
 };
 
-void syx_snapshot_init(bool cached_bdrvs)
+void syx_snapshot_init(bool use_syx_cow_cache)
 {
     uint64_t page_size = TARGET_PAGE_SIZE;
 
@@ -153,18 +153,33 @@ void syx_snapshot_init(bool cached_bdrvs)
 
     syx_snapshot_state.tracked_snapshots = syx_snapshot_tracker_init();
 
-    if (cached_bdrvs) {
+    if (use_syx_cow_cache) {
         syx_snapshot_state.before_fuzz_cache = syx_cow_cache_new();
-        syx_cow_cache_push_layer(syx_snapshot_state.before_fuzz_cache,
-                                 SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE,
-                                 SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS);
+        syx_cow_cache_push(syx_snapshot_state.before_fuzz_cache,
+                           SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE,
+                           SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS);
     }
 
     syx_snapshot_state.is_enabled = false;
 }
 
-SyxSnapshot* syx_snapshot_new(bool track, bool is_active_bdrv_cache,
-                              DeviceSnapshotKind kind, char** devices)
+bool syx_snapshot_use_scc(void)
+{
+    return syx_snapshot_state.before_fuzz_cache != NULL;
+    // return false;
+}
+
+SyxCowCache* syx_snapshot_current_scc(void)
+{
+    if (syx_snapshot_state.active_snapshot) {
+        return syx_snapshot_state.active_snapshot->bdrvs_cow_cache;
+    } else {
+        return syx_snapshot_state.before_fuzz_cache;
+    }
+}
+
+SyxSnapshot* syx_snapshot_new(bool track, DeviceSnapshotKind kind,
+                              char** devices)
 {
     SyxSnapshot* snapshot = g_new0(SyxSnapshot, 1);
 
@@ -173,19 +188,24 @@ SyxSnapshot* syx_snapshot_new(bool track, bool is_active_bdrv_cache,
     snapshot->rbs_dirty_list =
         g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL,
                               (GDestroyNotify)g_hash_table_remove_all);
-    snapshot->bdrvs_cow_cache = syx_cow_cache_new();
+    snapshot->bdrvs_cow_cache =
+        syx_cow_cache_push(syx_snapshot_state.before_fuzz_cache,
+                           SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE,
+                           SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS);
 
-    if (is_active_bdrv_cache) {
-        syx_cow_cache_move(snapshot->bdrvs_cow_cache,
-                           &syx_snapshot_state.before_fuzz_cache);
-        syx_snapshot_state.active_bdrv_cache_snapshot = snapshot;
-    } else {
-        syx_cow_cache_push_layer(snapshot->bdrvs_cow_cache,
-                                 SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE,
-                                 SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS);
-    }
+    // if (is_active_bdrv_cache) {
+    //     syx_cow_cache_move(snapshot->bdrvs_cow_cache,
+    //                        &syx_snapshot_state.before_fuzz_cache);
+    //     current_layer = snapshot->bdrvs_cow_cache->layers;
+    //     syx_snapshot_state.active_bdrv_cache_snapshot = snapshot;
+    // } else {
+    //     current_layer = syx_cow_cache_push_layer(snapshot->bdrvs_cow_cache,
+    //                              SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE,
+    //                              SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS);
+    // }
 
     if (track) {
+        syx_snapshot_state.active_snapshot = snapshot;
         syx_snapshot_track(&syx_snapshot_state.tracked_snapshots, snapshot);
     }
 
@@ -521,13 +541,16 @@ static inline void syx_snapshot_dirty_list_add_internal(RAMBlock* rb,
     }
 }
 
-bool syx_snapshot_is_enabled(void) { return syx_snapshot_state.is_enabled; }
+bool syx_snapshot_is_enabled(void)
+{
+    // return syx_snapshot_state.is_enabled;
+    return true;
+}
 
 /*
 // TODO: Check if using this method is better for performances.
 // The implementation is pretty bad, it would be nice to store host addr
-directly for
-// the memcopy happening later on.
+// directly for the memcopy happening later on.
 __attribute__((target("no-3dnow,no-sse,no-mmx"),no_caller_saved_registers)) void
 syx_snapshot_dirty_list_add_tcg_target(uint64_t dummy, void* host_addr) {
     // early check to know whether we should log the page access or not
@@ -740,48 +763,5 @@ void syx_snapshot_root_restore(SyxSnapshot* snapshot)
 
     if (must_unlock_bql) {
         bql_unlock();
-    }
-}
-
-bool syx_snapshot_cow_cache_read_entry(BlockBackend* blk, int64_t offset,
-                                       int64_t bytes, QEMUIOVector* qiov,
-                                       size_t qiov_offset,
-                                       BdrvRequestFlags flags)
-{
-    if (!syx_snapshot_state.active_bdrv_cache_snapshot) {
-        if (syx_snapshot_state.before_fuzz_cache) {
-            syx_cow_cache_read_entry(syx_snapshot_state.before_fuzz_cache, blk,
-                                     offset, bytes, qiov, qiov_offset, flags);
-            return true;
-        }
-
-        return false;
-    } else {
-        syx_cow_cache_read_entry(
-            syx_snapshot_state.active_bdrv_cache_snapshot->bdrvs_cow_cache, blk,
-            offset, bytes, qiov, qiov_offset, flags);
-        return true;
-    }
-}
-
-bool syx_snapshot_cow_cache_write_entry(BlockBackend* blk, int64_t offset,
-                                        int64_t bytes, QEMUIOVector* qiov,
-                                        size_t qiov_offset,
-                                        BdrvRequestFlags flags)
-{
-    if (!syx_snapshot_state.active_bdrv_cache_snapshot) {
-        if (syx_snapshot_state.before_fuzz_cache) {
-            assert(syx_cow_cache_write_entry(
-                syx_snapshot_state.before_fuzz_cache, blk, offset, bytes, qiov,
-                qiov_offset, flags));
-            return true;
-        }
-
-        return false;
-    } else {
-        assert(syx_cow_cache_write_entry(
-            syx_snapshot_state.active_bdrv_cache_snapshot->bdrvs_cow_cache, blk,
-            offset, bytes, qiov, qiov_offset, flags));
-        return true;
     }
 }

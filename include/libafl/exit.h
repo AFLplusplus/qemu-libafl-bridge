@@ -36,20 +36,22 @@ struct libafl_exit_reason_breakpoint {
 };
 
 // A synchronous exit has been triggered.
-struct libafl_exit_reason_sync_exit {};
+struct libafl_exit_reason_sync_exit {
+};
 
 // A timeout occured and we were asked to exit on timeout
-struct libafl_exit_reason_timeout {};
+struct libafl_exit_reason_timeout {
+};
 
 struct libafl_exit_reason {
     enum libafl_exit_reason_kind kind;
     CPUState* cpu; // CPU that triggered an exit.
     vaddr next_pc; // The PC that should be stored in the CPU when re-entering.
     union {
-        struct libafl_exit_reason_internal internal;        // kind == INTERNAL
-        struct libafl_exit_reason_breakpoint breakpoint;    // kind == BREAKPOINT
-        struct libafl_exit_reason_sync_exit sync_exit;      // kind == SYNC_EXIT
-        struct libafl_exit_reason_timeout timeout;          // kind == TIMEOUT
+        struct libafl_exit_reason_internal internal;     // kind == INTERNAL
+        struct libafl_exit_reason_breakpoint breakpoint; // kind == BREAKPOINT
+        struct libafl_exit_reason_sync_exit sync_exit;   // kind == SYNC_EXIT
+        struct libafl_exit_reason_timeout timeout;       // kind == TIMEOUT
     } data;
 };
 

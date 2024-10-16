@@ -54,6 +54,8 @@
 #include "qemu/rcu.h"
 #include "block/coroutines.h"
 
+#include "libafl/syx-snapshot/syx-snapshot.h"
+
 #ifdef CONFIG_BSD
 #include <sys/ioctl.h>
 #include <sys/queue.h>
@@ -1258,6 +1260,34 @@ static void bdrv_temp_snapshot_options(int *child_flags, QDict *child_options,
      * temporary snapshot */
     *child_flags &= ~BDRV_O_NATIVE_AIO;
 }
+
+//// --- Begin LibAFL code ---
+
+/*
+ * Returns the options and flags that a temporary snapshot should get, based on
+ * the originally requested flags (the originally requested image will have
+ * flags like a backing file)
+ */
+static void bdrv_syx_cow_cache_options(int *child_flags, QDict *child_options,
+                                       int parent_flags, QDict *parent_options)
+{
+    GLOBAL_STATE_CODE();
+    *child_flags = parent_flags;
+
+    /* For temporary files, unconditional cache=unsafe is fine */
+    qdict_set_default_str(child_options, BDRV_OPT_CACHE_DIRECT, "off");
+    qdict_set_default_str(child_options, BDRV_OPT_CACHE_NO_FLUSH, "on");
+
+    /* Copy the read-only and discard options from the parent */
+    qdict_copy_default(child_options, parent_options, BDRV_OPT_READ_ONLY);
+    qdict_copy_default(child_options, parent_options, BDRV_OPT_DISCARD);
+
+    /* aio=native doesn't work for cache.direct=off, so disable it for the
+     * temporary snapshot */
+    *child_flags &= ~BDRV_O_NATIVE_AIO;
+}
+
+//// --- End LibAFL code ---
 
 static void GRAPH_WRLOCK bdrv_backing_attach(BdrvChild *c)
 {
@@ -3870,6 +3900,33 @@ BlockDriverState *bdrv_open_blockdev_ref(BlockdevRef *ref, Error **errp)
     return bs;
 }
 
+//// --- Begin LibAFL code ---
+
+static BlockDriverState *bdrv_append_syx_cow_cache(BlockDriverState *bs,
+                                                   int flags,
+                                                   QDict *scc_options,
+                                                   Error **errp)
+{
+    BlockDriverState* bs_scc = NULL;
+
+    /* We add a syx-cow-cache layer on top of the node being opened */
+    qdict_put_str(scc_options, "driver", "syx-cow-cache");
+    qdict_put_str(scc_options, "file", bs->node_name);
+
+    /* Open the syx cow cache */
+    bs_scc = bdrv_open(NULL, NULL, scc_options, flags, errp);
+    scc_options = NULL;
+    if (!bs_scc) {
+        goto out;
+    }
+
+out:
+    qobject_unref(scc_options);
+    return bs_scc;
+}
+
+//// --- End LibAFL code ---
+
 static BlockDriverState *bdrv_append_temp_snapshot(BlockDriverState *bs,
                                                    int flags,
                                                    QDict *snapshot_options,
@@ -3965,6 +4022,14 @@ bdrv_open_inherit(const char *filename, const char *reference, QDict *options,
     Error *local_err = NULL;
     QDict *snapshot_options = NULL;
     int snapshot_flags = 0;
+
+//// --- Begin LibAFL code ---
+
+    QDict* scc_options = NULL;
+    int scc_flags = 0;
+    bool attach_syx_continue = false;
+
+//// --- End LibAFL code ---
 
     assert(!child_class || !flags);
     assert(!child_class == !parent);
@@ -4152,6 +4217,24 @@ bdrv_open_inherit(const char *filename, const char *reference, QDict *options,
      * (the inverse results in an error message from bdrv_open_common()) */
     assert(!(flags & BDRV_O_PROTOCOL) || !file);
 
+//// --- Begin LibAFL code ---
+    if (!(flags & BDRV_O_NOSYX) && syx_snapshot_use_scc() && !strcmp(drv->format_name, "file") && bs->open_flags & BDRV_O_RDWR) {
+        if (snapshot_flags) {
+            error_setg(errp, "Syx snapshots should not be used with any QEMU snapshot option");
+            goto close_and_fail;
+        }
+
+        scc_options = qdict_new();
+        bdrv_syx_cow_cache_options(&scc_flags, scc_options,
+                                   flags, options);
+
+        // qdict_put_bool(options, BDRV_OPT_READ_ONLY, true);
+        // bs->open_flags &= ~BDRV_O_RDWR;
+
+        attach_syx_continue = true;
+    }
+//// --- End LibAFL code ---
+
     /* Open the image */
     ret = bdrv_open_common(bs, file, options, &local_err);
     if (ret < 0) {
@@ -4219,6 +4302,17 @@ bdrv_open_inherit(const char *filename, const char *reference, QDict *options,
          * though, because the overlay still has a reference to it. */
         bdrv_unref(bs);
         bs = snapshot_bs;
+    }
+
+    if (attach_syx_continue) {
+        BlockDriverState* scc_bs;
+        scc_bs = bdrv_append_syx_cow_cache(bs, scc_flags, scc_options, &local_err);
+        scc_options = NULL;
+        if (local_err) {
+            goto close_and_fail;
+        }
+        bdrv_unref(bs);
+        bs = scc_bs;
     }
 
     return bs;

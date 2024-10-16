@@ -481,7 +481,7 @@ void qemu_iovec_reset(QEMUIOVector *qiov)
     qiov->size = 0;
 }
 
-size_t qemu_iovec_to_buf(QEMUIOVector *qiov, size_t offset,
+size_t qemu_iovec_to_buf(const QEMUIOVector *qiov, size_t offset,
                          void *buf, size_t bytes)
 {
     return iov_to_buf(qiov->iov, qiov->niov, offset, buf, bytes);

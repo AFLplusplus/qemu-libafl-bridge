@@ -3189,6 +3189,7 @@
   'data': [ 'blkdebug', 'blklogwrites', 'blkreplay', 'blkverify', 'bochs',
             'cloop', 'compress', 'copy-before-write', 'copy-on-read', 'dmg',
             'file', 'snapshot-access', 'ftp', 'ftps', 'gluster',
+            'syx-cow-cache',
             {'name': 'host_cdrom', 'if': 'HAVE_HOST_BLOCK_DEVICE' },
             {'name': 'host_device', 'if': 'HAVE_HOST_BLOCK_DEVICE' },
             'http', 'https',
@@ -3612,6 +3613,22 @@
             '*cache-clean-interval': 'int',
             '*encrypt': 'BlockdevQcow2Encryption',
             '*data-file': 'BlockdevRef' } }
+
+
+##
+# @BlockdevOptionsSyxCowCache:
+#
+# Driver specific block device options for Syx Cow Cache. It is intended
+# to be used as a wrapper around other devices transparently. This should
+# never be invoked directly by a user.
+#
+# Since: 9.0.2
+##
+{
+  'struct': 'BlockdevOptionsSyxCowCache',
+  'base': 'BlockdevOptionsGenericFormat',
+  'data': { }
+}
 
 ##
 # @SshHostKeyCheckMode:
@@ -4734,6 +4751,7 @@
                        'if': 'CONFIG_REPLICATION' },
       'snapshot-access': 'BlockdevOptionsGenericFormat',
       'ssh':        'BlockdevOptionsSsh',
+      'syx-cow-cache': 'BlockdevOptionsSyxCowCache',
       'throttle':   'BlockdevOptionsThrottle',
       'vdi':        'BlockdevOptionsGenericFormat',
       'vhdx':       'BlockdevOptionsGenericFormat',

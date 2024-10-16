@@ -1,4 +1,4 @@
-specific_ss.add(files(
+libafl_ss.add(files(
                     'cpu.c',
                     'exit.c',
                     'hook.c',
@@ -19,7 +19,7 @@ specific_ss.add(files(
                     'hooks/thread.c',
                 ))
 
-specific_ss.add(when : 'CONFIG_SOFTMMU', if_true : [files(
+libafl_ss.add(when : 'CONFIG_SOFTMMU', if_true : [files(
                                                         'system.c',
                                                         'qemu_snapshot.c',
                                                         'syx-snapshot/device-save.c',
@@ -28,7 +28,7 @@ specific_ss.add(when : 'CONFIG_SOFTMMU', if_true : [files(
                                                         'syx-snapshot/channel-buffer-writeback.c',
                                                     )])
 
-specific_ss.add(when : 'CONFIG_USER_ONLY', if_true : [files(
+libafl_ss.add(when : 'CONFIG_USER_ONLY', if_true : [files(
                                                           'user.c',
                                                           'hooks/syscall.c',
                                                     )])

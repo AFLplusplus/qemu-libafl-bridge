@@ -18,8 +18,9 @@
 
 #include "libafl/syx-misc.h"
 
-#define SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE 64
-#define SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS (1024 * 1024)
+#define SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE 4096
+#define SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS                              \
+    (1024 * (SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE))
 
 typedef struct SyxSnapshotRoot SyxSnapshotRoot;
 typedef struct SyxSnapshotIncrement SyxSnapshotIncrement;
@@ -50,17 +51,17 @@ typedef struct SyxSnapshotState {
     uint64_t page_size;
     uint64_t page_mask;
 
+    SyxSnapshot* active_snapshot;
+
     // Actively tracked snapshots. Their dirty lists will
     // be updated at each dirty access
     SyxSnapshotTracker tracked_snapshots;
 
     // In use iif syx is initialized with cached_bdrvs flag on.
-    // It is not updated anymore when an active bdrv cache snapshto is set.
     SyxCowCache* before_fuzz_cache;
+
     // snapshot used to restore bdrv cache if enabled.
     SyxSnapshot* active_bdrv_cache_snapshot;
-
-    // Root
 } SyxSnapshotState;
 
 typedef struct SyxSnapshotCheckResult {
@@ -73,8 +74,12 @@ void syx_snapshot_init(bool cached_bdrvs);
 // Snapshot API
 //
 
-SyxSnapshot* syx_snapshot_new(bool track, bool is_active_bdrv_cache,
-                              DeviceSnapshotKind kind, char** devices);
+bool syx_snapshot_use_scc(void);
+
+SyxCowCache* syx_snapshot_current_scc(void);
+
+SyxSnapshot* syx_snapshot_new(bool track, DeviceSnapshotKind kind,
+                              char** devices);
 
 void syx_snapshot_free(SyxSnapshot* snapshot);
 

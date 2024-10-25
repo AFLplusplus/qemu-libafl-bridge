@@ -318,9 +318,10 @@ void gdb_handle_query_rcmd(GArray *params, void *user_ctx)
         gdb_put_packet("");
     }
 }
-#endif
 
 //// --- End LibAFL code ---
+
+#endif
 
 static const char *get_filename_param(GArray *params, int i)
 {

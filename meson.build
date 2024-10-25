@@ -3531,7 +3531,6 @@ endif
 qom_ss = qom_ss.apply({})
 libqom = static_library('qom', qom_ss.sources() + genh,
                         dependencies: [qom_ss.dependencies()],
-                        name_suffix: 'fa',
                         pic: 'AS_SHARED_LIB' in config_host,
                         build_by_default: false)
 qom = declare_dependency(objects: libqom.extract_all_objects(recursive: false),
@@ -3540,7 +3539,6 @@ qom = declare_dependency(objects: libqom.extract_all_objects(recursive: false),
 event_loop_base = files('event-loop-base.c')
 event_loop_base = static_library('event-loop-base',
                                  sources: event_loop_base + genh,
-                                 name_suffix: 'fa',
                                  build_by_default: false)
 event_loop_base = declare_dependency(objects: event_loop_base.extract_all_objects(recursive: false),
                                      dependencies: [qom])
@@ -3774,7 +3772,7 @@ if enable_modules
                                   command: [modinfo_generate, '--devices', config_devices_mak, '@INPUT@'],
                                   capture: true)
 
-      modinfo_lib = static_library('modinfo', modinfo_src, pic: 'AS_SHARED_LIB' in config_host)
+      modinfo_lib = static_library('modinfo-' + target + '.c', modinfo_src, pic: 'AS_SHARED_LIB' in config_host)
       modinfo_dep = declare_dependency(link_with: modinfo_lib)
 
       arch = config_target['TARGET_NAME'] == 'sparc64' ? 'sparc64' : config_target['TARGET_BASE_ARCH']

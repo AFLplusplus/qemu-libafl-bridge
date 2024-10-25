@@ -53,19 +53,27 @@ typedef TCGv_i32 TCGv;
 #define tcg_temp_new() tcg_temp_new_i32()
 #define tcg_global_mem_new tcg_global_mem_new_i32
 #define tcgv_tl_temp tcgv_i32_temp
+//// --- Begin LibAFL code ---
 #define temp_tcgv_tl temp_tcgv_i32
+//// --- End LibAFL code ---
 #define tcg_gen_qemu_ld_tl tcg_gen_qemu_ld_i32
 #define tcg_gen_qemu_st_tl tcg_gen_qemu_st_i32
+//// --- Begin LibAFL code ---
 #define tcg_gen_tl_ptr tcg_gen_ext_i32_ptr
+//// --- End LibAFL code ---
 #elif TARGET_LONG_BITS == 64
 typedef TCGv_i64 TCGv;
 #define tcg_temp_new() tcg_temp_new_i64()
 #define tcg_global_mem_new tcg_global_mem_new_i64
 #define tcgv_tl_temp tcgv_i64_temp
+//// --- Begin LibAFL code ---
 #define temp_tcgv_tl temp_tcgv_i64
+//// --- End LibAFL code ---
 #define tcg_gen_qemu_ld_tl tcg_gen_qemu_ld_i64
 #define tcg_gen_qemu_st_tl tcg_gen_qemu_st_i64
+//// --- Begin LibAFL code ---
 #define tcg_gen_tl_ptr tcg_gen_trunc_i64_ptr
+//// --- End LibAFL code ---
 #else
 #error Unhandled TARGET_LONG_BITS value
 #endif

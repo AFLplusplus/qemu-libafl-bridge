@@ -302,7 +302,7 @@ void gdb_handle_query_rcmd(GArray *params, void *user_ctx)
         return;
     }
 
-    len = strlen(get_param(params, 0)->data);
+    len = strlen(gdb_get_cmd_param(params, 0)->data);
     if (len % 2) {
         gdb_put_packet("E01");
         return;
@@ -310,7 +310,7 @@ void gdb_handle_query_rcmd(GArray *params, void *user_ctx)
 
     g_assert(gdbserver_state.mem_buf->len == 0);
     len = len / 2;
-    gdb_hextomem(gdbserver_state.mem_buf, get_param(params, 0)->data, len);
+    gdb_hextomem(gdbserver_state.mem_buf, gdb_get_cmd_param(params, 0)->data, len);
 
     if (libafl_qemu_gdb_exec()) {
         gdb_put_packet("OK");

@@ -1,9 +1,7 @@
 #pragma once
 
 #include "qemu/osdep.h"
-
 #include "exec/cpu-defs.h"
-#include "exec/translator.h"
 
 #define EXCP_LIBAFL_EXIT 0xf4775747
 

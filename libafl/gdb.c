@@ -1,6 +1,7 @@
 #include "qemu/osdep.h"
 #include "libafl/gdb.h"
 #include "gdbstub/internals.h"
+#include "gdbstub/commands.h"
 
 static struct libafl_custom_gdb_cmd* libafl_qemu_gdb_cmds;
 

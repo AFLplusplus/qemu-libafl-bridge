@@ -779,6 +779,8 @@ BlockBackend *blk_by_name(const char *name)
     return NULL;
 }
 
+//// --- Begin LibAFL code ---
+///
 /*
  * Return the BlockBackend with name hash @name_hash if it exists, else null.
  */
@@ -794,6 +796,8 @@ BlockBackend *blk_by_name_hash(guint name_hash)
     }
     return NULL;
 }
+
+//// --- End LibAFL code ---
 
 /*
  * Return the BlockDriverState attached to @blk if any, else null.

@@ -77,6 +77,7 @@ struct TranslationBlock {
 #define CF_PARALLEL      0x00008000 /* Generate code for a parallel context */
 #define CF_NOIRQ         0x00010000 /* Generate an uninterruptible TB */
 #define CF_PCREL         0x00020000 /* Opcodes in TB are PC-relative */
+#define CF_BP_PAGE       0x00040000 /* Breakpoint present in code page */
 //// --- Begin LibAFL code ---
 #define CF_IS_EDGE       0x00800000 /* The current TB is an edge */
 //// --- End LibAFL code ---

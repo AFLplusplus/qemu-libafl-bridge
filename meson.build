@@ -4059,7 +4059,7 @@ foreach target : target_dirs
       emulator = shared_library(exe_name, exe['sources'],
                install: true,
                c_args: c_args,
-               dependencies: arch_deps + deps + exe['dependencies'],
+               dependencies: arch_deps + exe['dependencies'],
                objects: lib.extract_all_objects(recursive: true),
                link_depends: [block_syms, qemu_syms],
                link_args: link_args)
@@ -4067,7 +4067,7 @@ foreach target : target_dirs
     if 'AS_STATIC_LIB' in config_host
       emulator = static_library(exe_name, exe['sources'],
                c_args: c_args,
-               dependencies: arch_deps + deps + exe['dependencies'],
+               dependencies: arch_deps + exe['dependencies'],
                objects: lib.extract_all_objects(recursive: true))
     endif
   endif

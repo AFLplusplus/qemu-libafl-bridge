@@ -1,3 +1,4 @@
+#include "libafl/tcg.h"
 #include "libafl/hooks/tcg/edge.h"
 
 struct libafl_edge_hook* libafl_edge_hooks;
@@ -8,7 +9,8 @@ static TCGHelperInfo libafl_exec_edge_hook_info = {
     .name = "libafl_exec_edge_hook",
     .flags = dh_callflag(void),
     .typemask =
-        dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(i64, 2)};
+        dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(i64, 2)
+};
 
 GEN_REMOVE_HOOK(edge)
 
@@ -84,7 +86,7 @@ void libafl_qemu_hook_edge_run(void)
             TCGv_i64 tmp0 = tcg_constant_i64(hook->data);
             TCGv_i64 tmp1 = tcg_constant_i64(hook->cur_id);
             TCGTemp* tmp2[2] = {tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1)};
-            tcg_gen_callN(&hook->helper_info, NULL, tmp2);
+            tcg_gen_callN(hook->helper_info.func, &hook->helper_info, NULL, tmp2);
             tcg_temp_free_i64(tmp0);
             tcg_temp_free_i64(tmp1);
         }

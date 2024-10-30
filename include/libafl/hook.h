@@ -56,6 +56,4 @@
 extern target_ulong libafl_gen_cur_pc;
 extern size_t libafl_qemu_hooks_num;
 
-void tcg_gen_callN(TCGHelperInfo* info, TCGTemp* ret, TCGTemp** args);
-
 void libafl_tcg_gen_asan(TCGTemp* addr, size_t size);

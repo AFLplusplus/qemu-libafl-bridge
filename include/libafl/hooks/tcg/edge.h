@@ -1,7 +1,6 @@
 #pragma once
 
 #include "qemu/osdep.h"
-
 #include "qapi/error.h"
 
 #include "exec/exec-all.h"

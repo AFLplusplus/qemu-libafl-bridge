@@ -1,3 +1,4 @@
+#include "libafl/tcg.h"
 #include "libafl/hooks/tcg/cmp.h"
 
 struct libafl_cmp_hook* libafl_cmp_hooks;
@@ -120,7 +121,7 @@ void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot)
 #else
                                 tcgv_i64_temp(op0), tcgv_i64_temp(op1)};
 #endif
-            tcg_gen_callN(info, NULL, tmp2);
+            tcg_gen_callN(info->func, info, NULL, tmp2);
             tcg_temp_free_i64(tmp0);
             tcg_temp_free_i64(tmp1);
         }

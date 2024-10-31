@@ -38,7 +38,7 @@
 
 //// --- Begin LibAFL code ---
 
-void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot);
+#include "libafl/hooks/tcg/cmp.h"
 
 //// --- End LibAFL code ---
 
@@ -1234,6 +1234,13 @@ static void gen_cmps(DisasContext *s, MemOp ot)
     gen_op_ld_v(s, ot, s->T0, s->A0);
     tcg_gen_mov_tl(cpu_cc_src, s->T1);
     tcg_gen_mov_tl(s->cc_srcT, s->T0);
+
+//// --- Begin LibAFL code ---
+
+        libafl_gen_cmp(s->pc, s->T0, s->T1, ot);
+
+//// --- End LibAFL code ---
+
     tcg_gen_sub_tl(cpu_cc_dst, s->T0, s->T1);
     set_cc_op(s, CC_OP_SUBB + ot);
 

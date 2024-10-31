@@ -3848,6 +3848,13 @@ static void gen_SUB(DisasContext *s, X86DecodedInsn *decode)
         tcg_gen_sub_tl(s->T0, s->cc_srcT, s->T1);
     } else {
         tcg_gen_mov_tl(s->cc_srcT, s->T0);
+
+//// --- Begin LibAFL code ---
+
+        libafl_gen_cmp(s->pc, s->T0, s->T1, ot);
+
+//// --- End LibAFL code ---
+
         tcg_gen_sub_tl(s->T0, s->T0, s->T1);
     }
     prepare_update2_cc(decode, s, CC_OP_SUBB + ot);

@@ -1,3 +1,4 @@
+#include "libafl/tcg.h"
 #include "libafl/hooks/tcg/instruction.h"
 
 #include "libafl/cpu.h"
@@ -124,7 +125,7 @@ void libafl_qemu_hook_instruction_run(vaddr pc_next)
         TCGTemp* tmp2[2] = {tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1)};
 #endif
         // tcg_gen_callN(hk->callback, NULL, 2, tmp2);
-        tcg_gen_callN(&hk->helper_info, NULL, tmp2);
+        tcg_gen_callN(hk->helper_info.func, &hk->helper_info, NULL, tmp2);
 #if TARGET_LONG_BITS == 32
         tcg_temp_free_i32(tmp1);
 #else

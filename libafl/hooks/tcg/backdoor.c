@@ -1,3 +1,4 @@
+#include "libafl/tcg.h"
 #include "libafl/hooks/tcg/backdoor.h"
 
 struct libafl_backdoor_hook* libafl_backdoor_hooks;
@@ -40,7 +41,7 @@ void libafl_qemu_hook_backdoor_run(vaddr pc_next)
         TCGTemp* args[3] = {tcgv_i64_temp(tmp0), tcgv_ptr_temp(tcg_env),
                             tcgv_tl_temp(tmp2)};
 
-        tcg_gen_callN(&bhk->helper_info, NULL, args);
+        tcg_gen_callN(bhk->helper_info.func, &bhk->helper_info, NULL, args);
 
         bhk = bhk->next;
     }

@@ -1,3 +1,4 @@
+#include "libafl/tcg.h"
 #include "libafl/hooks/tcg/read_write.h"
 
 struct libafl_rw_hook* libafl_read_hooks;
@@ -201,7 +202,7 @@ static void libafl_gen_rw(TCGTemp* addr, MemOpIdx oi,
                 TCGv_i64 tmp1 = tcg_constant_i64(cur_id);
                 TCGTemp* tmp2[3] = {tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1),
                                     addr};
-                tcg_gen_callN(info, NULL, tmp2);
+                tcg_gen_callN(info->func, info, NULL, tmp2);
                 tcg_temp_free_i64(tmp0);
                 tcg_temp_free_i64(tmp1);
             } else if (hook->helper_infoN.func) {
@@ -215,7 +216,7 @@ static void libafl_gen_rw(TCGTemp* addr, MemOpIdx oi,
 #else
                                     tcgv_i64_temp(tmp2)};
 #endif
-                tcg_gen_callN(&hook->helper_infoN, NULL, tmp3);
+                tcg_gen_callN(hook->helper_infoN.func, &hook->helper_infoN, NULL, tmp3);
                 tcg_temp_free_i64(tmp0);
                 tcg_temp_free_i64(tmp1);
 #if TARGET_LONG_BITS == 32

@@ -3287,6 +3287,21 @@ static void disas_insn_old(DisasContext *s, CPUState *cpu, int b)
             gen_op_st_v(s, CODE64(s) + MO_32, s->T0, s->A0);
             break;
 
+//// --- Begin LibAFL code ---
+        case 0xc1: /* vmcall */
+            // move pc to T0
+            tcg_gen_movi_tl(s->T0, s->pc - s->cs_base);
+
+            // gen jump to next insn
+            gen_op_jmp_v(s, s->T0);
+            gen_bnd_jmp(s);
+            s->base.is_jmp = DISAS_JUMP;
+
+            // gen helper to signal to get out
+            gen_helper_libafl_qemu_handle_custom_insn(tcg_env, s->T0, tcg_constant_i32(LIBAFL_CUSTOM_INSN_NYX));
+            break;
+//// --- End LibAFL code ---
+
         case 0xc8: /* monitor */
             if (!(s->cpuid_ext_features & CPUID_EXT_MONITOR) || CPL(s) != 0) {
                 goto illegal_op;

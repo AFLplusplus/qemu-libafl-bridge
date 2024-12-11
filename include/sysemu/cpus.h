@@ -3,6 +3,10 @@
 
 #include "sysemu/accel-ops.h"
 
+//// --- Begin LibAFL code ---
+//#include "libafl/exit.h"
+//// --- End LibAFL code ---
+
 /* register accel-specific operations */
 void cpus_register_accel(const AccelOpsClass *i);
 

@@ -23,15 +23,13 @@ int libafl_qemu_toggle_hw_breakpoint(vaddr addr, bool set) {
     const AccelOpsClass *ops = cpus_get_accel();
 
     CPUState* cs;
-//    int i = 0;
     int ret = 0;
-//    vaddr old_addr, new_addr;
 
     if (!ops->insert_breakpoint) {
         return -ENOSYS;
     }
 
-    // let's add/remove it on every CPU
+    // let's add/remove the breakpoint on every CPU
     CPU_FOREACH(cs) {
         if (set) {
             ret = ops->insert_breakpoint(cs, type, addr, len);
@@ -42,22 +40,6 @@ int libafl_qemu_toggle_hw_breakpoint(vaddr addr, bool set) {
             return ret;
         }
     }
-
-//    // update libafl hw breakpoint state libafl_qemu_hw_breakpoints
-//    if (set) {
-//		old_addr = 0;
-//        new_addr = addr;
-//    } else {
-//    	old_addr = addr;
-//        new_addr = 0;
-//    }
-//    while (libafl_qemu_hw_breakpoints[i] != old_addr && i < 4) {
-//        ++i;
-//    }
-//    if (i==4) {
-//    	return -EINVAL;
-//    }
-//    libafl_qemu_hw_breakpoints[i] = new_addr;
 
     return 0;
 }

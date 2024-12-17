@@ -29,6 +29,8 @@ struct image_info* libafl_get_image_info(void) { return &libafl_image_info; }
 
 uint64_t libafl_get_brk(void) { return (uint64_t)target_brk; }
 
+uint64_t libafl_get_initial_brk(void) { return (uint64_t)initial_target_brk; }
+
 uint64_t libafl_set_brk(uint64_t new_brk)
 {
     uint64_t old_brk = (uint64_t)target_brk;

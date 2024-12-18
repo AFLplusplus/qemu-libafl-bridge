@@ -3572,6 +3572,7 @@ int cpu_memory_rw_debug(CPUState *cpu, vaddr addr,
     hwaddr phys_addr;
     vaddr l, page;
     uint8_t *buf = ptr;
+    bool is_memcpy_access;
 
     cpu_synchronize_state(cpu);
     while (len > 0) {
@@ -3590,11 +3591,24 @@ int cpu_memory_rw_debug(CPUState *cpu, vaddr addr,
             l = len;
         phys_addr += (addr & ~TARGET_PAGE_MASK);
         if (is_write) {
-            res = address_space_write_rom(cpu->cpu_ases[asidx].as, phys_addr,
-                                          attrs, buf, l);
+            /* if ram/rom region we access the memory
+              via memcpy instead of via the cpu */
+            hwaddr mr_len, addr1;
+            AddressSpace *as = cpu->cpu_ases[asidx].as;
+            MemoryRegion *mr = address_space_translate(as, phys_addr, &addr1, &mr_len, is_write, attrs);
+
+            is_memcpy_access = memory_region_is_ram(mr) || memory_region_is_romd(mr);
+            if(!is_memcpy_access) {
+                l = memory_access_size(mr, l, addr1);
+            }
         } else {
-            res = address_space_read(cpu->cpu_ases[asidx].as, phys_addr,
-                                     attrs, buf, l);
+            is_memcpy_access = false;
+        }
+
+        if (is_write && is_memcpy_access) {
+            res = address_space_write_rom(cpu->cpu_ases[asidx].as, phys_addr, attrs, buf, l);
+        } else {
+            res = address_space_rw(cpu->cpu_ases[asidx].as, phys_addr, attrs, buf, l, is_write);
         }
         if (res != MEMTX_OK) {
             return -1;

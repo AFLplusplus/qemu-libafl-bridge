@@ -61,7 +61,11 @@ static void *kvm_vcpu_thread_fn(void *arg)
         if (cpu_can_run(cpu)) {
             r = kvm_cpu_exec(cpu);
             if (r == EXCP_DEBUG) {
-                cpu_handle_guest_debug(cpu);
+//// --- Begin LibAFL code ---
+                // cpu_handle_guest_debug(cpu);
+				cpu->stopped = true;
+				libafl_qemu_trigger_breakpoint(cpu);
+//// --- End LibAFL code ---
             }
         }
         qemu_wait_io_event(cpu);

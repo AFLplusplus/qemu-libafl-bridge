@@ -3298,7 +3298,9 @@ static void disas_insn_old(DisasContext *s, CPUState *cpu, int b)
             s->base.is_jmp = DISAS_JUMP;
 
             // gen helper to signal to get out
-            gen_helper_libafl_qemu_handle_custom_insn(tcg_env, s->T0, tcg_constant_i32(LIBAFL_CUSTOM_INSN_NYX));
+            TCGv_i64 new_pc = tcg_temp_new_i64();
+            tcg_gen_extu_tl_i64(new_pc, s->T0);
+            gen_helper_libafl_qemu_handle_custom_insn(tcg_env, new_pc, tcg_constant_i32(LIBAFL_CUSTOM_INSN_NYX));
             break;
 //// --- End LibAFL code ---
 

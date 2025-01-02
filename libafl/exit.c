@@ -101,7 +101,7 @@ CPUState* libafl_last_exit_cpu(void)
 void libafl_exit_request_internal(CPUState* cpu, uint64_t pc,
                                   ShutdownCause cause, int signal)
 {
-    last_exit_reason.kind = LIBAFL_EXIT_REASON_INTERNAL;
+    last_exit_reason.kind = INTERNAL;
     last_exit_reason.data.internal.cause = cause;
     last_exit_reason.data.internal.signal = signal;
 
@@ -112,14 +112,14 @@ void libafl_exit_request_internal(CPUState* cpu, uint64_t pc,
 
 void libafl_exit_request_custom_insn(CPUState* cpu, target_ulong pc, enum libafl_custom_insn_kind kind)
 {
-    last_exit_reason.kind = LIBAFL_EXIT_REASON_CUSTOM_INSN;
+    last_exit_reason.kind = CUSTOM_INSN;
 
     prepare_qemu_exit(cpu, pc);
 }
 
 void libafl_exit_request_breakpoint(CPUState* cpu, target_ulong pc)
 {
-    last_exit_reason.kind = LIBAFL_EXIT_REASON_BREAKPOINT;
+    last_exit_reason.kind = BREAKPOINT;
     last_exit_reason.data.breakpoint.addr = pc;
 
     prepare_qemu_exit(cpu, pc);
@@ -129,7 +129,7 @@ void libafl_exit_request_breakpoint(CPUState* cpu, target_ulong pc)
 void libafl_exit_request_timeout(void)
 {
     expected_exit = true;
-    last_exit_reason.kind = LIBAFL_EXIT_REASON_TIMEOUT;
+    last_exit_reason.kind = TIMEOUT;
     last_exit_reason.cpu = current_cpu;
 
     qemu_system_debug_request();

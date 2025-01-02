@@ -11,10 +11,10 @@ struct libafl_breakpoint {
 };
 
 enum libafl_exit_reason_kind {
-    LIBAFL_EXIT_REASON_INTERNAL     = 0,
-    LIBAFL_EXIT_REASON_BREAKPOINT   = 1,
-    LIBAFL_EXIT_REASON_CUSTOM_INSN  = 2,
-    LIBAFL_EXIT_REASON_TIMEOUT      = 3,
+    INTERNAL     = 0,
+    BREAKPOINT   = 1,
+    CUSTOM_INSN  = 2,
+    TIMEOUT      = 3,
 };
 
 enum libafl_custom_insn_kind {

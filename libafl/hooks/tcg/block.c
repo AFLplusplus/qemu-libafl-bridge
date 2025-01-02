@@ -81,7 +81,8 @@ void libafl_qemu_hook_block_run(target_ulong pc)
             TCGv_i64 tmp0 = tcg_constant_i64(hook->data);
             TCGv_i64 tmp1 = tcg_constant_i64(cur_id);
             TCGTemp* tmp2[2] = {tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1)};
-            tcg_gen_callN(hook->helper_info.func, &hook->helper_info, NULL, tmp2);
+            tcg_gen_callN(hook->helper_info.func, &hook->helper_info, NULL,
+                          tmp2);
             tcg_temp_free_i64(tmp0);
             tcg_temp_free_i64(tmp1);
         }

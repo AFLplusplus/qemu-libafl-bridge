@@ -110,9 +110,10 @@ void libafl_exit_request_internal(CPUState* cpu, uint64_t pc,
     expected_exit = true;
 }
 
-void libafl_exit_request_sync_backdoor(CPUState* cpu, target_ulong pc)
+void libafl_exit_request_custom_insn(CPUState* cpu, target_ulong pc,
+                                     enum libafl_custom_insn_kind kind)
 {
-    last_exit_reason.kind = SYNC_EXIT;
+    last_exit_reason.kind = CUSTOM_INSN;
 
     prepare_qemu_exit(cpu, pc);
 }

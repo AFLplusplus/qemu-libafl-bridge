@@ -200,7 +200,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
                         db->pc_next += 4;
 
                         TCGv_i64 tmp0 = tcg_constant_i64((uint64_t)db->pc_next);
-                        gen_helper_libafl_qemu_handle_sync_backdoor(tcg_env, tmp0);
+                        gen_helper_libafl_qemu_handle_custom_insn(tcg_env, tmp0, tcg_constant_i32(LIBAFL_CUSTOM_INSN_LIBAFL));
                         tcg_temp_free_i64(tmp0);
                     }
                 }

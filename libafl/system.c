@@ -21,24 +21,23 @@ int libafl_qemu_toggle_hw_breakpoint(vaddr addr, bool set) {
     const int type = GDB_BREAKPOINT_HW;
     const vaddr len = 1;
     const AccelOpsClass *ops = cpus_get_accel();
-
-    CPUState* cs;
+    
+    CPUState *cs = first_cpu;
     int ret = 0;
 
     if (!ops->insert_breakpoint) {
         return -ENOSYS;
     }
 
-    // let's add/remove the breakpoint on every CPU
-    CPU_FOREACH(cs) {
-        if (set) {
-            ret = ops->insert_breakpoint(cs, type, addr, len);
-        } else {
-            ret = ops->remove_breakpoint(cs, type, addr, len);
-        }
-        if (ret != 0) {
-            return ret;
-        }
+    // let's add/remove the breakpoint on the first CPU.
+    // Both TCG and KVM propagate it to all CPUs internally.
+    if (set) {
+        ret = ops->insert_breakpoint(cs, type, addr, len);
+    } else {
+        ret = ops->remove_breakpoint(cs, type, addr, len);
+    }
+    if (ret != 0) {
+        return ret;
     }
 
     return 0;

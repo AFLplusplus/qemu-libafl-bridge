@@ -19,6 +19,7 @@
 int gdb_write_register(CPUState* cpu, uint8_t* mem_buf, int reg);
 
 static __thread GByteArray* libafl_qemu_mem_buf = NULL;
+static __thread int num_regs = 0;
 
 #ifdef CONFIG_USER_ONLY
 static __thread CPUArchState* libafl_qemu_env;
@@ -133,16 +134,22 @@ int libafl_qemu_read_reg(CPUState* cpu, int reg, uint8_t* val)
 
 int libafl_qemu_num_regs(CPUState* cpu)
 {
-    CPUClass* cc = CPU_GET_CLASS(cpu);
+    if (!num_regs) {
+        CPUClass* cc = CPU_GET_CLASS(cpu);
 
-    if (cc->gdb_num_core_regs) {
-        return cc->gdb_num_core_regs;
-    } else {
-        const GDBFeature *feature = gdb_find_static_feature(cc->gdb_core_xml_file);
-        g_assert(feature);
+        if (cc->gdb_num_core_regs) {
+            num_regs = cc->gdb_num_core_regs;
+        } else {
+            const GDBFeature *feature = gdb_find_static_feature(cc->gdb_core_xml_file);
 
-        return feature->num_regs;
+            g_assert(feature);
+            g_assert(feature->num_regs > 0);
+
+            num_regs = feature->num_regs;
+        }
     }
+
+    return num_regs;
 }
 
 void libafl_flush_jit(void)

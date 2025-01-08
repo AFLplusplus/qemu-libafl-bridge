@@ -134,7 +134,15 @@ int libafl_qemu_read_reg(CPUState* cpu, int reg, uint8_t* val)
 int libafl_qemu_num_regs(CPUState* cpu)
 {
     CPUClass* cc = CPU_GET_CLASS(cpu);
-    return cc->gdb_num_core_regs;
+
+    if (cc->gdb_num_core_regs) {
+        return cc->gdb_num_core_regs;
+    } else {
+        const GDBFeature *feature = gdb_find_static_feature(cc->gdb_core_xml_file);
+        g_assert(feature);
+
+        return feature->num_regs;
+    }
 }
 
 void libafl_flush_jit(void)

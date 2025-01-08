@@ -216,7 +216,8 @@ static void libafl_gen_rw(TCGTemp* addr, MemOpIdx oi,
 #else
                                     tcgv_i64_temp(tmp2)};
 #endif
-                tcg_gen_callN(hook->helper_infoN.func, &hook->helper_infoN, NULL, tmp3);
+                tcg_gen_callN(hook->helper_infoN.func, &hook->helper_infoN,
+                              NULL, tmp3);
                 tcg_temp_free_i64(tmp0);
                 tcg_temp_free_i64(tmp1);
 #if TARGET_LONG_BITS == 32

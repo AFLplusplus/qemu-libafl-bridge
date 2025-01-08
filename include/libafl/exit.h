@@ -10,16 +10,17 @@ struct libafl_breakpoint {
     struct libafl_breakpoint* next;
 };
 
-int libafl_qemu_set_breakpoint(target_ulong pc);
-int libafl_qemu_remove_breakpoint(target_ulong pc);
-void libafl_qemu_trigger_breakpoint(CPUState* cpu);
-void libafl_qemu_breakpoint_run(vaddr pc_next);
-
 enum libafl_exit_reason_kind {
     INTERNAL = 0,
     BREAKPOINT = 1,
-    SYNC_EXIT = 2,
+    CUSTOM_INSN = 2,
     TIMEOUT = 3,
+};
+
+enum libafl_custom_insn_kind {
+    LIBAFL_CUSTOM_INSN_UNDEFINED = 0,
+    LIBAFL_CUSTOM_INSN_LIBAFL = 1,
+    LIBAFL_CUSTOM_INSN_NYX = 2,
 };
 
 // QEMU exited on its own for some reason.
@@ -34,22 +35,31 @@ struct libafl_exit_reason_breakpoint {
 };
 
 // A synchronous exit has been triggered.
-struct libafl_exit_reason_sync_exit {};
+struct libafl_exit_reason_custom_insn {
+    enum libafl_custom_insn_kind kind;
+};
 
 // A timeout occured and we were asked to exit on timeout
-struct libafl_exit_reason_timeout {};
+struct libafl_exit_reason_timeout {
+};
 
 struct libafl_exit_reason {
     enum libafl_exit_reason_kind kind;
     CPUState* cpu; // CPU that triggered an exit.
     vaddr next_pc; // The PC that should be stored in the CPU when re-entering.
     union {
-        struct libafl_exit_reason_internal internal;        // kind == INTERNAL
-        struct libafl_exit_reason_breakpoint breakpoint;    // kind == BREAKPOINT
-        struct libafl_exit_reason_sync_exit sync_exit;      // kind == SYNC_EXIT
-        struct libafl_exit_reason_timeout timeout;          // kind == TIMEOUT
+        struct libafl_exit_reason_internal internal;     // kind == INTERNAL
+        struct libafl_exit_reason_breakpoint breakpoint; // kind == BREAKPOINT
+        struct libafl_exit_reason_custom_insn
+            custom_insn;                           // kind == CUSTOM_INSN
+        struct libafl_exit_reason_timeout timeout; // kind == TIMEOUT
     } data;
 };
+
+int libafl_qemu_set_breakpoint(target_ulong pc);
+int libafl_qemu_remove_breakpoint(target_ulong pc);
+void libafl_qemu_trigger_breakpoint(CPUState* cpu);
+void libafl_qemu_breakpoint_run(vaddr pc_next);
 
 // Only makes sense to call if an exit was expected
 // Will return NULL if there was no exit expected.
@@ -62,7 +72,8 @@ void libafl_sync_exit_cpu(void);
 void libafl_exit_request_internal(CPUState* cpu, uint64_t pc,
                                   ShutdownCause cause, int signal);
 void libafl_exit_request_breakpoint(CPUState* cpu, target_ulong pc);
-void libafl_exit_request_sync_backdoor(CPUState* cpu, target_ulong pc);
+void libafl_exit_request_custom_insn(CPUState* cpu, target_ulong pc,
+                                     enum libafl_custom_insn_kind kind);
 
 #ifndef CONFIG_USER_ONLY
 void libafl_exit_request_timeout(void);

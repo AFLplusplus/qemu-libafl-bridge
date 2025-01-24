@@ -33,6 +33,7 @@
 
 //// --- Begin LibAFL code ---
 #include "libafl/gdb.h"
+#include "gdbstub/enums.h"
 //// --- End LibAFL code ---
 
 /* System emulation specific state */
@@ -655,6 +656,12 @@ bool gdb_supports_guest_debug(void)
 int gdb_breakpoint_insert(CPUState *cs, int type, vaddr addr, vaddr len)
 {
     const AccelOpsClass *ops = cpus_get_accel();
+    //// --- Begin LibAFL code ---
+    // HW breakpoints are reserved for LibAFL
+    if (type == GDB_BREAKPOINT_HW) {
+        return -ENOSYS;
+    }
+    //// --- End LibAFL code ---
     if (ops->insert_breakpoint) {
         return ops->insert_breakpoint(cs, type, addr, len);
     }

@@ -25,9 +25,10 @@
 #include "tcg-internal.h"
 
 //// --- Begin LibAFL code ---
+extern tcg_target_ulong libafl_gen_cur_pc;
 
-void libafl_gen_read(TCGTemp *addr, MemOpIdx oi);
-void libafl_gen_write(TCGTemp *addr, MemOpIdx oi);
+void libafl_gen_read(TCGTemp* pc, TCGTemp* addr, MemOpIdx oi);
+void libafl_gen_write(TCGTemp* pc, TCGTemp* addr, MemOpIdx oi);
 
 //// --- End LibAFL code ---
 
@@ -293,7 +294,8 @@ void tcg_gen_ld_vec(TCGv_vec r, TCGv_ptr b, TCGArg o)
     vec_gen_ldst(INDEX_op_ld_vec, r, b, o);
 
 //// --- Begin LibAFL code ---
-    libafl_gen_read(tcgv_ptr_temp(b), oi);
+    TCGv_i64 cur_pc = tcg_constant_i64(libafl_gen_cur_pc);
+    libafl_gen_read(tcgv_i64_temp(cur_pc), tcgv_ptr_temp(b), oi);
 //// --- End LibAFL code ---
 }
 
@@ -309,7 +311,8 @@ void tcg_gen_st_vec(TCGv_vec r, TCGv_ptr b, TCGArg o)
     vec_gen_ldst(INDEX_op_st_vec, r, b, o);
 
 //// --- Begin LibAFL code ---
-    libafl_gen_write(tcgv_ptr_temp(b), oi);
+    TCGv_i64 cur_pc = tcg_constant_i64(libafl_gen_cur_pc);
+    libafl_gen_write(tcgv_i64_temp(cur_pc), tcgv_ptr_temp(b), oi);
 //// --- End LibAFL code ---
 }
 
@@ -328,7 +331,8 @@ void tcg_gen_stl_vec(TCGv_vec r, TCGv_ptr b, TCGArg o, TCGType low_type)
     vec_gen_3(INDEX_op_st_vec, low_type, 0, ri, bi, o);
 
 //// --- Begin LibAFL code ---
-    libafl_gen_write(tcgv_ptr_temp(b), oi);
+    TCGv_i64 cur_pc = tcg_constant_i64(libafl_gen_cur_pc);
+    libafl_gen_write(tcgv_i64_temp(cur_pc), tcgv_ptr_temp(b), oi);
 //// --- End LibAFL code ---
 }
 

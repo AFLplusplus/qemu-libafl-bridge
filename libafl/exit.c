@@ -165,7 +165,6 @@ void libafl_qemu_breakpoint_run(vaddr pc_next)
         if (bp->addr == pc_next) {
             TCGv_i64 tmp0 = tcg_constant_i64((uint64_t)pc_next);
             gen_helper_libafl_qemu_handle_breakpoint(tcg_env, tmp0);
-            tcg_temp_free_i64(tmp0);
         }
         bp = bp->next;
     }

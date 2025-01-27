@@ -17,12 +17,13 @@ int libafl_qemu_remove_hw_breakpoint(vaddr addr)
     return libafl_qemu_toggle_hw_breakpoint(addr, false);
 }
 
-int libafl_qemu_toggle_hw_breakpoint(vaddr addr, bool set) {
+int libafl_qemu_toggle_hw_breakpoint(vaddr addr, bool set)
+{
     const int type = GDB_BREAKPOINT_HW;
     const vaddr len = 1;
-    const AccelOpsClass *ops = cpus_get_accel();
-    
-    CPUState *cs = first_cpu;
+    const AccelOpsClass* ops = cpus_get_accel();
+
+    CPUState* cs = first_cpu;
     int ret = 0;
 
     if (!ops->insert_breakpoint) {

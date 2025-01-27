@@ -3,18 +3,14 @@
 
 #include "libafl/cpu.h"
 
-target_ulong libafl_gen_cur_pc;
+tcg_target_ulong libafl_gen_cur_pc;
 struct libafl_instruction_hook*
     libafl_qemu_instruction_hooks[LIBAFL_TABLES_SIZE];
 size_t libafl_qemu_hooks_num = 0;
 
 size_t libafl_qemu_add_instruction_hooks(target_ulong pc,
-                                         void (*callback)(uint64_t data,
-                                                          target_ulong pc),
-                                         uint64_t
-
-                                             data,
-                                         int invalidate)
+                                         libafl_instruction_cb callback,
+                                         uint64_t data, int invalidate)
 {
     CPUState* cpu;
 
@@ -124,13 +120,6 @@ void libafl_qemu_hook_instruction_run(vaddr pc_next)
         TCGv_i64 tmp1 = tcg_constant_i64(pc_next);
         TCGTemp* tmp2[2] = {tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1)};
 #endif
-        // tcg_gen_callN(hk->callback, NULL, 2, tmp2);
         tcg_gen_callN(hk->helper_info.func, &hk->helper_info, NULL, tmp2);
-#if TARGET_LONG_BITS == 32
-        tcg_temp_free_i32(tmp1);
-#else
-        tcg_temp_free_i64(tmp1);
-#endif
-        tcg_temp_free_i64(tmp0);
     }
 }

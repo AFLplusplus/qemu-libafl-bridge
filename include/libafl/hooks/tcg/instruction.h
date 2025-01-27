@@ -14,6 +14,8 @@
 #define LIBAFL_TABLES_HASH(p)                                                  \
     (((13 * ((size_t)(p))) ^ (((size_t)(p)) >> 15)) % LIBAFL_TABLES_SIZE)
 
+typedef void (*libafl_instruction_cb)(uint64_t data, target_ulong pc);
+
 struct libafl_instruction_hook {
     // data
     uint64_t data;
@@ -28,8 +30,7 @@ struct libafl_instruction_hook {
 };
 
 size_t libafl_qemu_add_instruction_hooks(target_ulong pc,
-                                         void (*callback)(uint64_t data,
-                                                          target_ulong pc),
+                                         libafl_instruction_cb callback,
                                          uint64_t data, int invalidate);
 
 int libafl_qemu_remove_instruction_hook(size_t num, int invalidate);

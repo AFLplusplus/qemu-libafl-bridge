@@ -140,7 +140,8 @@ int libafl_qemu_num_regs(CPUState* cpu)
         if (cc->gdb_num_core_regs) {
             num_regs = cc->gdb_num_core_regs;
         } else {
-            const GDBFeature *feature = gdb_find_static_feature(cc->gdb_core_xml_file);
+            const GDBFeature* feature =
+                gdb_find_static_feature(cc->gdb_core_xml_file);
 
             g_assert(feature);
             g_assert(feature->num_regs > 0);

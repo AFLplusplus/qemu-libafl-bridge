@@ -116,14 +116,8 @@ void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot)
             TCGv_i64 tmp0 = tcg_constant_i64(hook->data);
             TCGv_i64 tmp1 = tcg_constant_i64(cur_id);
             TCGTemp* tmp2[4] = {tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1),
-#if TARGET_LONG_BITS == 32
-                                tcgv_i32_temp(op0), tcgv_i32_temp(op1)};
-#else
-                                tcgv_i64_temp(op0), tcgv_i64_temp(op1)};
-#endif
+                                tcgv_tl_temp(op0), tcgv_tl_temp(op1)};
             tcg_gen_callN(info->func, info, NULL, tmp2);
-            tcg_temp_free_i64(tmp0);
-            tcg_temp_free_i64(tmp1);
         }
         hook = hook->next;
     }

@@ -199,7 +199,6 @@ static void libafl_gen_rw(TCGTemp* pc, TCGTemp* addr, MemOpIdx oi,
         }
         hook = hook->next;
     }
-
 }
 
 void libafl_gen_read(TCGTemp* pc, TCGTemp* addr, MemOpIdx oi)

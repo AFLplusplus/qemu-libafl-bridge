@@ -3,6 +3,13 @@
 
 #include "libafl/cpu.h"
 
+static TCGHelperInfo libafl_instruction_info = {
+    .func = NULL,
+    .name = "libafl_instruction_hook",
+    .flags = dh_callflag(void),
+    .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(tl, 2),
+};
+
 tcg_target_ulong libafl_gen_cur_pc;
 struct libafl_instruction_hook*
     libafl_qemu_instruction_hooks[LIBAFL_TABLES_SIZE];
@@ -23,13 +30,9 @@ size_t libafl_qemu_add_instruction_hooks(target_ulong pc,
     struct libafl_instruction_hook* hk =
         calloc(sizeof(struct libafl_instruction_hook), 1);
     hk->addr = pc;
-    // hk->callback = callback;
     hk->data = data;
+    hk->helper_info = libafl_instruction_info;
     hk->helper_info.func = callback;
-    hk->helper_info.name = "libafl_instruction_hook";
-    hk->helper_info.flags = dh_callflag(void);
-    hk->helper_info.typemask =
-        dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(tl, 2);
     // TODO check for overflow
     hk->num = libafl_qemu_hooks_num++;
     hk->next = libafl_qemu_instruction_hooks[idx];
@@ -113,13 +116,8 @@ void libafl_qemu_hook_instruction_run(vaddr pc_next)
         libafl_search_instruction_hook(pc_next);
     if (hk) {
         TCGv_i64 tmp0 = tcg_constant_i64(hk->data);
-#if TARGET_LONG_BITS == 32
-        TCGv_i32 tmp1 = tcg_constant_i32(pc_next);
-        TCGTemp* tmp2[2] = {tcgv_i64_temp(tmp0), tcgv_i32_temp(tmp1)};
-#else
-        TCGv_i64 tmp1 = tcg_constant_i64(pc_next);
-        TCGTemp* tmp2[2] = {tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1)};
-#endif
+        TCGv tmp1 = tcg_constant_tl(pc_next);
+        TCGTemp* tmp2[2] = {tcgv_i64_temp(tmp0), tcgv_tl_temp(tmp1)};
         tcg_gen_callN(hk->helper_info.func, &hk->helper_info, NULL, tmp2);
     }
 }

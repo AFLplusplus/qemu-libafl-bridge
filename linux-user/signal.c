@@ -732,6 +732,13 @@ void die_with_signal(int host_sig)
      */
     // sigfillset(&act.sa_mask);
     // sigaction(host_sig, &act, NULL);
+
+    // make sure signal is not blocked
+    sigset_t host_sig_set;
+    sigemptyset(&host_sig_set);
+    sigaddset(&host_sig_set, host_sig);
+
+    sigprocmask(SIG_UNBLOCK, &host_sig_set, NULL);
 //// --- End LibAFL code ---
 
     kill(getpid(), host_sig);

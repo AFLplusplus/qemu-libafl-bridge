@@ -16,10 +16,22 @@ struct libafl_mapinfo {
     bool is_valid;
 };
 
-extern void (*libafl_dump_core_hook)(int host_sig);
+struct libafl_qemu_sig_ctx {
+    bool in_qemu_sig_hdlr; // we were inside qemu native signal handler
+    bool is_target_signal; // if we were in qemu signal handle, true -> is a
+                           // propagated target signal; false -> is a host qemu
+                           // signal.
+};
+
 extern int libafl_force_dfl;
 
-void libafl_dump_core_exec(int signal);
+void libafl_qemu_native_signal_handler(int host_sig, siginfo_t* info,
+                                       void* puc);
+
+struct libafl_qemu_sig_ctx* libafl_qemu_signal_context(void);
+void libafl_set_in_target_signal_ctx(void);
+void libafl_set_in_host_signal_ctx(void);
+void libafl_unset_in_signal_ctx(void);
 
 void libafl_qemu_handle_crash(int host_sig, siginfo_t* info, void* puc);
 

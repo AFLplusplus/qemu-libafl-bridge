@@ -78,7 +78,6 @@ static void prepare_qemu_exit(CPUState* cpu, target_ulong next_pc)
 
 #ifndef CONFIG_USER_ONLY
     qemu_system_debug_request();
-    cpu->stopped = true; // TODO check if still needed
 #endif
 
     // in usermode, this may be called from the syscall hook, thus already out

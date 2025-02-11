@@ -169,6 +169,12 @@ static int rr_cpu_count(void)
     return cpu_count;
 }
 
+//// --- Begin LibAFL code ---
+
+#include "libafl/exit.h"
+
+//// --- End LibAFL code ---
+
 /*
  * In the single-threaded case each vCPU is simulated in turn. If
  * there is more than a single vCPU we create a simple timer to kick
@@ -273,6 +279,12 @@ static void *rr_cpu_thread_fn(void *arg)
                     bql_lock();
                     break;
                 }
+//// --- Begin LibAFL code ---
+                else if (r == EXCP_LIBAFL_EXIT) {
+                    cpu->stopped = true;
+                    break;
+                }
+//// --- End LibAFL code ---
             } else if (cpu->stop) {
                 if (cpu->unplug) {
                     cpu = CPU_NEXT(cpu);

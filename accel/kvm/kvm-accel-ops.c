@@ -64,6 +64,7 @@ static void *kvm_vcpu_thread_fn(void *arg)
 //// --- Begin LibAFL code ---
                 // cpu_handle_guest_debug(cpu);
 				cpu->stopped = true;
+                kvm_cpu_synchronize_state(cpu);
 				libafl_qemu_trigger_breakpoint(cpu);
 //// --- End LibAFL code ---
             }

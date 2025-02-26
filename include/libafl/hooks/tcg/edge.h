@@ -9,10 +9,15 @@
 #include "libafl/exit.h"
 #include "libafl/hook.h"
 
+typedef uint64_t (*libafl_edge_gen_cb)(uint64_t data, target_ulong src,
+                                       target_ulong dst);
+typedef void (*libafl_edge_exec_cb)(uint64_t data, uint64_t id);
+typedef size_t (*libafl_edge_jit_cb)(uint64_t data, uint64_t id);
+
 struct libafl_edge_hook {
     // functions
-    uint64_t (*gen)(uint64_t data, target_ulong src, target_ulong dst);
-    size_t (*jit)(uint64_t data, uint64_t id); // optional opt
+    libafl_edge_gen_cb gen_cb;
+    libafl_edge_jit_cb jit_cb; // optional opt
 
     // data
     uint64_t data;
@@ -31,15 +36,12 @@ TranslationBlock* libafl_gen_edge(CPUState* cpu, target_ulong src_block,
                                   target_ulong cs_base, uint32_t flags,
                                   int cflags);
 
-size_t libafl_add_edge_hook(uint64_t (*gen)(uint64_t data, target_ulong src,
-                                            target_ulong dst),
-                            void (*exec)(uint64_t data, uint64_t id),
-                            uint64_t data);
+size_t libafl_add_edge_hook(libafl_edge_gen_cb gen_cb,
+                            libafl_edge_exec_cb exec_cb, uint64_t data);
 
 bool libafl_qemu_edge_hook_set_jit(
     size_t num,
-    size_t (*jit)(uint64_t,
-                  uint64_t)); // no param names to avoid to be marked as safe
+    libafl_edge_jit_cb jit_cb); // no param names to avoid to be marked as safe
 
 int libafl_qemu_remove_edge_hook(size_t num, int invalidate);
 

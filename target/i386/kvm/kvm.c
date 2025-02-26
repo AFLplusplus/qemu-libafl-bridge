@@ -5649,6 +5649,7 @@ static int kvm_handle_debug(X86CPU *cpu,
     } else if (kvm_find_sw_breakpoint(cs, arch_info->pc)) {
         ret = EXCP_DEBUG;
     }
+
     if (ret == 0) {
         cpu_synchronize_state(cs);
         assert(env->exception_nr == -1);

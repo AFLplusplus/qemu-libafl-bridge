@@ -1,8 +1,8 @@
 #include "libafl/tcg.h"
 #include "libafl/hooks/tcg/backdoor.h"
 
-struct libafl_backdoor_hook* libafl_backdoor_hooks;
-size_t libafl_backdoor_hooks_num = 0;
+static struct libafl_backdoor_hook* libafl_backdoor_hooks;
+static size_t libafl_backdoor_hooks_num = 0;
 
 static TCGHelperInfo libafl_exec_backdoor_hook_info = {
     .func = NULL,
@@ -13,9 +13,7 @@ static TCGHelperInfo libafl_exec_backdoor_hook_info = {
 
 GEN_REMOVE_HOOK(backdoor)
 
-size_t libafl_add_backdoor_hook(void (*exec)(uint64_t data, CPUArchState* cpu,
-                                             target_ulong pc),
-                                uint64_t data)
+size_t libafl_add_backdoor_hook(libafl_backdoor_exec_cb exec_cb, uint64_t data)
 {
     struct libafl_backdoor_hook* hook =
         calloc(sizeof(struct libafl_backdoor_hook), 1);
@@ -27,7 +25,7 @@ size_t libafl_add_backdoor_hook(void (*exec)(uint64_t data, CPUArchState* cpu,
 
     memcpy(&hook->helper_info, &libafl_exec_backdoor_hook_info,
            sizeof(TCGHelperInfo));
-    hook->helper_info.func = exec;
+    hook->helper_info.func = exec_cb;
 
     return hook->num;
 }

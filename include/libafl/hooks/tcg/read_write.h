@@ -21,7 +21,7 @@ typedef void (*libafl_rw_execN_cb)(uint64_t data, uint64_t id, target_ulong pc,
 
 struct libafl_rw_hook {
     // functions
-    libafl_rw_gen_cb gen;
+    libafl_rw_gen_cb gen_cb;
 
     // data
     uint64_t data;
@@ -41,15 +41,18 @@ struct libafl_rw_hook {
 void libafl_gen_read(TCGTemp* pc, TCGTemp* addr, MemOpIdx oi);
 void libafl_gen_write(TCGTemp* pc, TCGTemp* addr, MemOpIdx oi);
 
-size_t libafl_add_read_hook(libafl_rw_gen_cb gen, libafl_rw_exec_cb exec1,
-                            libafl_rw_exec_cb exec2, libafl_rw_exec_cb exec4,
-                            libafl_rw_exec_cb exec8, libafl_rw_execN_cb execN,
-                            uint64_t data);
+size_t libafl_add_read_hook(libafl_rw_gen_cb gen_cb, libafl_rw_exec_cb exec1_cb,
+                            libafl_rw_exec_cb exec2_cb,
+                            libafl_rw_exec_cb exec4_cb,
+                            libafl_rw_exec_cb exec8_cb,
+                            libafl_rw_execN_cb execN_cb, uint64_t data);
 
-size_t libafl_add_write_hook(libafl_rw_gen_cb gen, libafl_rw_exec_cb exec1,
-                             libafl_rw_exec_cb exec2, libafl_rw_exec_cb exec4,
-                             libafl_rw_exec_cb exec8, libafl_rw_execN_cb execN,
-                             uint64_t data);
+size_t libafl_add_write_hook(libafl_rw_gen_cb gen_cb,
+                             libafl_rw_exec_cb exec1_cb,
+                             libafl_rw_exec_cb exec2_cb,
+                             libafl_rw_exec_cb exec4_cb,
+                             libafl_rw_exec_cb exec8_cb,
+                             libafl_rw_execN_cb execN_cb, uint64_t data);
 
 int libafl_qemu_remove_read_hook(size_t num, int invalidate);
 int libafl_qemu_remove_write_hook(size_t num, int invalidate);

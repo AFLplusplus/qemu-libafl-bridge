@@ -285,7 +285,7 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
 
     //// --- Begin LibAFL code ---
 
-    libafl_qemu_hook_block_run(pc);
+    libafl_qemu_hook_block_pre_run(pc);
 
     //// --- End LibAFL code ---
 
@@ -717,7 +717,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
 
 //// --- Begin LibAFL code ---
 
-    libafl_qemu_hook_block_post_gen(tb, pc);
+    libafl_qemu_hook_block_post_run(tb, pc);
 
 //// --- End LibAFL code ---
 

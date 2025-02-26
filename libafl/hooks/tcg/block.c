@@ -1,8 +1,8 @@
 #include "libafl/tcg.h"
 #include "libafl/hooks/tcg/block.h"
 
-struct libafl_block_hook* libafl_block_hooks;
-size_t libafl_block_hooks_num = 0;
+static struct libafl_block_hook* libafl_block_hooks;
+static size_t libafl_block_hooks_num = 0;
 
 static TCGHelperInfo libafl_exec_block_hook_info = {
     .func = NULL,
@@ -13,68 +13,64 @@ static TCGHelperInfo libafl_exec_block_hook_info = {
 
 GEN_REMOVE_HOOK(block)
 
-size_t libafl_add_block_hook(uint64_t (*gen)(uint64_t data, target_ulong pc),
-                             void (*post_gen)(uint64_t data, target_ulong pc,
-                                              target_ulong block_length),
-                             void (*exec)(uint64_t data, uint64_t id),
-                             uint64_t data)
+size_t libafl_add_block_hook(libafl_block_pre_gen_cb pre_gen_cb,
+                             libafl_block_post_gen_cb post_gen_cb,
+                             libafl_block_exec_cb exec_cb, uint64_t data)
 {
     CPUState* cpu;
     CPU_FOREACH(cpu) { tb_flush(cpu); }
 
     struct libafl_block_hook* hook =
         calloc(sizeof(struct libafl_block_hook), 1);
-    hook->gen = gen;
-    hook->post_gen = post_gen;
-    // hook->exec = exec;
+    hook->pre_gen_cb = pre_gen_cb;
+    hook->post_gen_cb = post_gen_cb;
     hook->data = data;
     hook->num = libafl_block_hooks_num++;
     hook->next = libafl_block_hooks;
     libafl_block_hooks = hook;
 
-    if (exec) {
+    if (exec_cb) {
         memcpy(&hook->helper_info, &libafl_exec_block_hook_info,
                sizeof(TCGHelperInfo));
-        hook->helper_info.func = exec;
+        hook->helper_info.func = exec_cb;
     }
 
     return hook->num;
 }
 
-bool libafl_qemu_block_hook_set_jit(size_t num,
-                                    size_t (*jit)(uint64_t data, uint64_t id))
+bool libafl_qemu_block_hook_set_jit(size_t num, libafl_block_jit_cb jit_cb)
 {
     struct libafl_block_hook* hk = libafl_block_hooks;
     while (hk) {
         if (hk->num == num) {
-            hk->jit = jit;
+            hk->jit_cb = jit_cb;
             return true;
-        } else {
-            hk = hk->next;
         }
+
+        hk = hk->next;
     }
     return false;
 }
 
-void libafl_qemu_hook_block_post_gen(TranslationBlock* tb, vaddr pc)
+void libafl_qemu_hook_block_post_run(TranslationBlock* tb, vaddr pc)
 {
     struct libafl_block_hook* hook = libafl_block_hooks;
     while (hook) {
-        if (hook->post_gen)
-            hook->post_gen(hook->data, pc, tb->size);
+        if (hook->post_gen_cb)
+            hook->post_gen_cb(hook->data, pc, tb->size);
         hook = hook->next;
     }
 }
 
-void libafl_qemu_hook_block_run(target_ulong pc)
+void libafl_qemu_hook_block_pre_run(target_ulong pc)
 {
     struct libafl_block_hook* hook = libafl_block_hooks;
 
     while (hook) {
         uint64_t cur_id = 0;
 
-        if (hook->gen) {
-            cur_id = hook->gen(hook->data, pc);
+        if (hook->pre_gen_cb) {
+            cur_id = hook->pre_gen_cb(hook->data, pc);
         }
 
         if (cur_id != (uint64_t)-1 && hook->helper_info.func) {
@@ -87,8 +83,8 @@ void libafl_qemu_hook_block_run(target_ulong pc)
             tcg_temp_free_i64(tmp1);
         }
 
-        if (cur_id != (uint64_t)-1 && hook->jit) {
-            hook->jit(hook->data, cur_id);
+        if (cur_id != (uint64_t)-1 && hook->jit_cb) {
+            hook->jit_cb(hook->data, cur_id);
         }
 
         hook = hook->next;

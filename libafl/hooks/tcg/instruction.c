@@ -11,12 +11,13 @@ static TCGHelperInfo libafl_instruction_info = {
 };
 
 tcg_target_ulong libafl_gen_cur_pc;
-struct libafl_instruction_hook*
+
+static struct libafl_instruction_hook*
     libafl_qemu_instruction_hooks[LIBAFL_TABLES_SIZE];
-size_t libafl_qemu_hooks_num = 0;
+static size_t libafl_qemu_hooks_num = 0;
 
 size_t libafl_qemu_add_instruction_hooks(target_ulong pc,
-                                         libafl_instruction_cb callback,
+                                         libafl_instruction_cb exec_cb,
                                          uint64_t data, int invalidate)
 {
     CPUState* cpu;
@@ -32,7 +33,7 @@ size_t libafl_qemu_add_instruction_hooks(target_ulong pc,
     hk->addr = pc;
     hk->data = data;
     hk->helper_info = libafl_instruction_info;
-    hk->helper_info.func = callback;
+    hk->helper_info.func = exec_cb;
     // TODO check for overflow
     hk->num = libafl_qemu_hooks_num++;
     hk->next = libafl_qemu_instruction_hooks[idx];

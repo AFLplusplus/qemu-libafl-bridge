@@ -1,8 +1,8 @@
 #include "libafl/tcg.h"
 #include "libafl/hooks/tcg/cmp.h"
 
-struct libafl_cmp_hook* libafl_cmp_hooks;
-size_t libafl_cmp_hooks_num = 0;
+static struct libafl_cmp_hook* libafl_cmp_hooks;
+static size_t libafl_cmp_hooks_num = 0;
 
 static TCGHelperInfo libafl_exec_cmp_hook1_info = {
     .func = NULL,
@@ -32,47 +32,41 @@ static TCGHelperInfo libafl_exec_cmp_hook8_info = {
 
 GEN_REMOVE_HOOK(cmp)
 
-size_t libafl_add_cmp_hook(
-    uint64_t (*gen)(uint64_t data, target_ulong pc, size_t size),
-    void (*exec1)(uint64_t data, uint64_t id, uint8_t v0, uint8_t v1),
-    void (*exec2)(uint64_t data, uint64_t id, uint16_t v0, uint16_t v1),
-    void (*exec4)(uint64_t data, uint64_t id, uint32_t v0, uint32_t v1),
-    void (*exec8)(uint64_t data, uint64_t id, uint64_t v0, uint64_t v1),
-    uint64_t data)
+size_t libafl_add_cmp_hook(libafl_cmp_gen_cb gen_cb,
+                           libafl_cmp_exec1_cb exec1_cb,
+                           libafl_cmp_exec2_cb exec2_cb,
+                           libafl_cmp_exec4_cb exec4_cb,
+                           libafl_cmp_exec8_cb exec8_cb, uint64_t data)
 {
     CPUState* cpu;
     CPU_FOREACH(cpu) { tb_flush(cpu); }
 
     struct libafl_cmp_hook* hook = calloc(sizeof(struct libafl_cmp_hook), 1);
-    hook->gen = gen;
-    /*hook->exec1 = exec1;
-    hook->exec2 = exec2;
-    hook->exec4 = exec4;
-    hook->exec8 = exec8;*/
+    hook->gen_cb = gen_cb;
     hook->data = data;
     hook->num = libafl_cmp_hooks_num++;
     hook->next = libafl_cmp_hooks;
     libafl_cmp_hooks = hook;
 
-    if (exec1) {
+    if (exec1_cb) {
         memcpy(&hook->helper_info1, &libafl_exec_cmp_hook1_info,
                sizeof(TCGHelperInfo));
-        hook->helper_info1.func = exec1;
+        hook->helper_info1.func = exec1_cb;
     }
-    if (exec2) {
+    if (exec2_cb) {
         memcpy(&hook->helper_info2, &libafl_exec_cmp_hook2_info,
                sizeof(TCGHelperInfo));
-        hook->helper_info2.func = exec2;
+        hook->helper_info2.func = exec2_cb;
     }
-    if (exec4) {
+    if (exec4_cb) {
         memcpy(&hook->helper_info4, &libafl_exec_cmp_hook4_info,
                sizeof(TCGHelperInfo));
-        hook->helper_info4.func = exec4;
+        hook->helper_info4.func = exec4_cb;
     }
-    if (exec8) {
+    if (exec8_cb) {
         memcpy(&hook->helper_info8, &libafl_exec_cmp_hook8_info,
                sizeof(TCGHelperInfo));
-        hook->helper_info8.func = exec8;
+        hook->helper_info8.func = exec8_cb;
     }
 
     return hook->num;
@@ -101,8 +95,8 @@ void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot)
     struct libafl_cmp_hook* hook = libafl_cmp_hooks;
     while (hook) {
         uint64_t cur_id = 0;
-        if (hook->gen)
-            cur_id = hook->gen(hook->data, pc, size);
+        if (hook->gen_cb)
+            cur_id = hook->gen_cb(hook->data, pc, size);
         TCGHelperInfo* info = NULL;
         if (size == 1 && hook->helper_info1.func)
             info = &hook->helper_info1;

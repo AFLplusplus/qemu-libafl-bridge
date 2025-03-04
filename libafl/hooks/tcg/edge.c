@@ -1,8 +1,8 @@
 #include "libafl/tcg.h"
 #include "libafl/hooks/tcg/edge.h"
 
-struct libafl_edge_hook* libafl_edge_hooks;
-size_t libafl_edge_hooks_num = 0;
+static struct libafl_edge_hook* libafl_edge_hooks;
+static size_t libafl_edge_hooks_num = 0;
 
 static TCGHelperInfo libafl_exec_edge_hook_info = {
     .func = NULL,
@@ -13,42 +13,39 @@ static TCGHelperInfo libafl_exec_edge_hook_info = {
 
 GEN_REMOVE_HOOK(edge)
 
-size_t libafl_add_edge_hook(uint64_t (*gen)(uint64_t data, target_ulong src,
-                                            target_ulong dst),
-                            void (*exec)(uint64_t data, uint64_t id),
-                            uint64_t data)
+size_t libafl_add_edge_hook(libafl_edge_gen_cb gen_cb,
+                            libafl_edge_exec_cb exec_cb, uint64_t data)
 {
     CPUState* cpu;
     CPU_FOREACH(cpu) { tb_flush(cpu); }
 
     struct libafl_edge_hook* hook = calloc(sizeof(struct libafl_edge_hook), 1);
-    hook->gen = gen;
+    hook->gen_cb = gen_cb;
     // hook->exec = exec;
     hook->data = data;
     hook->num = libafl_edge_hooks_num++;
     hook->next = libafl_edge_hooks;
     libafl_edge_hooks = hook;
 
-    if (exec) {
+    if (exec_cb) {
         memcpy(&hook->helper_info, &libafl_exec_edge_hook_info,
                sizeof(TCGHelperInfo));
-        hook->helper_info.func = exec;
+        hook->helper_info.func = exec_cb;
     }
 
     return hook->num;
 }
 
-bool libafl_qemu_edge_hook_set_jit(size_t num,
-                                   size_t (*jit)(uint64_t data, uint64_t id))
+bool libafl_qemu_edge_hook_set_jit(size_t num, libafl_edge_jit_cb jit_cb)
 {
     struct libafl_edge_hook* hk = libafl_edge_hooks;
     while (hk) {
         if (hk->num == num) {
-            hk->jit = jit;
+            hk->jit_cb = jit_cb;
             return true;
-        } else {
-            hk = hk->next;
         }
+
+        hk = hk->next;
     }
     return false;
 }
@@ -61,12 +58,12 @@ bool libafl_qemu_hook_edge_gen(target_ulong src_block, target_ulong dst_block)
     while (hook) {
         hook->cur_id = 0;
 
-        if (hook->gen) {
-            hook->cur_id = hook->gen(hook->data, src_block, dst_block);
+        if (hook->gen_cb) {
+            hook->cur_id = hook->gen_cb(hook->data, src_block, dst_block);
         }
 
         if (hook->cur_id != (uint64_t)-1 &&
-            (hook->helper_info.func || hook->jit)) {
+            (hook->helper_info.func || hook->jit_cb)) {
             no_exec_hook = false;
         }
 
@@ -90,8 +87,8 @@ void libafl_qemu_hook_edge_run(void)
             tcg_temp_free_i64(tmp0);
             tcg_temp_free_i64(tmp1);
         }
-        if (hook->cur_id != (uint64_t)-1 && hook->jit) {
-            hook->jit(hook->data, hook->cur_id);
+        if (hook->cur_id != (uint64_t)-1 && hook->jit_cb) {
+            hook->jit_cb(hook->data, hook->cur_id);
         }
         hook = hook->next;
     }

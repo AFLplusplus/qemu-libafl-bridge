@@ -1859,3 +1859,43 @@ SRST
   List event channels in the guest
 ERST
 #endif
+
+
+    {
+        .name       = "syx-snapshot-new",
+        .args_type  = "",
+        .params     = "",
+        .help       = "create a new snapshot and store it in the static variable",
+        .cmd        = hmp_syx_snapshot_new,
+    },
+
+SRST
+``syx-snapshot-new``
+  Create a new snapshot with tracking enabled, using DEVICE_SNAPSHOT_ALL.
+ERST
+
+    {
+        .name       = "syx-snapshot-root-restore",
+        .args_type  = "",
+        .params     = "",
+        .help       = "restore the root snapshot from the static variable",
+        .cmd        = hmp_syx_snapshot_root_restore,
+    },
+
+SRST
+``syx-snapshot-root-restore``
+  Restore the root snapshot stored in the static variable.
+ERST
+
+    {
+        .name       = "syx-snapshot-init",
+        .args_type  = "",
+        .params     = "",
+        .help       = "Use BEFORE starting emulation",
+        .cmd        = hmp_syx_snapshot_init,
+    },
+
+SRST
+``syx-snapshot-identified``
+  Init syx.
+ERST

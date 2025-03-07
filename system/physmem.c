@@ -3051,7 +3051,7 @@ static inline MemTxResult address_space_write_rom_internal(AddressSpace *as,
             case WRITE_DATA:
                 memcpy(ram_ptr, buf, l);
 //// --- Begin LibAFL code ---
-                DPRINTF_SYX("hwaddr write_rom %llx\n", addr);
+                SYX_DEBUG("hwaddr write_rom %llx\n", addr);
                 syx_snapshot_dirty_list_add_hostaddr_range(ram_ptr, l);
 
                 //// --- End LibAFL code ---

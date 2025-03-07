@@ -187,6 +187,10 @@ SyxSnapshot* syx_snapshot_new(bool track, bool is_active_bdrv_cache,
 
     if (track) {
         syx_snapshot_track(&syx_snapshot_state.tracked_snapshots, snapshot);
+
+        //make sure to catch all new writes
+        //with a filled TLB there might be missed writes from jitted TCG code
+        tlb_flush_all_cpus();
     }
 
     syx_snapshot_state.is_enabled = true;

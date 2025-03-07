@@ -108,6 +108,9 @@ void tlb_flush_all_cpus_synced(CPUState *src_cpu);
  * Flush one page from the TLB of the specified CPU, for the specified
  * MMU indexes.
  */
+
+void tlb_flush_all_cpus();
+
 void tlb_flush_page_by_mmuidx(CPUState *cpu, vaddr addr,
                               uint16_t idxmap);
 /**

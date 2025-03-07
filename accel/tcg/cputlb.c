@@ -446,6 +446,15 @@ void tlb_flush_all_cpus_synced(CPUState *src_cpu)
     tlb_flush_by_mmuidx_all_cpus_synced(src_cpu, ALL_MMUIDX_BITS);
 }
 
+void tlb_flush_all_cpus() 
+{
+    const run_on_cpu_func fn = tlb_flush_by_mmuidx_async_work;
+
+    tlb_debug("mmu_idx: 0x%"PRIx16"\n", ALL_MMUIDX_BITS);
+
+    flush_all_helper(NULL, fn, RUN_ON_CPU_HOST_INT(ALL_MMUIDX_BITS));
+}
+
 static bool tlb_hit_page_mask_anyprot(CPUTLBEntry *tlb_entry,
                                       vaddr page, vaddr mask)
 {

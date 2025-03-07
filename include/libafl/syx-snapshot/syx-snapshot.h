@@ -18,6 +18,15 @@
 
 #include "libafl/syx-misc.h"
 
+#define DEBUG_SYX
+
+#ifdef DEBUG_SYX
+#define DPRINTF_SYX(fmt, ...)                                   \
+    do { printf("SYX: " fmt , ## __VA_ARGS__); } while (0)
+#else
+#define DPRINTF_SYX(fmt, ...) do {} while (0)
+#endif
+
 #define SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE 64
 #define SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS (1024 * 1024)
 

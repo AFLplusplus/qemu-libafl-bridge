@@ -47,6 +47,9 @@
 #endif
 #include "tcg/tcg-ldst.h"
 #include "tcg/oversized-guest.h"
+//// --- Begin LibAFL code ---
+#include "libafl/syx-snapshot/syx-snapshot.h"
+//// --- End LibAFL code ---
 
 /* DEBUG defines, enable DEBUG_TLB_LOG to log to the CPU_LOG_MMU target */
 /* #define DEBUG_TLB */
@@ -88,13 +91,6 @@ QEMU_BUILD_BUG_ON(sizeof(vaddr) > sizeof(run_on_cpu_data));
  */
 QEMU_BUILD_BUG_ON(NB_MMU_MODES > 16);
 #define ALL_MMUIDX_BITS ((1 << NB_MMU_MODES) - 1)
-
-//// --- Begin LibAFL code ---
-
-// void syx_snapshot_dirty_list_add(hwaddr paddr);
-void syx_snapshot_dirty_list_add_hostaddr(void* host_addr);
-
-//// --- End LibAFL code ---
 
 static inline size_t tlb_n_entries(CPUTLBDescFast *fast)
 {
@@ -1409,6 +1405,7 @@ static int probe_access_internal(CPUState *cpu, vaddr addr,
 //// --- Begin LibAFL code ---
 
     if (access_type == MMU_DATA_STORE) {
+        DPRINTF_SYX("vaddr probe %llx\n", addr);
         syx_snapshot_dirty_list_add_hostaddr(*phost);
     }
 
@@ -1776,6 +1773,7 @@ static bool mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
 
         // TODO: Does not work?
         // if (type == MMU_DATA_STORE) {
+            DPRINTF_SYX("vaddr mmu_lookup %llx\n", addr);
             syx_snapshot_dirty_list_add_hostaddr(l->page[0].haddr);
         // }
 
@@ -1806,6 +1804,7 @@ static bool mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
         //// --- Begin LibAFL code ---
 
         // if (type == MMU_DATA_STORE) {
+            DPRINTF_SYX("vaddr crosspage %llx\n", addr);
             syx_snapshot_dirty_list_add_hostaddr(l->page[0].haddr);
             syx_snapshot_dirty_list_add_hostaddr(l->page[1].haddr);
         // }
@@ -1909,6 +1908,7 @@ static void *atomic_mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
 
     //// --- Begin LibAFL code ---
 
+    DPRINTF_SYX("vaddr atomic %llx\n", addr);
     syx_snapshot_dirty_list_add_hostaddr(hostaddr);
 
     //// --- End LibAFL code ---

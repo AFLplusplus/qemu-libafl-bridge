@@ -80,7 +80,7 @@ void libafl_exit_request_internal(CPUState* cpu, uint64_t pc,
 void libafl_exit_request_breakpoint(CPUState* cpu, target_ulong pc);
 void libafl_exit_request_custom_insn(CPUState* cpu, target_ulong pc,
                                      enum libafl_custom_insn_kind kind);
-void libafl_exit_request_crash(void);
+void libafl_exit_request_crash(CPUState* cpu);
 void libafl_exit_request_timeout(void);
 
 struct libafl_exit_reason* libafl_get_exit_reason(void);

@@ -1286,9 +1286,13 @@ static void handle_pending_signal(CPUArchState *cpu_env, int sig,
                    sig != TARGET_SIGWINCH &&
                    sig != TARGET_SIGCONT) {
 //// --- Start LibAFL code ---
-            // dump_core_and_abort(cpu_env, sig);
-            libafl_exit_request_crash();
+            if (libafl_get_return_on_crash()) {
+                libafl_exit_request_crash(env_cpu(cpu_env));
+            } else {
+                dump_core_and_abort(cpu_env, sig);
+            }
 //// --- End LibAFL code ---
+            // dump_core_and_abort(cpu_env, sig);
         }
     } else if (handler == TARGET_SIG_IGN) {
         /* ignore sig */

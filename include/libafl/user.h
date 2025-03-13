@@ -49,6 +49,9 @@ uint64_t libafl_set_brk(uint64_t new_brk);
 
 int _libafl_qemu_user_init(int argc, char** argv, char** envp);
 
+bool libafl_get_return_on_crash(void);
+void libafl_set_return_on_crash(bool return_on_crash);
+
 #ifdef AS_LIB
 void libafl_qemu_init(int argc, char** argv);
 #endif

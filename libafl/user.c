@@ -4,11 +4,15 @@
 
 #include "libafl/user.h"
 
+extern abi_ulong target_brk, initial_target_brk;
+
 static struct image_info libafl_image_info;
 
-struct libafl_qemu_sig_ctx libafl_qemu_sig_ctx = {0};
+static struct libafl_qemu_sig_ctx libafl_qemu_sig_ctx = {0};
 
-extern abi_ulong target_brk, initial_target_brk;
+// if true, target crashes will issue an exit request and return to harness.
+// if false, target crahes will raise the appropriate signal.
+static bool libafl_return_on_crash = false;
 
 void host_signal_handler(int host_sig, siginfo_t* info, void* puc);
 
@@ -52,6 +56,14 @@ uint64_t libafl_set_brk(uint64_t new_brk)
     uint64_t old_brk = (uint64_t)target_brk;
     target_brk = (abi_ulong)new_brk;
     return old_brk;
+}
+
+void libafl_set_return_on_crash(bool return_on_crash) {
+    libafl_return_on_crash = return_on_crash;
+}
+
+bool libafl_get_return_on_crash(void) {
+    return libafl_return_on_crash;
 }
 
 #ifdef AS_LIB

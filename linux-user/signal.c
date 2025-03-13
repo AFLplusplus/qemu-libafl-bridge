@@ -38,6 +38,7 @@
 //// --- Begin LibAFL code ---
 
 #include "libafl/user.h"
+#include "libafl/exit.h"
 
 //// --- End LibAFL code ---
 
@@ -1284,7 +1285,10 @@ static void handle_pending_signal(CPUArchState *cpu_env, int sig,
                    sig != TARGET_SIGURG &&
                    sig != TARGET_SIGWINCH &&
                    sig != TARGET_SIGCONT) {
-            dump_core_and_abort(cpu_env, sig);
+//// --- Start LibAFL code ---
+            // dump_core_and_abort(cpu_env, sig);
+            libafl_exit_request_crash();
+//// --- End LibAFL code ---
         }
     } else if (handler == TARGET_SIG_IGN) {
         /* ignore sig */

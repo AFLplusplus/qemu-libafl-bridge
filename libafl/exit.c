@@ -126,6 +126,18 @@ void libafl_exit_request_breakpoint(CPUState* cpu, target_ulong pc)
     prepare_qemu_exit(cpu, pc);
 }
 
+void libafl_exit_request_crash(void)
+{
+    CPUClass* cc = CPU_GET_CLASS(current_cpu);
+
+    expected_exit = true;
+    last_exit_reason.kind = CRASH;
+    last_exit_reason.cpu = current_cpu;
+
+    // TODO: put real PC
+    prepare_qemu_exit(current_cpu, cc->get_pc(current_cpu));
+}
+
 #ifndef CONFIG_USER_ONLY
 void libafl_exit_request_timeout(void)
 {

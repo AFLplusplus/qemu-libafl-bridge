@@ -14,7 +14,8 @@ enum libafl_exit_reason_kind {
     INTERNAL = 0,
     BREAKPOINT = 1,
     CUSTOM_INSN = 2,
-    TIMEOUT = 3,
+    CRASH = 3,
+    TIMEOUT = 4,
 };
 
 enum libafl_custom_insn_kind {
@@ -40,6 +41,10 @@ struct libafl_exit_reason_custom_insn {
 };
 
 // A timeout occured and we were asked to exit on timeout
+struct libafl_exit_reason_crash {
+};
+
+// A timeout occured and we were asked to exit on timeout
 struct libafl_exit_reason_timeout {
 };
 
@@ -52,6 +57,7 @@ struct libafl_exit_reason {
         struct libafl_exit_reason_breakpoint breakpoint; // kind == BREAKPOINT
         struct libafl_exit_reason_custom_insn
             custom_insn;                           // kind == CUSTOM_INSN
+        struct libafl_exit_reason_crash crash; // kind == CRASH
         struct libafl_exit_reason_timeout timeout; // kind == TIMEOUT
     } data;
 };
@@ -74,9 +80,7 @@ void libafl_exit_request_internal(CPUState* cpu, uint64_t pc,
 void libafl_exit_request_breakpoint(CPUState* cpu, target_ulong pc);
 void libafl_exit_request_custom_insn(CPUState* cpu, target_ulong pc,
                                      enum libafl_custom_insn_kind kind);
-
-#ifndef CONFIG_USER_ONLY
+void libafl_exit_request_crash(void);
 void libafl_exit_request_timeout(void);
-#endif
 
 struct libafl_exit_reason* libafl_get_exit_reason(void);

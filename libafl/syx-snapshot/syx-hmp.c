@@ -23,12 +23,12 @@ void hmp_syx_snapshot_init(Monitor *mon, const QDict *qdict) {
     syx_snapshot_init(false);
 }
 
-    /**
-     * Restore the root snapshot from the static variable.
-     */
-    void hmp_syx_snapshot_root_restore(Monitor * mon, const QDict* qdict)
-    {
-        if (current_snapshot != NULL) {
-            syx_snapshot_root_restore(current_snapshot);
-        }
+/**
+ * Restore the root snapshot from the static variable.
+ */
+void hmp_syx_snapshot_root_restore(Monitor * mon, const QDict* qdict)
+{
+    if (current_snapshot != NULL) {
+        syx_snapshot_root_restore(current_snapshot);
+    }
 }

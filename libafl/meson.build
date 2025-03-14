@@ -26,7 +26,7 @@ specific_ss.add(when : 'CONFIG_SOFTMMU', if_true : [files(
                                                         'syx-snapshot/syx-snapshot.c',
                                                         'syx-snapshot/syx-cow-cache.c',
                                                         'syx-snapshot/channel-buffer-writeback.c',
-                                                        'syx-snapshot/syx-snapshot-hmp.c',
+                                                        'syx-snapshot/syx-hmp.c',
                                                     )])
 
 specific_ss.add(when : 'CONFIG_USER_ONLY', if_true : [files(

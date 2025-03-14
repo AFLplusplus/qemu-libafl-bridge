@@ -56,6 +56,12 @@ static void mttcg_force_rcu(Notifier *notify, void *data)
     async_run_on_cpu(cpu, do_nothing, RUN_ON_CPU_NULL);
 }
 
+//// --- Begin LibAFL code ---
+
+#include "libafl/exit.h"
+
+//// --- End LibAFL code ---
+
 /*
  * In the multi-threaded case each vCPU has its own thread. The TLS
  * variable current_cpu can be used deep in the code to find the
@@ -104,6 +110,11 @@ static void *mttcg_cpu_thread_fn(void *arg)
                  * reset by another thread by the time we arrive here.
                  */
                 break;
+//// --- Begin LibAFL code ---
+            case EXCP_LIBAFL_EXIT:
+                cpu->stopped = true;
+                break;
+//// --- End LibAFL code ---
             case EXCP_ATOMIC:
                 bql_unlock();
                 cpu_exec_step_atomic(cpu);

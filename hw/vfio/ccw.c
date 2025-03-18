@@ -662,6 +662,7 @@ static Property vfio_ccw_properties[] = {
     DEFINE_PROP_LINK("iommufd", VFIOCCWDevice, vdev.iommufd,
                      TYPE_IOMMUFD_BACKEND, IOMMUFDBackend *),
 #endif
+    DEFINE_PROP_CCW_LOADPARM("loadparm", CcwDevice, loadparm),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -711,7 +712,7 @@ static void vfio_ccw_class_init(ObjectClass *klass, void *data)
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
     dc->realize = vfio_ccw_realize;
     dc->unrealize = vfio_ccw_unrealize;
-    dc->reset = vfio_ccw_reset;
+    device_class_set_legacy_reset(dc, vfio_ccw_reset);
 
     cdc->handle_request = vfio_ccw_handle_request;
     cdc->handle_halt = vfio_ccw_handle_halt;

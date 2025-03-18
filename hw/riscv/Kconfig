@@ -1,3 +1,6 @@
+config RISCV_IOMMU
+    bool
+
 config RISCV_NUMA
     bool
 
@@ -44,9 +47,10 @@ config RISCV_VIRT
     select PCI
     select PCI_EXPRESS_GENERIC_BRIDGE
     select PFLASH_CFI01
-    select SERIAL
+    select SERIAL_MM
     select RISCV_ACLINT
     select RISCV_APLIC
+    select RISCV_IOMMU
     select RISCV_IMSIC
     select SIFIVE_PLIC
     select SIFIVE_TEST

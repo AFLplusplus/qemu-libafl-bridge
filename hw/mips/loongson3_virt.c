@@ -29,7 +29,7 @@
 #include "qemu/datadir.h"
 #include "qapi/error.h"
 #include "elf.h"
-#include "hw/char/serial.h"
+#include "hw/char/serial-mm.h"
 #include "hw/intc/loongson_liointc.h"
 #include "hw/mips/mips.h"
 #include "hw/mips/fw_cfg.h"
@@ -567,7 +567,7 @@ static void mips_loongson3_virt_init(MachineState *machine)
         int ip;
 
         /* init CPUs */
-        cpu = mips_cpu_create_with_clock(machine->cpu_type, cpuclk);
+        cpu = mips_cpu_create_with_clock(machine->cpu_type, cpuclk, false);
 
         /* Init internal devices */
         cpu_mips_irq_init_cpu(cpu);

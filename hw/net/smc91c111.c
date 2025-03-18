@@ -17,8 +17,7 @@
 #include "qapi/error.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
-/* For crc32 */
-#include <zlib.h>
+#include <zlib.h> /* for crc32 */
 #include "qom/object.h"
 
 /* Number of 2k memory pages available.  */
@@ -182,6 +181,15 @@ static void smc91c111_tx_alloc(smc91c111_state *s)
 static void smc91c111_pop_rx_fifo(smc91c111_state *s)
 {
     int i;
+
+    if (s->rx_fifo_len == 0) {
+        /*
+         * The datasheet doesn't document what the behaviour is if the
+         * guest tries to pop an empty RX FIFO, and there's no obvious
+         * error status register to report it. Just ignore the attempt.
+         */
+        return;
+    }
 
     s->rx_fifo_len--;
     if (s->rx_fifo_len) {
@@ -799,7 +807,7 @@ static void smc91c111_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = smc91c111_realize;
-    dc->reset = smc91c111_reset;
+    device_class_set_legacy_reset(dc, smc91c111_reset);
     dc->vmsd = &vmstate_smc91c111;
     device_class_set_props(dc, smc91c111_properties);
 }

@@ -53,8 +53,8 @@ static PnvXferBuffer *pnv_spi_xfer_buffer_new(void)
 
 static void pnv_spi_xfer_buffer_free(PnvXferBuffer *payload)
 {
-    free(payload->data);
-    free(payload);
+    g_free(payload->data);
+    g_free(payload);
 }
 
 static uint8_t *pnv_spi_xfer_buffer_write_ptr(PnvXferBuffer *payload,
@@ -217,6 +217,9 @@ static void transfer(PnvSpi *s, PnvXferBuffer *payload)
     PnvXferBuffer *rsp_payload = NULL;
 
     rsp_payload = pnv_spi_xfer_buffer_new();
+    if (!rsp_payload) {
+        return;
+    }
     for (int offset = 0; offset < payload->len; offset += s->transfer_len) {
         tx = 0;
         for (int i = 0; i < s->transfer_len; i++) {
@@ -235,9 +238,8 @@ static void transfer(PnvSpi *s, PnvXferBuffer *payload)
                     (rx >> (8 * (s->transfer_len - 1) - i * 8)) & 0xFF;
         }
     }
-    if (rsp_payload != NULL) {
-        spi_response(s, s->N1_bits, rsp_payload);
-    }
+    spi_response(s, s->N1_bits, rsp_payload);
+    pnv_spi_xfer_buffer_free(rsp_payload);
 }
 
 static inline uint8_t get_seq_index(PnvSpi *s)
@@ -1245,7 +1247,7 @@ static void pnv_spi_class_init(ObjectClass *klass, void *data)
 
     dc->desc = "PowerNV SPI";
     dc->realize = pnv_spi_realize;
-    dc->reset = do_reset;
+    device_class_set_legacy_reset(dc, do_reset);
     device_class_set_props(dc, pnv_spi_properties);
 }
 

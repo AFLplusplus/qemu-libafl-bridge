@@ -273,12 +273,12 @@ void x86_cpu_pre_plug(HotplugHandler *hotplug_dev,
 
     if (ms->smp.modules > 1) {
         env->nr_modules = ms->smp.modules;
-        set_bit(CPU_TOPO_LEVEL_MODULE, env->avail_cpu_topo);
+        set_bit(CPU_TOPOLOGY_LEVEL_MODULE, env->avail_cpu_topo);
     }
 
     if (ms->smp.dies > 1) {
         env->nr_dies = ms->smp.dies;
-        set_bit(CPU_TOPO_LEVEL_DIE, env->avail_cpu_topo);
+        set_bit(CPU_TOPOLOGY_LEVEL_DIE, env->avail_cpu_topo);
     }
 
     /*
@@ -586,7 +586,7 @@ static bool load_elfboot(const char *kernel_filename,
     uint64_t elf_low, elf_high;
     int kernel_size;
 
-    if (ldl_p(header) != 0x464c457f) {
+    if (ldl_le_p(header) != 0x464c457f) {
         return false; /* no elfboot */
     }
 
@@ -669,8 +669,8 @@ void x86_load_linux(X86MachineState *x86ms,
      * kernel protocol version.
      * Please see https://www.kernel.org/doc/Documentation/x86/boot.txt
      */
-    if (ldl_p(header + 0x202) == 0x53726448) /* Magic signature "HdrS" */ {
-        protocol = lduw_p(header + 0x206);
+    if (ldl_le_p(header + 0x202) == 0x53726448) /* Magic signature "HdrS" */ {
+        protocol = lduw_le_p(header + 0x206);
     } else {
         /*
          * This could be a multiboot kernel. If it is, let's stop treating it
@@ -697,9 +697,11 @@ void x86_load_linux(X86MachineState *x86ms,
                 strlen(kernel_cmdline) + 1);
             fw_cfg_add_string(fw_cfg, FW_CFG_CMDLINE_DATA, kernel_cmdline);
 
+            setup = g_memdup2(header, sizeof(header));
+
             fw_cfg_add_i32(fw_cfg, FW_CFG_SETUP_SIZE, sizeof(header));
             fw_cfg_add_bytes(fw_cfg, FW_CFG_SETUP_DATA,
-                             header, sizeof(header));
+                             setup, sizeof(header));
 
             /* load initrd */
             if (initrd_filename) {
@@ -762,7 +764,7 @@ void x86_load_linux(X86MachineState *x86ms,
 
     /* highest address for loading the initrd */
     if (protocol >= 0x20c &&
-        lduw_p(header + 0x236) & XLF_CAN_BE_LOADED_ABOVE_4G) {
+        lduw_le_p(header + 0x236) & XLF_CAN_BE_LOADED_ABOVE_4G) {
         /*
          * Linux has supported initrd up to 4 GB for a very long time (2007,
          * long before XLF_CAN_BE_LOADED_ABOVE_4G which was added in 2013),
@@ -781,7 +783,7 @@ void x86_load_linux(X86MachineState *x86ms,
          */
         initrd_max = UINT32_MAX;
     } else if (protocol >= 0x203) {
-        initrd_max = ldl_p(header + 0x22c);
+        initrd_max = ldl_le_p(header + 0x22c);
     } else {
         initrd_max = 0x37ffffff;
     }
@@ -797,10 +799,10 @@ void x86_load_linux(X86MachineState *x86ms,
     sev_load_ctx.cmdline_size = strlen(kernel_cmdline) + 1;
 
     if (protocol >= 0x202) {
-        stl_p(header + 0x228, cmdline_addr);
+        stl_le_p(header + 0x228, cmdline_addr);
     } else {
-        stw_p(header + 0x20, 0xA33F);
-        stw_p(header + 0x22, cmdline_addr - real_addr);
+        stw_le_p(header + 0x20, 0xA33F);
+        stw_le_p(header + 0x22, cmdline_addr - real_addr);
     }
 
     /* handle vga= parameter */
@@ -824,7 +826,7 @@ void x86_load_linux(X86MachineState *x86ms,
                 exit(1);
             }
         }
-        stw_p(header + 0x1fa, video_mode);
+        stw_le_p(header + 0x1fa, video_mode);
     }
 
     /* loader type */
@@ -839,7 +841,7 @@ void x86_load_linux(X86MachineState *x86ms,
     /* heap */
     if (protocol >= 0x201) {
         header[0x211] |= 0x80; /* CAN_USE_HEAP */
-        stw_p(header + 0x224, cmdline_addr - real_addr - 0x200);
+        stw_le_p(header + 0x224, cmdline_addr - real_addr - 0x200);
     }
 
     /* load initrd */
@@ -879,8 +881,8 @@ void x86_load_linux(X86MachineState *x86ms,
         sev_load_ctx.initrd_data = initrd_data;
         sev_load_ctx.initrd_size = initrd_size;
 
-        stl_p(header + 0x218, initrd_addr);
-        stl_p(header + 0x21c, initrd_size);
+        stl_le_p(header + 0x218, initrd_addr);
+        stl_le_p(header + 0x21c, initrd_size);
     }
 
     /* load kernel and setup */
@@ -926,7 +928,7 @@ void x86_load_linux(X86MachineState *x86ms,
         kernel_size = setup_data_offset + sizeof(struct setup_data) + dtb_size;
         kernel = g_realloc(kernel, kernel_size);
 
-        stq_p(header + 0x250, prot_addr + setup_data_offset);
+        stq_le_p(header + 0x250, prot_addr + setup_data_offset);
 
         setup_data = (struct setup_data *)(kernel + setup_data_offset);
         setup_data->next = 0;
@@ -943,7 +945,7 @@ void x86_load_linux(X86MachineState *x86ms,
      * kernel on the other side of the fw_cfg interface matches the hash of the
      * file the user passed in.
      */
-    if (!sev_enabled()) {
+    if (!sev_enabled() && protocol > 0) {
         memcpy(setup, header, MIN(sizeof(header), setup_size));
     }
 

@@ -53,7 +53,7 @@
 #include "hw/ppc/pnv_pnor.h"
 
 #include "hw/isa/isa.h"
-#include "hw/char/serial.h"
+#include "hw/char/serial-isa.h"
 #include "hw/rtc/mc146818rtc.h"
 
 #include <libfdt.h>
@@ -709,13 +709,13 @@ static void pnv_powerdown_notify(Notifier *n, void *opaque)
     }
 }
 
-static void pnv_reset(MachineState *machine, ShutdownCause reason)
+static void pnv_reset(MachineState *machine, ResetType type)
 {
     PnvMachineState *pnv = PNV_MACHINE(machine);
     IPMIBmc *bmc;
     void *fdt;
 
-    qemu_devices_reset(reason);
+    qemu_devices_reset(type);
 
     /*
      * The machine should provide by default an internal BMC simulator.
@@ -736,21 +736,27 @@ static void pnv_reset(MachineState *machine, ShutdownCause reason)
         }
     }
 
-    fdt = pnv_dt_create(machine);
-
-    /* Pack resulting tree */
-    _FDT((fdt_pack(fdt)));
+    if (machine->fdt) {
+        fdt = machine->fdt;
+    } else {
+        fdt = pnv_dt_create(machine);
+        /* Pack resulting tree */
+        _FDT((fdt_pack(fdt)));
+    }
 
     qemu_fdt_dumpdtb(fdt, fdt_totalsize(fdt));
     cpu_physical_memory_write(PNV_FDT_ADDR, fdt, fdt_totalsize(fdt));
 
-    /*
-     * Set machine->fdt for 'dumpdtb' QMP/HMP command. Free
-     * the existing machine->fdt to avoid leaking it during
-     * a reset.
-     */
-    g_free(machine->fdt);
-    machine->fdt = fdt;
+    /* Update machine->fdt with latest fdt */
+    if (machine->fdt != fdt) {
+        /*
+         * Set machine->fdt for 'dumpdtb' QMP/HMP command. Free
+         * the existing machine->fdt to avoid leaking it during
+         * a reset.
+         */
+        g_free(machine->fdt);
+        machine->fdt = fdt;
+    }
 }
 
 static ISABus *pnv_chip_power8_isa_create(PnvChip *chip, Error **errp)
@@ -952,6 +958,14 @@ static void pnv_init(MachineState *machine)
         g_free(sz);
         exit(EXIT_FAILURE);
     }
+
+    /* checks for invalid option combinations */
+    if (machine->dtb && (strlen(machine->kernel_cmdline) != 0)) {
+        error_report("-append and -dtb cannot be used together, as passed"
+                " command line is ignored in case of custom dtb");
+        exit(EXIT_FAILURE);
+    }
+
     memory_region_add_subregion(get_system_memory(), 0, machine->ram);
 
     /*
@@ -999,6 +1013,21 @@ static void pnv_init(MachineState *machine)
         if (pnv->initrd_size < 0) {
             error_report("Could not load initial ram disk '%s'",
                          machine->initrd_filename);
+            exit(1);
+        }
+    }
+
+    /* load dtb if passed */
+    if (machine->dtb) {
+        int fdt_size;
+
+        warn_report("with manually passed dtb, some options like '-append'"
+                " will get ignored and the dtb passed will be used as-is");
+
+        /* read the file 'machine->dtb', and load it into 'fdt' buffer */
+        machine->fdt = load_device_tree(machine->dtb, &fdt_size);
+        if (!machine->fdt) {
+            error_report("Could not load dtb '%s'", machine->dtb);
             exit(1);
         }
     }

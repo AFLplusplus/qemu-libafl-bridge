@@ -10,18 +10,34 @@
 #include "libafl/exit.h"
 #include "libafl/hook.h"
 
-struct syshook_ret {
-    target_ulong retval;
-    bool skip_syscall;
+enum libafl_syshook_ret_tag {
+    LIBAFL_SYSHOOK_RUN,
+    LIBAFL_SYSHOOK_SKIP,
 };
+
+// Representation of a pre-syscall hook result.
+// It is associated with the LibAFL enum `SyscallHookResult`.
+// Any change made here should be also propagated to the Rust enum.
+struct libafl_syshook_ret {
+    enum libafl_syshook_ret_tag tag;
+    union {
+        target_ulong syshook_skip_retval;
+    };
+};
+
+typedef struct libafl_syshook_ret (*libafl_pre_syscall_cb)(
+    uint64_t data, int sys_num, target_ulong arg0, target_ulong arg1,
+    target_ulong arg2, target_ulong arg3, target_ulong arg4, target_ulong arg5,
+    target_ulong arg6, target_ulong arg7);
+
+typedef target_ulong (*libafl_post_syscall_cb)(
+    uint64_t data, target_ulong ret, int sys_num, target_ulong arg0,
+    target_ulong arg1, target_ulong arg2, target_ulong arg3, target_ulong arg4,
+    target_ulong arg5, target_ulong arg6, target_ulong arg7);
 
 struct libafl_pre_syscall_hook {
     // functions
-    struct syshook_ret (*callback)(uint64_t data, int sys_num,
-                                   target_ulong arg0, target_ulong arg1,
-                                   target_ulong arg2, target_ulong arg3,
-                                   target_ulong arg4, target_ulong arg5,
-                                   target_ulong arg6, target_ulong arg7);
+    libafl_pre_syscall_cb callback;
 
     // data
     uint64_t data;
@@ -33,11 +49,7 @@ struct libafl_pre_syscall_hook {
 
 struct libafl_post_syscall_hook {
     // functions
-    target_ulong (*callback)(uint64_t data, target_ulong ret, int sys_num,
-                             target_ulong arg0, target_ulong arg1,
-                             target_ulong arg2, target_ulong arg3,
-                             target_ulong arg4, target_ulong arg5,
-                             target_ulong arg6, target_ulong arg7);
+    libafl_post_syscall_cb callback;
 
     // data
     uint64_t data;
@@ -47,20 +59,10 @@ struct libafl_post_syscall_hook {
     struct libafl_post_syscall_hook* next;
 };
 
-size_t libafl_add_pre_syscall_hook(
-    struct syshook_ret (*callback)(uint64_t data, int sys_num,
-                                   target_ulong arg0, target_ulong arg1,
-                                   target_ulong arg2, target_ulong arg3,
-                                   target_ulong arg4, target_ulong arg5,
-                                   target_ulong arg6, target_ulong arg7),
-    uint64_t data);
-size_t libafl_add_post_syscall_hook(
-    target_ulong (*callback)(uint64_t data, target_ulong ret, int sys_num,
-                             target_ulong arg0, target_ulong arg1,
-                             target_ulong arg2, target_ulong arg3,
-                             target_ulong arg4, target_ulong arg5,
-                             target_ulong arg6, target_ulong arg7),
-    uint64_t data);
+size_t libafl_add_pre_syscall_hook(libafl_pre_syscall_cb callback,
+                                   uint64_t data);
+size_t libafl_add_post_syscall_hook(libafl_post_syscall_cb callback,
+                                    uint64_t data);
 
 int libafl_qemu_remove_pre_syscall_hook(size_t num);
 int libafl_qemu_remove_post_syscall_hook(size_t num);

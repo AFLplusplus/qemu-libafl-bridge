@@ -831,25 +831,6 @@ static void vmstate_check(const VMStateDescription *vmsd)
     }
 }
 
-/*
- * See comment in hw/intc/xics.c:icp_realize()
- *
- * This function can be removed when
- * pre_2_10_vmstate_register_dummy_icp() is removed.
- */
-int vmstate_replace_hack_for_ppc(VMStateIf *obj, int instance_id,
-                                 const VMStateDescription *vmsd,
-                                 void *opaque)
-{
-    SaveStateEntry *se = find_se(vmsd->name, instance_id);
-
-    if (se) {
-        savevm_state_handler_remove(se);
-        g_free(se->compat);
-        g_free(se);
-    }
-    return vmstate_register(obj, instance_id, vmsd, opaque);
-}
 
 int vmstate_register_with_alias_id(VMStateIf *obj, uint32_t instance_id,
                                    const VMStateDescription *vmsd,
@@ -2054,7 +2035,6 @@ static void *postcopy_ram_listen_thread(void *opaque)
      * got a bad migration state).
      */
     migration_incoming_state_destroy();
-    qemu_loadvm_state_cleanup();
 
     rcu_unregister_thread();
     mis->have_listen_thread = false;
@@ -2109,7 +2089,8 @@ static int loadvm_postcopy_handle_listen(MigrationIncomingState *mis)
     }
 
     mis->have_listen_thread = true;
-    postcopy_thread_create(mis, &mis->listen_thread, "mig/dst/listen",
+    postcopy_thread_create(mis, &mis->listen_thread,
+                           MIGRATION_THREAD_DST_LISTEN,
                            postcopy_ram_listen_thread, QEMU_THREAD_DETACHED);
     trace_loadvm_postcopy_handle_listen("return");
 
@@ -2556,8 +2537,7 @@ static bool check_section_footer(QEMUFile *f, SaveStateEntry *se)
 }
 
 static int
-qemu_loadvm_section_start_full(QEMUFile *f, MigrationIncomingState *mis,
-                               uint8_t type)
+qemu_loadvm_section_start_full(QEMUFile *f, uint8_t type)
 {
     bool trace_downtime = (type == QEMU_VM_SECTION_FULL);
     uint32_t instance_id, version_id, section_id;
@@ -2635,8 +2615,7 @@ qemu_loadvm_section_start_full(QEMUFile *f, MigrationIncomingState *mis,
 }
 
 static int
-qemu_loadvm_section_part_end(QEMUFile *f, MigrationIncomingState *mis,
-                             uint8_t type)
+qemu_loadvm_section_part_end(QEMUFile *f, uint8_t type)
 {
     bool trace_downtime = (type == QEMU_VM_SECTION_END);
     int64_t start_ts, end_ts;
@@ -2712,13 +2691,11 @@ static int qemu_loadvm_state_header(QEMUFile *f)
     if (migrate_get_current()->send_configuration) {
         if (qemu_get_byte(f) != QEMU_VM_CONFIGURATION) {
             error_report("Configuration section missing");
-            qemu_loadvm_state_cleanup();
             return -EINVAL;
         }
         ret = vmstate_load_state(f, &vmstate_configuration, &savevm_state, 0);
 
         if (ret) {
-            qemu_loadvm_state_cleanup();
             return ret;
         }
     }
@@ -2871,14 +2848,14 @@ retry:
         switch (section_type) {
         case QEMU_VM_SECTION_START:
         case QEMU_VM_SECTION_FULL:
-            ret = qemu_loadvm_section_start_full(f, mis, section_type);
+            ret = qemu_loadvm_section_start_full(f, section_type);
             if (ret < 0) {
                 goto out;
             }
             break;
         case QEMU_VM_SECTION_PART:
         case QEMU_VM_SECTION_END:
-            ret = qemu_loadvm_section_part_end(f, mis, section_type);
+            ret = qemu_loadvm_section_part_end(f, section_type);
             if (ret < 0) {
                 goto out;
             }

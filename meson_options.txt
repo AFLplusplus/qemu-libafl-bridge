@@ -27,6 +27,8 @@ option('block_drv_ro_whitelist', type : 'string', value : '',
        description: 'set block driver read-only whitelist (by default affects only QEMU, not tools like qemu-img)')
 option('interp_prefix', type : 'string', value : '/usr/gnemul/qemu-%M',
        description: 'where to find shared libraries etc., use %M for cpu name')
+option('rtsig_map', type : 'string', value : 'NULL',
+       description: 'default value of QEMU_RTSIG_MAP')
 option('fuzzing_engine', type : 'string', value : '',
        description: 'fuzzing engine library for OSS-Fuzz')
 option('trace_file', type: 'string', value: 'trace',
@@ -95,8 +97,10 @@ option('tcg_interpreter', type: 'boolean', value: false,
        description: 'TCG with bytecode interpreter (slow)')
 option('safe_stack', type: 'boolean', value: false,
        description: 'SafeStack Stack Smash Protection (requires clang/llvm and coroutine backend ucontext)')
-option('sanitizers', type: 'boolean', value: false,
-       description: 'enable default sanitizers')
+option('asan', type: 'boolean', value: false,
+       description: 'enable address sanitizer')
+option('ubsan', type: 'boolean', value: false,
+       description: 'enable undefined behaviour sanitizer')
 option('tsan', type: 'boolean', value: false,
        description: 'enable thread sanitizer')
 option('stack_protector', type: 'feature', value: 'auto',
@@ -170,6 +174,8 @@ option('iconv', type : 'feature', value : 'auto',
        description: 'Font glyph conversion support')
 option('curses', type : 'feature', value : 'auto',
        description: 'curses UI')
+option('libcbor', type : 'feature', value : 'auto',
+       description: 'libcbor support')
 option('gnutls', type : 'feature', value : 'auto',
        description: 'GNUTLS cryptography support')
 option('nettle', type : 'feature', value : 'auto',
@@ -265,6 +271,8 @@ option('qpl', type : 'feature', value : 'auto',
        description: 'Query Processing Library support')
 option('uadk', type : 'feature', value : 'auto',
        description: 'UADK Library support')
+option('qatzip', type: 'feature', value: 'auto',
+       description: 'QATzip compression support')
 option('fuse', type: 'feature', value: 'auto',
        description: 'FUSE block device export')
 option('fuse_lseek', type : 'feature', value : 'auto',
@@ -305,8 +313,6 @@ option('vhost_user_blk_server', type: 'feature', value: 'auto',
        description: 'build vhost-user-blk server')
 option('virtfs', type: 'feature', value: 'auto',
        description: 'virtio-9p support')
-option('virtfs_proxy_helper', type: 'feature', value: 'auto',
-       description: 'virtio-9p proxy helper support')
 option('libvduse', type: 'feature', value: 'auto',
        description: 'build VDUSE Library')
 option('vduse_blk_export', type: 'feature', value: 'auto',
@@ -375,3 +381,8 @@ option('hexagon_idef_parser', type : 'boolean', value : true,
 
 option('x86_version', type : 'combo', choices : ['0', '1', '2', '3', '4'], value: '1',
        description: 'tweak required x86_64 architecture version beyond compiler default')
+
+option('rust', type: 'feature', value: 'disabled',
+       description: 'Rust support')
+option('strict_rust_lints', type: 'boolean', value: false,
+       description: 'Enable stricter set of Rust warnings')

@@ -497,7 +497,10 @@ uint32_t helper_flcmps(float32 src1, float32 src2)
      * Perform the comparison with a dummy fp environment.
      */
     float_status discard = { };
-    FloatRelation r = float32_compare_quiet(src1, src2, &discard);
+    FloatRelation r;
+
+    set_float_2nan_prop_rule(float_2nan_prop_s_ba, &discard);
+    r = float32_compare_quiet(src1, src2, &discard);
 
     switch (r) {
     case float_relation_equal:
@@ -518,7 +521,10 @@ uint32_t helper_flcmps(float32 src1, float32 src2)
 uint32_t helper_flcmpd(float64 src1, float64 src2)
 {
     float_status discard = { };
-    FloatRelation r = float64_compare_quiet(src1, src2, &discard);
+    FloatRelation r;
+
+    set_float_2nan_prop_rule(float_2nan_prop_s_ba, &discard);
+    r = float64_compare_quiet(src1, src2, &discard);
 
     switch (r) {
     case float_relation_equal:
@@ -545,6 +551,8 @@ target_ulong cpu_get_fsr(CPUSPARCState *env)
     fsr |= (uint64_t)env->fcc[1] << FSR_FCC1_SHIFT;
     fsr |= (uint64_t)env->fcc[2] << FSR_FCC2_SHIFT;
     fsr |= (uint64_t)env->fcc[3] << FSR_FCC3_SHIFT;
+#elif !defined(CONFIG_USER_ONLY)
+    fsr |= env->fsr_qne;
 #endif
 
     /* VER is kept completely separate until re-assembly. */
@@ -591,6 +599,8 @@ void cpu_put_fsr(CPUSPARCState *env, target_ulong fsr)
     env->fcc[1] = extract64(fsr, FSR_FCC1_SHIFT, 2);
     env->fcc[2] = extract64(fsr, FSR_FCC2_SHIFT, 2);
     env->fcc[3] = extract64(fsr, FSR_FCC3_SHIFT, 2);
+#elif !defined(CONFIG_USER_ONLY)
+    env->fsr_qne = fsr & FSR_QNE;
 #endif
 
     set_fsr_nonsplit(env, fsr);

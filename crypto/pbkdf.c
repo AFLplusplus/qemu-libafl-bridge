@@ -87,7 +87,7 @@ static int qcrypto_pbkdf2_get_thread_cpu(unsigned long long *val_ms,
 }
 
 typedef struct CountItersData {
-    QCryptoHashAlgorithm hash;
+    QCryptoHashAlgo hash;
     const uint8_t *key;
     size_t nkey;
     const uint8_t *salt;
@@ -100,14 +100,14 @@ typedef struct CountItersData {
 static void *threaded_qcrypto_pbkdf2_count_iters(void *data)
 {
     CountItersData *iters_data = (CountItersData *) data;
-    QCryptoHashAlgorithm hash = iters_data->hash;
+    QCryptoHashAlgo hash = iters_data->hash;
     const uint8_t *key = iters_data->key;
     size_t nkey = iters_data->nkey;
     const uint8_t *salt = iters_data->salt;
     size_t nsalt = iters_data->nsalt;
     size_t nout = iters_data->nout;
     Error **errp = iters_data->errp;
-
+    size_t scaled = 0;
     uint64_t ret = -1;
     g_autofree uint8_t *out = g_new(uint8_t, nout);
     uint64_t iterations = (1 << 15);
@@ -131,7 +131,17 @@ static void *threaded_qcrypto_pbkdf2_count_iters(void *data)
 
         delta_ms = end_ms - start_ms;
 
-        if (delta_ms == 0) { /* sanity check */
+        /*
+         * For very small 'iterations' values, CPU (or crypto
+         * accelerator) might be fast enough that the scheduler
+         * hasn't incremented getrusage() data, or incremented
+         * it by a very small amount, resulting in delta_ms == 0.
+         * Once we've scaled 'iterations' x10, 5 times, we really
+         * should be seeing delta_ms != 0, so sanity check at
+         * that point.
+         */
+        if (scaled > 5 &&
+            delta_ms == 0) { /* sanity check */
             error_setg(errp, "Unable to get accurate CPU usage");
             goto cleanup;
         } else if (delta_ms > 500) {
@@ -141,6 +151,7 @@ static void *threaded_qcrypto_pbkdf2_count_iters(void *data)
         } else {
             iterations = (iterations * 1000 / delta_ms);
         }
+        scaled++;
     }
 
     iterations = iterations * 1000 / delta_ms;
@@ -153,7 +164,7 @@ static void *threaded_qcrypto_pbkdf2_count_iters(void *data)
     return NULL;
 }
 
-uint64_t qcrypto_pbkdf2_count_iters(QCryptoHashAlgorithm hash,
+uint64_t qcrypto_pbkdf2_count_iters(QCryptoHashAlgo hash,
                                     const uint8_t *key, size_t nkey,
                                     const uint8_t *salt, size_t nsalt,
                                     size_t nout,

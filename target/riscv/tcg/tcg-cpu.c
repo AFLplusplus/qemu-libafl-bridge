@@ -129,6 +129,7 @@ static void riscv_restore_state_to_opc(CPUState *cs,
         env->pc = pc;
     }
     env->bins = data[1];
+    env->excp_uw2 = data[2];
 }
 
 static const TCGCPUOps riscv_tcg_ops = {
@@ -618,9 +619,37 @@ void riscv_cpu_validate_set_extensions(RISCVCPU *cpu, Error **errp)
         cpu->cfg.ext_zihpm = false;
     }
 
+    if (cpu->cfg.ext_zicfiss) {
+        if (!cpu->cfg.ext_zicsr) {
+            error_setg(errp, "zicfiss extension requires zicsr extension");
+            return;
+        }
+        if (!riscv_has_ext(env, RVA)) {
+            error_setg(errp, "zicfiss extension requires A extension");
+            return;
+        }
+        if (!riscv_has_ext(env, RVS)) {
+            error_setg(errp, "zicfiss extension requires S");
+            return;
+        }
+        if (!cpu->cfg.ext_zimop) {
+            error_setg(errp, "zicfiss extension requires zimop extension");
+            return;
+        }
+        if (cpu->cfg.ext_zca && !cpu->cfg.ext_zcmop) {
+            error_setg(errp, "zicfiss with zca requires zcmop extension");
+            return;
+        }
+    }
+
     if (!cpu->cfg.ext_zihpm) {
         cpu->cfg.pmu_mask = 0;
         cpu->pmu_avail_ctrs = 0;
+    }
+
+    if (cpu->cfg.ext_zicfilp && !cpu->cfg.ext_zicsr) {
+        error_setg(errp, "zicfilp extension requires zicsr extension");
+        return;
     }
 
     /*
@@ -778,11 +807,18 @@ static void cpu_enable_implied_rule(RISCVCPU *cpu,
     if (!enabled) {
         /* Enable the implied MISAs. */
         if (rule->implied_misa_exts) {
-            riscv_cpu_set_misa_ext(env,
-                                   env->misa_ext | rule->implied_misa_exts);
-
             for (i = 0; misa_bits[i] != 0; i++) {
                 if (rule->implied_misa_exts & misa_bits[i]) {
+                    /*
+                     * If the user disabled the misa_bit do not re-enable it
+                     * and do not apply any implied rules related to it.
+                     */
+                    if (cpu_misa_ext_is_user_set(misa_bits[i]) &&
+                        !(env->misa_ext & misa_bits[i])) {
+                        continue;
+                    }
+
+                    riscv_cpu_set_misa_ext(env, env->misa_ext | misa_bits[i]);
                     ir = g_hash_table_lookup(misa_ext_implied_rules,
                                              GUINT_TO_POINTER(misa_bits[i]));
 

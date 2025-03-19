@@ -58,13 +58,12 @@ uint64_t libafl_set_brk(uint64_t new_brk)
     return old_brk;
 }
 
-void libafl_set_return_on_crash(bool return_on_crash) {
+void libafl_set_return_on_crash(bool return_on_crash)
+{
     libafl_return_on_crash = return_on_crash;
 }
 
-bool libafl_get_return_on_crash(void) {
-    return libafl_return_on_crash;
-}
+bool libafl_get_return_on_crash(void) { return libafl_return_on_crash; }
 
 #ifdef AS_LIB
 void libafl_qemu_init(int argc, char** argv)

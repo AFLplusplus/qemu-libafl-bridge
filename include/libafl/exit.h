@@ -57,7 +57,7 @@ struct libafl_exit_reason {
         struct libafl_exit_reason_breakpoint breakpoint; // kind == BREAKPOINT
         struct libafl_exit_reason_custom_insn
             custom_insn;                           // kind == CUSTOM_INSN
-        struct libafl_exit_reason_crash crash; // kind == CRASH
+        struct libafl_exit_reason_crash crash;     // kind == CRASH
         struct libafl_exit_reason_timeout timeout; // kind == TIMEOUT
     } data;
 };

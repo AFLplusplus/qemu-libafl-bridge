@@ -44,7 +44,6 @@ struct image_info {
         abi_ulong       file_string;
         uint32_t        elf_flags;
         int             personality;
-        abi_ulong       alignment;
         bool            exec_stack;
 
         /* Generic semihosting knows about these pointers. */
@@ -113,6 +112,10 @@ struct TaskState {
     struct target_vm86plus_struct vm86plus;
     uint32_t v86flags;
     uint32_t v86mask;
+#endif
+#if defined(TARGET_I386)
+    /* Last syscall number. */
+    target_ulong orig_ax;
 #endif
     abi_ulong child_tidptr;
 #ifdef TARGET_M68K
@@ -312,6 +315,15 @@ static inline bool access_ok(CPUState *cpu, int type,
  */
 int copy_from_user(void *hptr, abi_ulong gaddr, ssize_t len);
 int copy_to_user(abi_ulong gaddr, void *hptr, ssize_t len);
+
+/*
+ * copy_struct_from_user() copies a target struct to a host struct, in
+ * a way that guarantees backwards-compatibility for struct syscall
+ * arguments.
+ *
+ * Similar to kernels uaccess.h:copy_struct_from_user()
+ */
+int copy_struct_from_user(void *dst, size_t ksize, abi_ptr src, size_t usize);
 
 /* Functions for accessing guest memory.  The tget and tput functions
    read/write single values, byteswapping as necessary.  The lock_user function

@@ -549,6 +549,20 @@ static void loongarch_cpu_reset_hold(Object *obj, ResetType type)
     env->CSR_TLBRERA = FIELD_DP64(env->CSR_TLBRERA, CSR_TLBRERA, ISTLBR, 0);
     env->CSR_MERRCTL = FIELD_DP64(env->CSR_MERRCTL, CSR_MERRCTL, ISMERR, 0);
     env->CSR_TID = cs->cpu_index;
+    /*
+     * Workaround for edk2-stable202408, CSR PGD register is set only if
+     * its value is equal to zero for boot cpu, it causes reboot issue.
+     *
+     * Here clear CSR registers relative with TLB.
+     */
+    env->CSR_PGDH = 0;
+    env->CSR_PGDL = 0;
+    env->CSR_PWCL = 0;
+    env->CSR_PWCH = 0;
+    env->CSR_STLBPS = 0;
+    env->CSR_EENTRY = 0;
+    env->CSR_TLBRENTRY = 0;
+    env->CSR_MERRENTRY = 0;
 
     for (n = 0; n < 4; n++) {
         env->CSR_DMW[n] = FIELD_DP64(env->CSR_DMW[n], CSR_DMW, PLV0, 0);
@@ -563,7 +577,7 @@ static void loongarch_cpu_reset_hold(Object *obj, ResetType type)
     memset(env->tlb, 0, sizeof(env->tlb));
 #endif
     if (kvm_enabled()) {
-        kvm_arch_reset_vcpu(env);
+        kvm_arch_reset_vcpu(cs);
     }
 #endif
 
@@ -650,12 +664,55 @@ static void loongarch_set_lasx(Object *obj, bool value, Error **errp)
     }
 }
 
+static bool loongarch_get_lbt(Object *obj, Error **errp)
+{
+    return LOONGARCH_CPU(obj)->lbt != ON_OFF_AUTO_OFF;
+}
+
+static void loongarch_set_lbt(Object *obj, bool value, Error **errp)
+{
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+
+    cpu->lbt = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
+}
+
+static bool loongarch_get_pmu(Object *obj, Error **errp)
+{
+    return LOONGARCH_CPU(obj)->pmu != ON_OFF_AUTO_OFF;
+}
+
+static void loongarch_set_pmu(Object *obj, bool value, Error **errp)
+{
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+
+    cpu->pmu = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
+}
+
 void loongarch_cpu_post_init(Object *obj)
 {
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+
     object_property_add_bool(obj, "lsx", loongarch_get_lsx,
                              loongarch_set_lsx);
     object_property_add_bool(obj, "lasx", loongarch_get_lasx,
                              loongarch_set_lasx);
+    /* lbt is enabled only in kvm mode, not supported in tcg mode */
+    if (kvm_enabled()) {
+        cpu->lbt = ON_OFF_AUTO_AUTO;
+        object_property_add_bool(obj, "lbt", loongarch_get_lbt,
+                                 loongarch_set_lbt);
+        object_property_set_description(obj, "lbt",
+                                   "Set off to disable Binary Tranlation.");
+
+        cpu->pmu = ON_OFF_AUTO_AUTO;
+        object_property_add_bool(obj, "pmu", loongarch_get_pmu,
+                                 loongarch_set_pmu);
+        object_property_set_description(obj, "pmu",
+                                   "Set off to performance monitor unit.");
+
+    } else {
+        cpu->lbt = ON_OFF_AUTO_OFF;
+    }
 }
 
 static void loongarch_cpu_init(Object *obj)
@@ -754,6 +811,7 @@ static const TCGCPUOps loongarch_tcg_ops = {
 #include "hw/core/sysemu-cpu-ops.h"
 
 static const struct SysemuCPUOps loongarch_sysemu_ops = {
+    .write_elf64_note = loongarch_cpu_write_elf64_note,
     .get_phys_page_debug = loongarch_cpu_get_phys_page_debug,
 };
 

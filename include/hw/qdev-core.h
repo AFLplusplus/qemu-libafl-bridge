@@ -95,6 +95,7 @@ typedef void (*DeviceUnrealize)(DeviceState *dev);
 typedef void (*DeviceReset)(DeviceState *dev);
 typedef void (*BusRealize)(BusState *bus, Error **errp);
 typedef void (*BusUnrealize)(BusState *bus);
+typedef int (*DeviceSyncConfig)(DeviceState *dev, Error **errp);
 
 /**
  * struct DeviceClass - The base class for all devices.
@@ -103,6 +104,9 @@ typedef void (*BusUnrealize)(BusState *bus);
  * property is changed to %true.
  * @unrealize: Callback function invoked when the #DeviceState:realized
  * property is changed to %false.
+ * @sync_config: Callback function invoked when QMP command device-sync-config
+ * is called. Should synchronize device configuration from host to guest part
+ * and notify the guest about the change.
  * @hotpluggable: indicates if #DeviceClass is hotpluggable, available
  * as readonly "hotpluggable" property of #DeviceState instance
  *
@@ -132,7 +136,7 @@ struct DeviceClass {
      * ensures a compile-time error if someone attempts to assign
      * dc->props directly.
      */
-    Property *props_;
+    const Property *props_;
 
     /**
      * @user_creatable: Can user instantiate with -device / device_add?
@@ -152,16 +156,17 @@ struct DeviceClass {
 
     /* callbacks */
     /**
-     * @reset: deprecated device reset method pointer
+     * @legacy_reset: deprecated device reset method pointer
      *
      * Modern code should use the ResettableClass interface to
      * implement a multi-phase reset.
      *
      * TODO: remove once every reset callback is unused
      */
-    DeviceReset reset;
+    DeviceReset legacy_reset;
     DeviceRealize realize;
     DeviceUnrealize unrealize;
+    DeviceSyncConfig sync_config;
 
     /**
      * @vmsd: device state serialisation description for
@@ -547,6 +552,7 @@ bool qdev_hotplug_allowed(DeviceState *dev, Error **errp);
  */
 HotplugHandler *qdev_get_hotplug_handler(DeviceState *dev);
 void qdev_unplug(DeviceState *dev, Error **errp);
+int qdev_sync_config(DeviceState *dev, Error **errp);
 void qdev_simple_device_unplug_cb(HotplugHandler *hotplug_dev,
                                   DeviceState *dev, Error **errp);
 void qdev_machine_creation_done(void);
@@ -935,23 +941,7 @@ char *qdev_get_own_fw_dev_path_from_handler(BusState *bus, DeviceState *dev);
  * you attempt to add an existing property defined by a parent class.
  * To modify an inherited property you need to use????
  */
-void device_class_set_props(DeviceClass *dc, Property *props);
-
-/**
- * device_class_set_parent_reset() - legacy set device reset handlers
- * @dc: device class
- * @dev_reset: function pointer to reset handler
- * @parent_reset: function pointer to parents reset handler
- *
- * Modern code should use the ResettableClass interface to
- * implement a multi-phase reset instead.
- *
- * TODO: remove the function when DeviceClass's reset method
- * is not used anymore.
- */
-void device_class_set_parent_reset(DeviceClass *dc,
-                                   DeviceReset dev_reset,
-                                   DeviceReset *parent_reset);
+void device_class_set_props(DeviceClass *dc, const Property *props);
 
 /**
  * device_class_set_parent_realize() - set up for chaining realize fns
@@ -969,6 +959,19 @@ void device_class_set_parent_realize(DeviceClass *dc,
                                      DeviceRealize dev_realize,
                                      DeviceRealize *parent_realize);
 
+/**
+ * device_class_set_legacy_reset(): set the DeviceClass::reset method
+ * @dc: The device class
+ * @dev_reset: the reset function
+ *
+ * This function sets the DeviceClass::reset method. This is widely
+ * used in existing code, but new code should prefer to use the
+ * Resettable API as documented in docs/devel/reset.rst.
+ * In addition, devices which need to chain to their parent class's
+ * reset methods or which need to be subclassed must use Resettable.
+ */
+void device_class_set_legacy_reset(DeviceClass *dc,
+                                   DeviceReset dev_reset);
 
 /**
  * device_class_set_parent_unrealize() - set up for chaining unrealize fns

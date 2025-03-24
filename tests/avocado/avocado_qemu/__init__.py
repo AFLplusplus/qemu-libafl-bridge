@@ -307,16 +307,6 @@ class QemuSystemTest(QemuBaseTest):
         if netdevhelp.find('\n' + netdevname + '\n') < 0:
             self.cancel('no support for user networking')
 
-    def require_multiprocess(self):
-        """
-        Test for the presence of the x-pci-proxy-dev which is required
-        to support multiprocess.
-        """
-        devhelp = run_cmd([self.qemu_bin,
-                           '-M', 'none', '-device', 'help'])[0];
-        if devhelp.find('x-pci-proxy-dev') < 0:
-            self.cancel('no support for multiprocess device emulation')
-
     def _new_vm(self, name, *args):
         self._sd = tempfile.TemporaryDirectory(prefix="qemu_")
         vm = QEMUMachine(self.qemu_bin, base_temp_dir=self.workdir,
@@ -382,23 +372,6 @@ class QemuSystemTest(QemuBaseTest):
             vm.shutdown()
         self._sd = None
         super().tearDown()
-
-
-class QemuUserTest(QemuBaseTest):
-    """Facilitates user-mode emulation tests."""
-
-    def setUp(self):
-        self._ldpath = []
-        super().setUp('qemu-')
-
-    def add_ldpath(self, ldpath):
-        self._ldpath.append(os.path.abspath(ldpath))
-
-    def run(self, bin_path, args=[]):
-        qemu_args = " ".join(["-L %s" % ldpath for ldpath in self._ldpath])
-        bin_args = " ".join(args)
-        return process.run("%s %s %s %s" % (self.qemu_bin, qemu_args,
-                                            bin_path, bin_args))
 
 
 class LinuxSSHMixIn:

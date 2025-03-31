@@ -20,6 +20,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check LibAFL format
-        run: sudo apt update && sudo apt install clang-format && ./scripts/libafl-format.sh check
+        run: apt update && apt install clang-format && ./scripts/libafl-format.sh check
       - name: Build QEMU
         run: mkdir -p build && cd build && ../configure --enable-werror --disable-docs --enable-fdt=system && make -j $(expr $(nproc) + 1)

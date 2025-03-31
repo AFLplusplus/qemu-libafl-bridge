@@ -6,6 +6,10 @@
 
 #include "exec/cpu-defs.h"
 
+typedef void(*libafl_qemu_on_signal_hdlr)(int target_sig);
+
+extern libafl_qemu_on_signal_hdlr libafl_signal_hdlr;
+
 struct libafl_mapinfo {
     target_ulong start;
     target_ulong end;
@@ -39,6 +43,8 @@ IntervalTreeNode* libafl_maps_first(IntervalTreeRoot* map_info);
 IntervalTreeNode* libafl_maps_next(IntervalTreeNode* pageflags_maps_node,
                                    IntervalTreeRoot* proc_maps_node,
                                    struct libafl_mapinfo* ret);
+bool libafl_is_valid_addr(target_ulong addr);
+
 
 uint64_t libafl_load_addr(void);
 struct image_info* libafl_get_image_info(void);
@@ -51,6 +57,8 @@ int _libafl_qemu_user_init(int argc, char** argv, char** envp);
 
 bool libafl_get_return_on_crash(void);
 void libafl_set_return_on_crash(bool return_on_crash);
+
+void libafl_set_on_signal_handler(libafl_qemu_on_signal_hdlr hdlr);
 
 #ifdef AS_LIB
 void libafl_qemu_init(int argc, char** argv);

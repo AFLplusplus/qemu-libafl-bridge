@@ -788,35 +788,40 @@ void die_with_signal(int host_sig)
     // Instead, LibAFL is gonna catch the signal if it has put a handler for it
     // and decide what to do
 
-    // struct sigaction act = {
-    //     .sa_handler = SIG_DFL,
-    // };
+    struct sigaction act = {
+        .sa_handler = SIG_DFL,
+    };
 
-    /*
-     * The proper exit code for dying from an uncaught signal is -<signal>.
-     * The kernel doesn't allow exit() or _exit() to pass a negative value.
-     * To get the proper exit code we need to actually die from an uncaught
-     * signal.  Here the default signal handler is installed, we send
-     * the signal and we wait for it to arrive.
-     */
-    // sigfillset(&act.sa_mask);
-    // sigaction(host_sig, &act, NULL);
+    if (libafl_signal_hdlr) {
+        /*
+         * The proper exit code for dying from an uncaught signal is -<signal>.
+         * The kernel doesn't allow exit() or _exit() to pass a negative value.
+         * To get the proper exit code we need to actually die from an uncaught
+         * signal.  Here the default signal handler is installed, we send
+         * the signal and we wait for it to arrive.
+         */
 
-    // make sure signal is not blocked
-    sigset_t host_sig_set;
-    sigemptyset(&host_sig_set);
-    sigaddset(&host_sig_set, host_sig);
+        sigfillset(&act.sa_mask);
+        sigaction(host_sig, &act, NULL);
+    } else {
+        // make sure signal is not blocked
+        sigset_t host_sig_set;
+        sigemptyset(&host_sig_set);
+        sigaddset(&host_sig_set, host_sig);
 
-    sigprocmask(SIG_UNBLOCK, &host_sig_set, NULL);
+        sigprocmask(SIG_UNBLOCK, &host_sig_set, NULL);
+    }
 //// --- End LibAFL code ---
 
     kill(getpid(), host_sig);
 
-    /* Make sure the signal isn't masked (reusing the mask inside of act). */
 //// --- Start LibAFL code ---
-    // Unused as of now
-    // sigdelset(&act.sa_mask, host_sig);
-    // sigsuspend(&act.sa_mask);
+    /* Make sure the signal isn't masked (reusing the mask inside of act). */
+
+    if (libafl_signal_hdlr) {
+        sigdelset(&act.sa_mask, host_sig);
+        sigsuspend(&act.sa_mask);
+    }
 //// --- End LibAFL code ---
 
     /* unreachable */
@@ -859,6 +864,12 @@ void dump_core_and_abort(CPUArchState *env, int target_sig)
     }
 
     preexit_cleanup(env, 128 + target_sig);
+
+//// --- Begin LibAFL code ---
+    if (libafl_signal_hdlr) {
+        libafl_signal_hdlr(target_sig);
+    }
+//// --- End LibAFL code ---
 
     die_with_signal(host_sig);
 }
@@ -1336,13 +1347,13 @@ static void handle_pending_signal(CPUArchState *cpu_env, int sig,
     if (unlikely(qemu_loglevel_mask(LOG_STRACE))) {
         print_taken_signal(sig, &unswapped);
     }
-    
+
     //// --- Start LibAFL code ---
-    
+
     if (libafl_force_dfl && (sig == SIGABRT || sig == SIGSEGV || sig == SIGILL || sig == SIGBUS)) {
         handler = TARGET_SIG_DFL;
     }
-    
+
     //// --- End LibAFL code ---
 
     if (handler == TARGET_SIG_DFL) {

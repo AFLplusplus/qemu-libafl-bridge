@@ -12,7 +12,7 @@
 
 typedef uint64_t (*libafl_block_pre_gen_cb)(uint64_t data, target_ulong pc);
 typedef void (*libafl_block_post_gen_cb)(uint64_t data, target_ulong pc,
-                                         target_ulong block_length);
+                                         target_ulong block_length, TranslationBlock* tb, TranslationBlock* last_tb, int tb_exit);
 
 typedef void (*libafl_block_exec_cb)(uint64_t data, uint64_t id);
 
@@ -47,4 +47,4 @@ bool libafl_qemu_block_hook_set_jit(
 int libafl_qemu_remove_block_hook(size_t num, int invalidate);
 
 void libafl_qemu_hook_block_pre_run(target_ulong pc);
-void libafl_qemu_hook_block_post_run(TranslationBlock* tb, vaddr pc);
+void libafl_qemu_hook_block_post_run(TranslationBlock* tb, TranslationBlock* last_tb, vaddr pc, int tb_exit);

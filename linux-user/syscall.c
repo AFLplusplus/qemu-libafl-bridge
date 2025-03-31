@@ -13925,6 +13925,14 @@ IntervalTreeNode * libafl_maps_next(IntervalTreeNode *pageflags_maps_node, Inter
     }
 }
 
+//// --- Begin LibAFL code ---
+bool libafl_is_valid_addr(target_ulong addr) {
+    int flags = page_get_flags(addr);
+
+    return (flags & PAGE_VALID) && (flags & PAGE_READ);
+}
+//// --- End LibAFL code ---
+
 //// --- End LibAFL code ---
 
 abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,

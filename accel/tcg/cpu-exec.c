@@ -42,6 +42,13 @@
 #include "internal-common.h"
 #include "internal-target.h"
 
+//// --- Begin LibAFL code ---
+#include "libafl/exit.h"
+#include "libafl/tcg.h"
+
+#include "libafl/hooks/tcg/block.h"
+//// --- End LibAFL code ---
+
 /* -icount align implementation. */
 
 typedef struct SyncClocks {
@@ -285,6 +292,14 @@ hit:
     assert((tb_cflags(tb) & CF_PCREL) || tb->pc == pc);
     return tb;
 }
+
+//// --- Begin LibAFL code ---
+TranslationBlock *libafl_tb_lookup(CPUState *cpu, vaddr pc,
+                                          uint64_t cs_base, uint32_t flags,
+                                          uint32_t cflags) {
+    return tb_lookup(cpu, pc, cs_base, flags, cflags);
+}
+//// --- End LibAFL code ---
 
 static void log_cpu_exec(vaddr pc, CPUState *cpu,
                          const TranslationBlock *tb)
@@ -674,6 +689,13 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
     return;
 }
 
+//// --- Begin LibAFL code ---
+void libafl_tb_add_jump(TranslationBlock *tb, int n,
+                               TranslationBlock *tb_next) {
+    tb_add_jump(tb, n, tb_next);
+}
+//// --- End LibAFL code ---
+
 static inline bool cpu_handle_halt(CPUState *cpu)
 {
 #ifndef CONFIG_USER_ONLY
@@ -707,12 +729,6 @@ static inline void cpu_handle_debug_exception(CPUState *cpu)
         tcg_ops->debug_excp_handler(cpu);
     }
 }
-
-//// --- Begin LibAFL code ---
-
-#include "libafl/exit.h"
-
-//// --- End LibAFL code ---
 
 static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
 {
@@ -1017,6 +1033,23 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
 
                 mmap_lock();
                 tb = tb_gen_code(cpu, pc, cs_base, flags, cflags);
+
+                //// --- Begin LibAFL code ---
+#ifndef CONFIG_USER_ONLY
+                /*
+                 * We don't take care of direct jumps when address mapping
+                 * changes in system emulation.  So it's not safe to make a
+                 * direct jump to a TB spanning two pages because the mapping
+                 * for the second page can change.
+                 */
+                if (tb_page_addr1(tb) != -1) {
+                    last_tb = NULL;
+                }
+#endif
+                libafl_qemu_hook_block_post_run(tb, last_tb, pc, tb_exit);
+
+                //// --- End LibAFL code ---
+
                 mmap_unlock();
 
                 /*
@@ -1028,18 +1061,23 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 jc->array[h].pc = pc;
                 qatomic_set(&jc->array[h].tb, tb);
             }
-
+//// --- Begin LibAFL code ---
+            else {
+//// --- End LibAFL code ---
 #ifndef CONFIG_USER_ONLY
-            /*
-             * We don't take care of direct jumps when address mapping
-             * changes in system emulation.  So it's not safe to make a
-             * direct jump to a TB spanning two pages because the mapping
-             * for the second page can change.
-             */
-            if (tb_page_addr1(tb) != -1) {
-                last_tb = NULL;
-            }
+                /*
+                 * We don't take care of direct jumps when address mapping
+                 * changes in system emulation.  So it's not safe to make a
+                 * direct jump to a TB spanning two pages because the mapping
+                 * for the second page can change.
+                 */
+                if (tb_page_addr1(tb) != -1) {
+                    last_tb = NULL;
+                }
 #endif
+//// --- Begin LibAFL code ---
+            }
+//// --- End LibAFL code ---
 
             //// --- Begin LibAFL code ---
 

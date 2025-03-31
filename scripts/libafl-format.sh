@@ -11,5 +11,5 @@ elif [ "$1" != "" ]; then
 fi
 
 cd "$SCRIPT_DIR" || exit 1
-find "$ROOT_DIR/libafl" -name "*.c" -exec clang-format $CHECK -style="file:$ROOT_DIR/libafl/.clang-format" -i {} \;
-find "$ROOT_DIR/include/libafl" -name "*.h" -exec clang-format $CHECK -style=file:"$ROOT_DIR/libafl/.clang-format" -i {} \;
+find "$ROOT_DIR/libafl" -name "*.c" -print0 | xargs -0 clang-format $CHECK -style="file:$ROOT_DIR/libafl/.clang-format" -i || exit 1
+find "$ROOT_DIR/include/libafl" -name "*.h" -print0 | xargs -0 clang-format $CHECK -style=file:"$ROOT_DIR/libafl/.clang-format" -i || exit 1

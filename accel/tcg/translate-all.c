@@ -715,12 +715,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     }
     tb->tc.size = gen_code_size;
 
-//// --- Begin LibAFL code ---
-
-    libafl_qemu_hook_block_post_run(tb, pc);
-
-//// --- End LibAFL code ---
-
     /*
      * For CF_PCREL, attribute all executions of the generated code
      * to its first mapping.

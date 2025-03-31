@@ -52,12 +52,14 @@ bool libafl_qemu_block_hook_set_jit(size_t num, libafl_block_jit_cb jit_cb)
     return false;
 }
 
-void libafl_qemu_hook_block_post_run(TranslationBlock* tb, vaddr pc)
+void libafl_qemu_hook_block_post_run(TranslationBlock* tb,
+                                     TranslationBlock* last_tb, vaddr pc,
+                                     int tb_exit)
 {
     struct libafl_block_hook* hook = libafl_block_hooks;
     while (hook) {
         if (hook->post_gen_cb)
-            hook->post_gen_cb(hook->data, pc, tb->size);
+            hook->post_gen_cb(hook->data, pc, tb->size, tb, last_tb, tb_exit);
         hook = hook->next;
     }
 }

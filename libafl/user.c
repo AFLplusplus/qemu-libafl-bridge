@@ -1,6 +1,7 @@
 #include "qemu/osdep.h"
 #include "qemu.h"
 #include "loader.h"
+#include "exec/exec-all.h"
 
 #include "libafl/user.h"
 
@@ -13,6 +14,8 @@ static struct libafl_qemu_sig_ctx libafl_qemu_sig_ctx = {0};
 // if true, target crashes will issue an exit request and return to harness.
 // if false, target crahes will raise the appropriate signal.
 static bool libafl_return_on_crash = false;
+
+libafl_qemu_on_signal_hdlr libafl_signal_hdlr = NULL;
 
 void host_signal_handler(int host_sig, siginfo_t* info, void* puc);
 
@@ -64,6 +67,11 @@ void libafl_set_return_on_crash(bool return_on_crash)
 }
 
 bool libafl_get_return_on_crash(void) { return libafl_return_on_crash; }
+
+void libafl_set_on_signal_handler(libafl_qemu_on_signal_hdlr hdlr)
+{
+    libafl_signal_hdlr = hdlr;
+}
 
 #ifdef AS_LIB
 void libafl_qemu_init(int argc, char** argv)

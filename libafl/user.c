@@ -68,7 +68,8 @@ void libafl_set_return_on_crash(bool return_on_crash)
 
 bool libafl_get_return_on_crash(void) { return libafl_return_on_crash; }
 
-void libafl_set_on_signal_handler(libafl_qemu_on_signal_hdlr hdlr) {
+void libafl_set_on_signal_handler(libafl_qemu_on_signal_hdlr hdlr)
+{
     libafl_signal_hdlr = hdlr;
 }
 

@@ -16,7 +16,7 @@
 #include "device-save.h"
 #include "syx-cow-cache.h"
 
-#define CONFIG_DEBUG_SYX
+//#define CONFIG_DEBUG_SYX
 #include "libafl/syx-misc.h"
 
 #define SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE 64

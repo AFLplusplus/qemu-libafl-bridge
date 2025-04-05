@@ -29,6 +29,7 @@
 #include "migration/misc.h"
 
 //// --- Begin LibAFL code ---
+#define CONFIG_DEBUG_SYX
 #include "libafl/syx-snapshot/syx-snapshot.h"
 //// --- End LibAFL code ---
 
@@ -1654,7 +1655,6 @@ static void coroutine_fn blk_aio_read_entry(void *opaque)
                                       0, rwco->flags);
 //// --- Begin LibAFL code ---
     } else {
-        SYX_DEBUG("Read from COW cache: 0x%llx 0x%llx\n", rwco->offset, acb->bytes);
         rwco->ret = 0;
     }
 //// --- End LibAFL code ---

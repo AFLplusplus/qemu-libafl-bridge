@@ -17,7 +17,7 @@ static void blk_rw_done(void *opaque, int ret)
     *(int *)opaque = ret;
 }
 
-void libafl_blk_write(BlockBackend *blk, void *buf, int64_t offset, int64_t sz)
+int libafl_blk_write(BlockBackend *blk, void *buf, int64_t offset, int64_t sz)
 {
 	void *pattern_buf = NULL;
 	QEMUIOVector qiov;
@@ -31,9 +31,10 @@ void libafl_blk_write(BlockBackend *blk, void *buf, int64_t offset, int64_t sz)
 		main_loop_wait(false);
 	}
 
-	printf("async_ret: %d\n", async_ret);
+	//printf("async_ret: %d\n", async_ret);
 	//g_assert(async_ret == 0);
 
 	g_free(pattern_buf);
 	qemu_iovec_destroy(&qiov);
+    return async_ret;
 }

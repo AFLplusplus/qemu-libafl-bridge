@@ -15,4 +15,4 @@ void libafl_qemu_init(int argc, char** argv);
  * The same way the guest would, 
  * thus this writes to the Syx COW cache (if it is initialized)
  */
-void libafl_blk_write(BlockBackend *blk, void *buf, int64_t offset, int64_t sz);
+int libafl_blk_write(BlockBackend *blk, void *buf, int64_t offset, int64_t sz);

@@ -173,23 +173,24 @@ SyxSnapshot* syx_snapshot_new(bool track, bool is_active_bdrv_cache,
     snapshot->rbs_dirty_list =
         g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL,
                               (GDestroyNotify)g_hash_table_remove_all);
-    snapshot->bdrvs_cow_cache = syx_cow_cache_new();
-
+    
     if (is_active_bdrv_cache) {
-        syx_cow_cache_move(snapshot->bdrvs_cow_cache,
-                           &syx_snapshot_state.before_fuzz_cache);
-        syx_snapshot_state.active_bdrv_cache_snapshot = snapshot;
+        // we have cached writes from BEFORE fuzzing starts
+        snapshot->bdrvs_cow_cache = syx_snapshot_state.before_fuzz_cache;
+        syx_snapshot_state.before_fuzz_cache = NULL;
     } else {
-        syx_cow_cache_push_layer(snapshot->bdrvs_cow_cache,
-                                 SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE,
-                                 SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS);
+        snapshot->bdrvs_cow_cache = syx_cow_cache_new();
     }
+    syx_cow_cache_push_layer(snapshot->bdrvs_cow_cache,
+        SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE,
+        SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS);
+    syx_snapshot_state.active_bdrv_cache_snapshot = snapshot;
 
     if (track) {
         syx_snapshot_track(&syx_snapshot_state.tracked_snapshots, snapshot);
 
         //make sure to catch all new writes
-        //with a filled TLB there might be missed writes from jitted TCG code
+        //with a filled TLB there might be missed writes
         tlb_flush_all_cpus();
     }
 

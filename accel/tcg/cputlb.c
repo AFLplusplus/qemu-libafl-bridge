@@ -48,6 +48,7 @@
 #include "tcg/tcg-ldst.h"
 #include "tcg/oversized-guest.h"
 //// --- Begin LibAFL code ---
+//#define CONFIG_DEBUG_SYX
 #include "libafl/syx-snapshot/syx-snapshot.h"
 //// --- End LibAFL code ---
 
@@ -446,7 +447,7 @@ void tlb_flush_all_cpus_synced(CPUState *src_cpu)
     tlb_flush_by_mmuidx_all_cpus_synced(src_cpu, ALL_MMUIDX_BITS);
 }
 
-void tlb_flush_all_cpus() 
+void tlb_flush_all_cpus(void) 
 {
     const run_on_cpu_func fn = tlb_flush_by_mmuidx_async_work;
 
@@ -1781,10 +1782,10 @@ static bool mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
         //// --- Begin LibAFL code ---
 
         // TODO: Does not work?
-        // if (type == MMU_DATA_STORE) {
+        if (type == MMU_DATA_STORE && !(flags & (TLB_MMIO | TLB_DISCARD_WRITE))) {
             SYX_DEBUG("vaddr mmu_lookup %llx %d\n", addr, type);
             syx_snapshot_dirty_list_add_hostaddr(l->page[0].haddr);
-        // }
+        }
 
         //// --- End LibAFL code ---
 
@@ -1812,11 +1813,11 @@ static bool mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
 
         //// --- Begin LibAFL code ---
 
-        // if (type == MMU_DATA_STORE) {
+        if (type == MMU_DATA_STORE && !(flags & (TLB_MMIO | TLB_DISCARD_WRITE))) {
             SYX_DEBUG("vaddr crosspage %llx\n", addr);
             syx_snapshot_dirty_list_add_hostaddr(l->page[0].haddr);
             syx_snapshot_dirty_list_add_hostaddr(l->page[1].haddr);
-        // }
+        }
 
         //// --- End LibAFL code ---
 

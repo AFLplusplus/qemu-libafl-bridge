@@ -73,13 +73,9 @@ static int cpu_common_post_load(void *opaque, int version_id)
     //tb_flush(cpu);
 
 //// --- Begin LibAFL code ---
-
-    // flushing the TBs every restore makes it really slow
-    // TODO handle writes to X code with specific calls to tb_invalidate_phys_addr
-    if (!libafl_devices_is_restoring()) {
-        tb_flush(cpu);
-    }
-
+    // Only invalidate per CPU virtual JMP cache
+    // Note: Global TB cache will be invalidated by SYX snapshot code
+    tcg_flush_jmp_cache(cpu);
 //// --- End LibAFL code ---
 
     return 0;

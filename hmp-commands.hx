@@ -1865,7 +1865,7 @@ ERST
         .name       = "syx-snapshot-new",
         .args_type  = "",
         .params     = "",
-        .help       = "create a new snapshot and store it in the static variable",
+        .help       = "create a new snapshot and store it in the static variable. Use syx-snapshot-init BEFORE.",
         .cmd        = hmp_syx_snapshot_new,
     },
 

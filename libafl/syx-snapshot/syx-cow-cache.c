@@ -218,7 +218,7 @@ void syx_cow_cache_read_entry(SyxCowCache* scc, BlockBackend* blk,
     size_t qiov_offset = 0;
     uint64_t chunk_size = 0;
 
-    printf("[SYX] [%s] Read 0x%zx bytes @addr %lx\n", blk_name(blk), qiov->size, offset);
+    //printf("[SYX] [%s] Read 0x%zx bytes @addr %lx\n", blk_name(blk), qiov->size, offset);
 
     // First read the backing block device normally.
     assert(blk_co_preadv(blk, offset, bytes, qiov, flags) >= 0);

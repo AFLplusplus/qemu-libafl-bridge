@@ -53,7 +53,7 @@
 //// --- End LibAFL code ---
 
 /* DEBUG defines, enable DEBUG_TLB_LOG to log to the CPU_LOG_MMU target */
-//#define DEBUG_TLB 
+/* #define DEBUG_TLB */
 /* #define DEBUG_TLB_LOG */
 
 #ifdef DEBUG_TLB
@@ -78,7 +78,7 @@
 } while (0)
 
 #define assert_cpu_is_self(cpu) do {                              \
-        if (DEBUG_TLB_GATE && false) {                                     \
+        if (DEBUG_TLB_GATE) {                                     \
             g_assert(!(cpu)->created || qemu_cpu_is_self(cpu));   \
         }                                                         \
     } while (0)
@@ -1417,7 +1417,7 @@ static int probe_access_internal(CPUState *cpu, vaddr addr,
 }
 
 //// --- Begin LibAFL code ---
-// Use this snippet multiple times just below
+// Use this snippet multiple times below
 #define SYX_SNAPSHOT_DIRTY_LIST_ADD_HOSTADDR_PROBE(dbg, access_type, addr, entry_full, phost) { \
 if (access_type == MMU_DATA_STORE && !(flags & (TLB_MMIO | TLB_DISCARD_WRITE))) { \
     SYX_DEBUG("%s %llx %llx\n", dbg, addr, addr+ (entry_full)->xlat_section); \
@@ -1496,7 +1496,7 @@ int probe_access_flags(CPUArchState *env, vaddr addr, int size,
         flags &= ~TLB_NOTDIRTY;
 
         //// --- Begin LibAFL code ---
-        SYX_SNAPSHOT_DIRTY_LIST_ADD_HOSTADDR_PROBE("probe_access_full_flags", access_type, addr, full, *phost);
+        SYX_SNAPSHOT_DIRTY_LIST_ADD_HOSTADDR_PROBE("probe_access_flags", access_type, addr, full, *phost);
         //// --- End LibAFL code ---
     }
 

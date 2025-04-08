@@ -29,7 +29,7 @@
 #include "migration/misc.h"
 
 //// --- Begin LibAFL code ---
-#define CONFIG_DEBUG_SYX
+//#define CONFIG_DEBUG_SYX
 #include "libafl/syx-snapshot/syx-snapshot.h"
 //// --- End LibAFL code ---
 

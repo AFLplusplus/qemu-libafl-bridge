@@ -83,7 +83,7 @@
 #endif
 
 //// --- Begin LibAFL code ---
-#define CONFIG_DEBUG_SYX
+//#define CONFIG_DEBUG_SYX
 #include "libafl/syx-snapshot/syx-snapshot.h"
 //// --- End LibAFL code ---
 
@@ -2810,6 +2810,9 @@ static MemTxResult flatview_write_continue_step(MemTxAttrs attrs,
         memmove(ram_ptr, buf, *l);
 
         //// --- Begin LibAFL code ---
+	    /**
+	      * Should catch DMA writes by devices 
+	      * Not sure it is needed right now...
         SYX_DEBUG("flatview_write_continue_step %llx %d\n", mr_addr, *l);
         unsigned long hpage = (unsigned long)ram_ptr & TARGET_PAGE_MASK;
 
@@ -2817,6 +2820,7 @@ static MemTxResult flatview_write_continue_step(MemTxAttrs attrs,
             syx_snapshot_dirty_list_add_hostaddr((void*)hpage);
             hpage += 1<<TARGET_PAGE_BITS;
         }
+	    */
         //// --- End LibAFL code ---
 
         invalidate_and_set_dirty(mr, mr_addr, *l);

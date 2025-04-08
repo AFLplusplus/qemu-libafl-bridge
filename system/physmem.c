@@ -82,6 +82,11 @@
 #include <daxctl/libdaxctl.h>
 #endif
 
+//// --- Begin LibAFL code ---
+//#define CONFIG_DEBUG_SYX
+#include "libafl/syx-snapshot/syx-snapshot.h"
+//// --- End LibAFL code ---
+
 //#define DEBUG_SUBPAGE
 
 /* ram_list is read under rcu_read_lock()/rcu_read_unlock().  Writes
@@ -2803,6 +2808,21 @@ static MemTxResult flatview_write_continue_step(MemTxAttrs attrs,
                                                false, true);
 
         memmove(ram_ptr, buf, *l);
+
+        //// --- Begin LibAFL code ---
+	    /**
+	      * Should catch DMA writes by devices 
+	      * Not sure it is needed right now...
+        SYX_DEBUG("flatview_write_continue_step %llx %d\n", mr_addr, *l);
+        unsigned long hpage = (unsigned long)ram_ptr & TARGET_PAGE_MASK;
+
+        while (hpage < (unsigned long) ram_ptr + *l) {
+            syx_snapshot_dirty_list_add_hostaddr((void*)hpage);
+            hpage += 1<<TARGET_PAGE_BITS;
+        }
+	    */
+        //// --- End LibAFL code ---
+
         invalidate_and_set_dirty(mr, mr_addr, *l);
 
         return MEMTX_OK;
@@ -3018,11 +3038,6 @@ enum write_rom_type {
     FLUSH_CACHE,
 };
 
-//// --- Begin LibAFL code ---
-
-void syx_snapshot_dirty_list_add_hostaddr_range(void* host_addr, uint64_t len);
-
-//// --- End LibAFL code ---
 
 static inline MemTxResult address_space_write_rom_internal(AddressSpace *as,
                                                            hwaddr addr,
@@ -3052,10 +3067,10 @@ static inline MemTxResult address_space_write_rom_internal(AddressSpace *as,
             case WRITE_DATA:
                 memcpy(ram_ptr, buf, l);
 //// --- Begin LibAFL code ---
-
+                SYX_DEBUG("hwaddr write_rom %llx\n", addr);
                 syx_snapshot_dirty_list_add_hostaddr_range(ram_ptr, l);
 
-//// --- End LibAFL code ---
+                //// --- End LibAFL code ---
                 invalidate_and_set_dirty(mr, addr1, l);
                 break;
             case FLUSH_CACHE:

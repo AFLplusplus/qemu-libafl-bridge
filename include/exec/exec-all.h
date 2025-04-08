@@ -110,6 +110,9 @@ void tlb_flush_all_cpus_synced(CPUState *src_cpu);
  */
 void tlb_flush_page_by_mmuidx(CPUState *cpu, vaddr addr,
                               uint16_t idxmap);
+
+void tlb_flush_all_cpus(void);
+
 /**
  * tlb_flush_page_by_mmuidx_all_cpus_synced:
  * @cpu: Originating CPU of the flush

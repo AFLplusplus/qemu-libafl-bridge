@@ -22,10 +22,12 @@ specific_ss.add(files(
 specific_ss.add(when : 'CONFIG_SOFTMMU', if_true : [files(
                                                         'system.c',
                                                         'qemu_snapshot.c',
+                                                        'blkdev.c',
                                                         'syx-snapshot/device-save.c',
                                                         'syx-snapshot/syx-snapshot.c',
                                                         'syx-snapshot/syx-cow-cache.c',
                                                         'syx-snapshot/channel-buffer-writeback.c',
+                                                        'syx-snapshot/syx-hmp.c',
                                                     )])
 
 specific_ss.add(when : 'CONFIG_USER_ONLY', if_true : [files(

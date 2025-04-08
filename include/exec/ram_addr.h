@@ -325,6 +325,7 @@ static inline void cpu_physical_memory_set_dirty_range(ram_addr_t start,
                                   offset, next - page);
             }
 
+
             page = next;
             idx++;
             offset = 0;

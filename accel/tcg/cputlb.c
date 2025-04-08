@@ -1412,16 +1412,18 @@ static int probe_access_internal(CPUState *cpu, vaddr addr,
 
     /* Everything else is RAM. */
     *phost = (void *)((uintptr_t)addr + entry->addend);
-//// --- Begin LibAFL code ---
 
-    if (access_type == MMU_DATA_STORE) {
-        SYX_DEBUG("vaddr probe %llx\n", addr);
-        syx_snapshot_dirty_list_add_hostaddr(*phost);
-    }
-
-//// --- End LibAFL code ---
     return flags;
 }
+
+//// --- Begin LibAFL code ---
+// Use this snippet multiple times just below
+#define SYX_SNAPSHOT_DIRTY_LIST_ADD_HOSTADDR_PROBE(dbg, access_type, addr, entry_full, phost) { \
+if (access_type == MMU_DATA_STORE && !(flags & (TLB_MMIO | TLB_DISCARD_WRITE))) { \
+    SYX_DEBUG("%s %llx %llx\n", dbg, addr, addr+ (entry_full)->xlat_section); \
+    syx_snapshot_dirty_list_add_hostaddr((phost)); \
+}}\
+//// --- End LibAFL code ---
 
 int probe_access_full(CPUArchState *env, vaddr addr, int size,
                       MMUAccessType access_type, int mmu_idx,
@@ -1437,6 +1439,10 @@ int probe_access_full(CPUArchState *env, vaddr addr, int size,
         int dirtysize = size == 0 ? 1 : size;
         notdirty_write(env_cpu(env), addr, dirtysize, *pfull, retaddr);
         flags &= ~TLB_NOTDIRTY;
+
+        //// --- Begin LibAFL code ---
+        SYX_SNAPSHOT_DIRTY_LIST_ADD_HOSTADDR_PROBE("probe_access_full", access_type, addr, *pfull, *phost);
+        //// --- End LibAFL code ---
     }
 
     return flags;
@@ -1461,6 +1467,10 @@ int probe_access_full_mmu(CPUArchState *env, vaddr addr, int size,
         int dirtysize = size == 0 ? 1 : size;
         notdirty_write(env_cpu(env), addr, dirtysize, *pfull, 0);
         flags &= ~TLB_NOTDIRTY;
+
+        //// --- Begin LibAFL code ---
+        SYX_SNAPSHOT_DIRTY_LIST_ADD_HOSTADDR_PROBE("probe_access_full_mmu", access_type, addr, *pfull, *phost);
+        //// --- End LibAFL code ---
     }
 
     return flags;
@@ -1484,6 +1494,10 @@ int probe_access_flags(CPUArchState *env, vaddr addr, int size,
         int dirtysize = size == 0 ? 1 : size;
         notdirty_write(env_cpu(env), addr, dirtysize, full, retaddr);
         flags &= ~TLB_NOTDIRTY;
+
+        //// --- Begin LibAFL code ---
+        SYX_SNAPSHOT_DIRTY_LIST_ADD_HOSTADDR_PROBE("probe_access_full_flags", access_type, addr, full, *phost);
+        //// --- End LibAFL code ---
     }
 
     return flags;
@@ -1519,6 +1533,10 @@ void *probe_access(CPUArchState *env, vaddr addr, int size,
         /* Handle clean RAM pages.  */
         if (flags & TLB_NOTDIRTY) {
             notdirty_write(env_cpu(env), addr, size, full, retaddr);
+
+            //// --- Begin LibAFL code ---
+            SYX_SNAPSHOT_DIRTY_LIST_ADD_HOSTADDR_PROBE("probe_access", access_type, addr, full, host);
+            //// --- End LibAFL code ---
         }
     }
 
@@ -1735,6 +1753,13 @@ static void mmu_watch_or_dirty(CPUState *cpu, MMULookupPageData *data,
     if (flags & TLB_NOTDIRTY) {
         notdirty_write(cpu, addr, size, full, ra);
         flags &= ~TLB_NOTDIRTY;
+
+        //// --- Begin LibAFL code ---
+        if (!(flags & (TLB_MMIO | TLB_DISCARD_WRITE))) {
+            SYX_DEBUG("mmu_watch_or_dirty %llx %llx\n", addr, addr+full->xlat_section);
+            syx_snapshot_dirty_list_add_hostaddr(data->haddr);
+        }
+        //// --- End LibAFL code ---
     }
     data->flags = flags;
 }
@@ -1779,15 +1804,6 @@ static bool mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
             l->memop ^= MO_BSWAP;
         }
 
-        //// --- Begin LibAFL code ---
-
-        // TODO: Does not work?
-        if (type == MMU_DATA_STORE && !(flags & (TLB_MMIO | TLB_DISCARD_WRITE))) {
-            SYX_DEBUG("vaddr mmu_lookup %llx %d\n", addr, type);
-            syx_snapshot_dirty_list_add_hostaddr(l->page[0].haddr);
-        }
-
-        //// --- End LibAFL code ---
 
     } else {
         /* Finish compute of page crossing. */
@@ -1810,16 +1826,6 @@ static bool mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
             mmu_watch_or_dirty(cpu, &l->page[0], type, ra);
             mmu_watch_or_dirty(cpu, &l->page[1], type, ra);
         }
-
-        //// --- Begin LibAFL code ---
-
-        if (type == MMU_DATA_STORE && !(flags & (TLB_MMIO | TLB_DISCARD_WRITE))) {
-            SYX_DEBUG("vaddr crosspage %llx\n", addr);
-            syx_snapshot_dirty_list_add_hostaddr(l->page[0].haddr);
-            syx_snapshot_dirty_list_add_hostaddr(l->page[1].haddr);
-        }
-
-        //// --- End LibAFL code ---
 
         /*
          * Since target/sparc is the only user of TLB_BSWAP, and all
@@ -1916,15 +1922,12 @@ static void *atomic_mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
     hostaddr = (void *)((uintptr_t)addr + tlbe->addend);
     full = &cpu->neg.tlb.d[mmu_idx].fulltlb[index];
 
-    //// --- Begin LibAFL code ---
-
-    SYX_DEBUG("vaddr atomic %llx\n", addr);
-    syx_snapshot_dirty_list_add_hostaddr(hostaddr);
-
-    //// --- End LibAFL code ---
-
     if (unlikely(tlb_addr & TLB_NOTDIRTY)) {
         notdirty_write(cpu, addr, size, full, retaddr);
+        //// --- Begin LibAFL code ---
+        SYX_DEBUG("atomic_mmu_lookup %llx %llx\n", addr, addr+full->xlat_section);
+        syx_snapshot_dirty_list_add_hostaddr(hostaddr);
+        //// --- End LibAFL code ---
     }
 
     if (unlikely(tlb_addr & TLB_FORCE_SLOW)) {

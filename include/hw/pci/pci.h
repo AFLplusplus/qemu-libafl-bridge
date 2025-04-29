@@ -2,8 +2,8 @@
 #define QEMU_PCI_H
 
 #include "exec/memory.h"
-#include "sysemu/dma.h"
-#include "sysemu/host_iommu_device.h"
+#include "system/dma.h"
+#include "system/host_iommu_device.h"
 
 /* PCI includes legacy ISA access.  */
 #include "hw/isa/isa.h"
@@ -22,6 +22,10 @@ extern bool pci_available;
 #define PCI_DEVFN_MAX           256
 #define PCI_SLOT_MAX            32
 #define PCI_FUNC_MAX            8
+
+#define PCI_SBDF(seg, bus, dev, func) \
+            ((((uint32_t)(seg)) << 16) | \
+            (PCI_BUILD_BDF(bus, PCI_DEVFN(dev, func))))
 
 /* Class, Vendor and Device IDs from Linux's pci_ids.h */
 #include "hw/pci/pci_ids.h"
@@ -216,6 +220,8 @@ enum {
     QEMU_PCIE_ARI_NEXTFN_1 = (1 << QEMU_PCIE_ARI_NEXTFN_1_BITNR),
 #define QEMU_PCIE_EXT_TAG_BITNR 13
     QEMU_PCIE_EXT_TAG = (1 << QEMU_PCIE_EXT_TAG_BITNR),
+#define QEMU_PCI_CAP_PM_BITNR 14
+    QEMU_PCI_CAP_PM = (1 << QEMU_PCI_CAP_PM_BITNR),
 };
 
 typedef struct PCIINTxRoute {
@@ -297,6 +303,9 @@ int pci_bus_get_irq_level(PCIBus *bus, int irq_num);
 uint32_t pci_bus_get_slot_reserved_mask(PCIBus *bus);
 void pci_bus_set_slot_reserved_mask(PCIBus *bus, uint32_t mask);
 void pci_bus_clear_slot_reserved_mask(PCIBus *bus, uint32_t mask);
+bool pci_bus_add_fw_cfg_extra_pci_roots(FWCfgState *fw_cfg,
+                                        PCIBus *bus,
+                                        Error **errp);
 /* 0 <= pin <= 3 0 = INTA, 1 = INTB, 2 = INTC, 3 = INTD */
 static inline int pci_swizzle(int slot, int pin)
 {
@@ -671,6 +680,8 @@ static inline void pci_irq_deassert(PCIDevice *pci_dev)
 }
 
 MSIMessage pci_get_msi_message(PCIDevice *dev, int vector);
+void pci_set_enabled(PCIDevice *pci_dev, bool state);
 void pci_set_power(PCIDevice *pci_dev, bool state);
+int pci_pm_init(PCIDevice *pci_dev, uint8_t offset, Error **errp);
 
 #endif

@@ -38,6 +38,7 @@
 #include "qemu/plugin.h"
 #include "exec/exec-all.h"
 #include "user/guest-base.h"
+#include "user/page-protection.h"
 #include "tcg/startup.h"
 #include "qemu/timer.h"
 #include "qemu/envlist.h"
@@ -627,8 +628,7 @@ int main(int argc, char **argv)
     target_cpu_init(env, regs);
 
     if (gdbstub) {
-        gdbserver_start(gdbstub);
-        gdb_handlesig(cpu, 0, NULL, NULL, 0);
+        gdbserver_start(gdbstub, &error_fatal);
     }
     cpu_loop(env);
     /* never exits */

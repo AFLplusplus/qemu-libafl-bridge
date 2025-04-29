@@ -44,7 +44,8 @@
 #endif
 
 #include "exec/cputlb.h"
-#include "exec/translate-all.h"
+#include "exec/page-protection.h"
+#include "tb-internal.h"
 #include "exec/translator.h"
 #include "exec/tb-flush.h"
 #include "qemu/bitmap.h"
@@ -53,14 +54,14 @@
 #include "qemu/cacheinfo.h"
 #include "qemu/timer.h"
 #include "exec/log.h"
-#include "sysemu/cpus.h"
-#include "sysemu/cpu-timers.h"
-#include "sysemu/tcg.h"
+#include "system/cpu-timers.h"
+#include "system/tcg.h"
 #include "qapi/error.h"
-#include "hw/core/tcg-cpu-ops.h"
+#include "accel/tcg/cpu-ops.h"
 #include "tb-jmp-cache.h"
 #include "tb-hash.h"
 #include "tb-context.h"
+#include "tb-internal.h"
 #include "internal-common.h"
 #include "internal-target.h"
 #include "tcg/perf.h"
@@ -281,7 +282,8 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
 
     tcg_func_start(tcg_ctx);
 
-    tcg_ctx->cpu = env_cpu(env);
+    CPUState *cs = env_cpu(env);
+    tcg_ctx->cpu = cs;
 
     //// --- Begin LibAFL code ---
 
@@ -289,73 +291,7 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
 
     //// --- End LibAFL code ---
 
-    gen_intermediate_code(env_cpu(env), tb, max_insns, pc, host_pc);
-    assert(tb->size != 0);
-    tcg_ctx->cpu = NULL;
-    *max_insns = tb->icount;
-
-    return tcg_gen_code(tcg_ctx, tb, pc);
-}
-
-//// --- Begin LibAFL code ---
-
-static target_ulong reverse_bits(target_ulong num)
-{
-    unsigned int count = sizeof(num) * 8 - 1;
-    target_ulong reverse_num = num;
-
-    num >>= 1;
-    while(num)
-    {
-       reverse_num <<= 1;
-       reverse_num |= num & 1;
-       num >>= 1;
-       count--;
-    }
-    reverse_num <<= count;
-    return reverse_num;
-}
-/*
- * Isolate the portion of code gen which can setjmp/longjmp.
- * Return the size of the generated code, or negative on error.
- */
-static int libafl_setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
-                           vaddr pc, void *host_pc,
-                           int *max_insns, int64_t *ti)
-{
-    int ret = sigsetjmp(tcg_ctx->jmp_trans, 0);
-    if (unlikely(ret != 0)) {
-        return ret;
-    }
-
-    tcg_func_start(tcg_ctx);
-
-    tcg_ctx->cpu = env_cpu(env);
-
-    // -- start gen_intermediate_code
-    const int num_insns = 1; // do "as-if" we were translating a single target instruction
-
-#ifndef TARGET_INSN_START_EXTRA_WORDS
-    tcg_gen_insn_start(pc);
-#elif TARGET_INSN_START_EXTRA_WORDS == 1
-    tcg_gen_insn_start(pc, 0);
-#elif TARGET_INSN_START_EXTRA_WORDS == 2
-    tcg_gen_insn_start(pc, 0, 0);
-#else
-#error Unhandled TARGET_INSN_START_EXTRA_WORDS value
-#endif
-
-    // run edge hooks
-    libafl_qemu_hook_edge_run();
-
-    tcg_gen_goto_tb(0);
-    tcg_gen_exit_tb(tb, 0);
-
-    // This is obviously wrong, but it is required that the number / size of target instruction translated
-    // is at least 1. For now, we make it so that no problem occurs later on.
-    tb->icount = num_insns; // number of target instructions translated in the TB.
-    tb->size = num_insns; // size (in target bytes) of target instructions translated in the TB.
-    // -- end gen_intermediate_code
+    cs->cc->tcg_ops->translate_code(cs, tb, max_insns, pc, host_pc);
 
     assert(tb->size != 0);
     tcg_ctx->cpu = NULL;
@@ -649,7 +585,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
             /*
              * Overflow of code_gen_buffer, or the current slice of it.
              *
-             * TODO: We don't need to re-do gen_intermediate_code, nor
+             * TODO: We don't need to re-do tcg_ops->translate_code, nor
              * should we re-do the tcg optimization currently hidden
              * inside tcg_gen_code.  All that should be required is to
              * flush the TBs, allocate a new TB, re-initialize it per
@@ -821,21 +757,30 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     }
 
     /*
-     * If the TB is not associated with a physical RAM page then it must be
-     * a temporary one-insn TB, and we have nothing left to do. Return early
-     * before attempting to link to other TBs or add to the lookup table.
-     */
-    if (tb_page_addr0(tb) == -1) {
-        assert_no_pages_locked();
-        return tb;
-    }
-
-    /*
      * Insert TB into the corresponding region tree before publishing it
      * through QHT. Otherwise rewinding happened in the TB might fail to
      * lookup itself using host PC.
      */
     tcg_tb_insert(tb);
+
+    /*
+     * If the TB is not associated with a physical RAM page then it must be
+     * a temporary one-insn TB.
+     *
+     * Such TBs must be added to region trees in order to make sure that
+     * restore_state_to_opc() - which on some architectures is not limited to
+     * rewinding, but also affects exception handling! - is called when such a
+     * TB causes an exception.
+     *
+     * At the same time, temporary one-insn TBs must be executed at most once,
+     * because subsequent reads from, e.g., I/O memory may return different
+     * values. So return early before attempting to link to other TBs or add
+     * to the QHT.
+     */
+    if (tb_page_addr0(tb) == -1) {
+        assert_no_pages_locked();
+        return tb;
+    }
 
     /*
      * No explicit memory barrier is required -- tb_link_page() makes the
@@ -911,7 +856,7 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
      * to account for the re-execution of the branch.
      */
     n = 1;
-    cc = CPU_GET_CLASS(cpu);
+    cc = cpu->cc;
     if (cc->tcg_ops->io_recompile_replay_branch &&
         cc->tcg_ops->io_recompile_replay_branch(cpu, tb)) {
         cpu->neg.icount_decr.u16.low++;
@@ -922,9 +867,10 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
      * Exit the loop and potentially generate a new TB executing the
      * just the I/O insns. We also limit instrumentation to memory
      * operations only (which execute after completion) so we don't
-     * double instrument the instruction.
+     * double instrument the instruction. Also don't let an IRQ sneak
+     * in before we execute it.
      */
-    cpu->cflags_next_tb = curr_cflags(cpu) | CF_MEMI_ONLY | n;
+    cpu->cflags_next_tb = curr_cflags(cpu) | CF_MEMI_ONLY | CF_NOIRQ | n;
 
     if (qemu_loglevel_mask(CPU_LOG_EXEC)) {
         vaddr pc = cpu->cc->get_pc(cpu);

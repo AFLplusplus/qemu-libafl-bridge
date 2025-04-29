@@ -26,7 +26,7 @@
 #include "hw/intc/kvm_irqcount.h"
 #include "hw/pci/msi.h"
 #include "qemu/host-utils.h"
-#include "sysemu/kvm.h"
+#include "system/kvm.h"
 #include "trace.h"
 #include "hw/i386/apic-msidef.h"
 #include "qapi/error.h"
@@ -350,9 +350,8 @@ static int apic_set_base(APICCommonState *s, uint64_t val)
         return -1;
     }
 
-    s->apicbase = (val & 0xfffff000) |
+    s->apicbase = (val & MSR_IA32_APICBASE_BASE) |
         (s->apicbase & (MSR_IA32_APICBASE_BSP | MSR_IA32_APICBASE_ENABLE));
-    /* if disabled, cannot be enabled again */
     if (!(val & MSR_IA32_APICBASE_ENABLE)) {
         s->apicbase &= ~MSR_IA32_APICBASE_ENABLE;
         cpu_clear_apic_feature(&s->cpu->env);

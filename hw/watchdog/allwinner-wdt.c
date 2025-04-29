@@ -28,7 +28,7 @@
 #include "hw/sysbus.h"
 #include "hw/registerfields.h"
 #include "hw/watchdog/allwinner-wdt.h"
-#include "sysemu/watchdog.h"
+#include "system/watchdog.h"
 #include "migration/vmstate.h"
 
 /* WDT registers */
@@ -275,7 +275,7 @@ static void allwinner_wdt_write(void *opaque, hwaddr offset,
 static const MemoryRegionOps allwinner_wdt_ops = {
     .read = allwinner_wdt_read,
     .write = allwinner_wdt_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_LITTLE_ENDIAN,
     .valid = {
         .min_access_size = 4,
         .max_access_size = 4,

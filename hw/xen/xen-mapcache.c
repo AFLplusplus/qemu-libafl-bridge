@@ -18,8 +18,8 @@
 #include "hw/xen/xen_native.h"
 #include "qemu/bitmap.h"
 
-#include "sysemu/runstate.h"
-#include "sysemu/xen-mapcache.h"
+#include "system/runstate.h"
+#include "system/xen-mapcache.h"
 #include "trace.h"
 
 #include <xenevtchn.h>
@@ -700,7 +700,6 @@ void xen_invalidate_map_cache(void)
     bdrv_drain_all();
 
     xen_invalidate_map_cache_single(mapcache);
-    xen_invalidate_map_cache_single(mapcache_grants);
 }
 
 static uint8_t *xen_replace_cache_entry_unlocked(MapCache *mc,

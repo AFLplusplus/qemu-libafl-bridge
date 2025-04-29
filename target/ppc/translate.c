@@ -30,6 +30,7 @@
 #include "exec/helper-gen.h"
 
 #include "exec/translator.h"
+#include "exec/translation-block.h"
 #include "exec/log.h"
 #include "qemu/atomic128.h"
 #include "spr_common.h"
@@ -635,6 +636,18 @@ void spr_write_dawrx0(DisasContext *ctx, int sprn, int gprn)
 {
     translator_io_start(&ctx->base);
     gen_helper_store_dawrx0(tcg_env, cpu_gpr[gprn]);
+}
+
+void spr_write_dawr1(DisasContext *ctx, int sprn, int gprn)
+{
+    translator_io_start(&ctx->base);
+    gen_helper_store_dawr1(tcg_env, cpu_gpr[gprn]);
+}
+
+void spr_write_dawrx1(DisasContext *ctx, int sprn, int gprn)
+{
+    translator_io_start(&ctx->base);
+    gen_helper_store_dawrx1(tcg_env, cpu_gpr[gprn]);
 }
 #endif /* defined(TARGET_PPC64) && !defined(CONFIG_USER_ONLY) */
 
@@ -1325,6 +1338,22 @@ void spr_write_lpcr(DisasContext *ctx, int sprn, int gprn)
     translator_io_start(&ctx->base);
     gen_helper_store_lpcr(tcg_env, cpu_gpr[gprn]);
 }
+
+void spr_read_pmsr(DisasContext *ctx, int gprn, int sprn)
+{
+    translator_io_start(&ctx->base);
+    gen_helper_load_pmsr(cpu_gpr[gprn], tcg_env);
+}
+
+void spr_write_pmcr(DisasContext *ctx, int sprn, int gprn)
+{
+    if (!gen_serialize_core_lpar(ctx)) {
+        return;
+    }
+    translator_io_start(&ctx->base);
+    gen_helper_store_pmcr(tcg_env, cpu_gpr[gprn]);
+}
+
 #endif /* !defined(CONFIG_USER_ONLY) */
 
 void spr_read_tar(DisasContext *ctx, int gprn, int sprn)
@@ -6668,8 +6697,8 @@ static const TranslatorOps ppc_tr_ops = {
     .tb_stop            = ppc_tr_tb_stop,
 };
 
-void gen_intermediate_code(CPUState *cs, TranslationBlock *tb, int *max_insns,
-                           vaddr pc, void *host_pc)
+void ppc_translate_code(CPUState *cs, TranslationBlock *tb,
+                        int *max_insns, vaddr pc, void *host_pc)
 {
     DisasContext ctx;
 

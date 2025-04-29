@@ -805,8 +805,10 @@ int64_t qmp_guest_fsfreeze_thaw(Error **errp)
     int ret;
 
     ret = qmp_guest_fsfreeze_do_thaw(errp);
+
     if (ret >= 0) {
         ga_unset_frozen(ga_state);
+        slog("guest-fsthaw called");
         execute_fsfreeze_hook(FSFREEZE_HOOK_THAW, errp);
     } else {
         ret = 0;
@@ -1368,3 +1370,23 @@ char *qga_get_host_name(Error **errp)
 
     return g_steal_pointer(&hostname);
 }
+
+#ifdef CONFIG_GETLOADAVG
+GuestLoadAverage *qmp_guest_get_load(Error **errp)
+{
+    double loadavg[3];
+    GuestLoadAverage *ret = NULL;
+
+    if (getloadavg(loadavg, G_N_ELEMENTS(loadavg)) < 0) {
+        error_setg_errno(errp, errno,
+                         "cannot query load average");
+        return NULL;
+    }
+
+    ret = g_new0(GuestLoadAverage, 1);
+    ret->load1m = loadavg[0];
+    ret->load5m = loadavg[1];
+    ret->load15m = loadavg[2];
+    return ret;
+}
+#endif

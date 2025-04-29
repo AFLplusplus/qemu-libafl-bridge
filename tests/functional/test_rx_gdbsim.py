@@ -10,13 +10,9 @@
 # This work is licensed under the terms of the GNU GPL, version 2 or
 # later.  See the COPYING file in the top-level directory.
 
-import os
-
-from unittest import skipUnless
 from qemu_test import QemuSystemTest, Asset
 from qemu_test import exec_command_and_wait_for_pattern
-from qemu_test import wait_for_console_pattern
-from qemu_test.utils import gzip_uncompress
+from qemu_test import wait_for_console_pattern, skipFlakyTest
 
 
 class RxGdbSimMachine(QemuSystemTest):
@@ -53,9 +49,10 @@ class RxGdbSimMachine(QemuSystemTest):
         wait_for_console_pattern(self, uboot_version)
         gcc_version = 'rx-unknown-linux-gcc (GCC) 9.0.0 20181105 (experimental)'
         # FIXME limit baudrate on chardev, else we type too fast
+        #  https://gitlab.com/qemu-project/qemu/-/issues/2691
         #exec_command_and_wait_for_pattern(self, 'version', gcc_version)
 
-    @skipUnless(os.getenv('QEMU_TEST_FLAKY_TESTS'), 'Test is unstable on GitLab')
+    @skipFlakyTest(bug_url="https://gitlab.com/qemu-project/qemu/-/issues/2691")
     def test_linux_sash(self):
         """
         Boots a Linux kernel and checks that the console is operational.

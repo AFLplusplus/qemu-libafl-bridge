@@ -9,8 +9,8 @@
 
 #include "qemu/osdep.h"
 
-#include "qapi/qmp/qdict.h"
-#include "qapi/qmp/qlist.h"
+#include "qobject/qdict.h"
+#include "qobject/qlist.h"
 #include "qemu/cutils.h"
 #include "libqtest.h"
 
@@ -87,6 +87,17 @@ static void test_machine(gconstpointer data)
     QTestState *qts;
 
     qts = qtest_initf("-machine %s", machine);
+
+    if (g_test_slow()) {
+        /* Make sure we can get the machine class properties: */
+        g_autofree char *qom_machine = g_strdup_printf("%s-machine", machine);
+
+        response = qtest_qmp(qts, "{ 'execute': 'qom-list-properties',"
+                                  "  'arguments': { 'typename': %s } }",
+                             qom_machine);
+        g_assert(response);
+        qobject_unref(response);
+    }
 
     test_properties(qts, "/machine", true);
 

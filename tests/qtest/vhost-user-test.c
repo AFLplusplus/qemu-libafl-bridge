@@ -12,7 +12,7 @@
 
 #include "libqtest-single.h"
 #include "qapi/error.h"
-#include "qapi/qmp/qdict.h"
+#include "qobject/qdict.h"
 #include "qemu/config-file.h"
 #include "qemu/option.h"
 #include "qemu/range.h"
@@ -20,7 +20,7 @@
 #include "chardev/char-fe.h"
 #include "qemu/memfd.h"
 #include "qemu/module.h"
-#include "sysemu/sysemu.h"
+#include "system/system.h"
 #include "libqos/libqos.h"
 #include "libqos/pci-pc.h"
 #include "libqos/virtio-pci.h"
@@ -1043,7 +1043,8 @@ static void test_multiqueue(void *obj, void *arg, QGuestAllocator *alloc)
 
 static uint64_t vu_net_get_features(TestServer *s)
 {
-    uint64_t features = 0x1ULL << VHOST_F_LOG_ALL |
+    uint64_t features = 0x1ULL << VIRTIO_F_VERSION_1 |
+        0x1ULL << VHOST_F_LOG_ALL |
         0x1ULL << VHOST_USER_F_PROTOCOL_FEATURES;
 
     if (s->queues > 1) {

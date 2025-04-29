@@ -65,7 +65,7 @@ TCGv_i64 gen_mte_checkN(DisasContext *s, TCGv_i64 addr, bool is_write,
 static inline void assert_fp_access_checked(DisasContext *s)
 {
 #ifdef CONFIG_DEBUG_TCG
-    if (unlikely(!s->fp_access_checked || s->fp_excp_el)) {
+    if (unlikely(s->fp_access_checked <= 0)) {
         fprintf(stderr, "target-arm: FP access check missing for "
                 "instruction 0x%08x\n", s->insn);
         abort();
@@ -183,6 +183,19 @@ static inline TCGv_ptr pred_full_reg_ptr(DisasContext *s, int regno)
     TCGv_ptr ret = tcg_temp_new_ptr();
     tcg_gen_addi_ptr(ret, tcg_env, pred_full_reg_offset(s, regno));
     return ret;
+}
+
+/*
+ * Return the ARMFPStatusFlavour to use based on element size and
+ * whether FPCR.AH is set.
+ */
+static inline ARMFPStatusFlavour select_ah_fpst(DisasContext *s, MemOp esz)
+{
+    if (s->fpcr_ah) {
+        return esz == MO_16 ? FPST_AH_F16 : FPST_AH;
+    } else {
+        return esz == MO_16 ? FPST_A64_F16 : FPST_A64;
+    }
 }
 
 bool disas_sve(DisasContext *, uint32_t);

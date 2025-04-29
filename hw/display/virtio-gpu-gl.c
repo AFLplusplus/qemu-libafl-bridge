@@ -16,7 +16,7 @@
 #include "qemu/module.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
-#include "sysemu/sysemu.h"
+#include "system/system.h"
 #include "hw/virtio/virtio.h"
 #include "hw/virtio/virtio-gpu.h"
 #include "hw/virtio/virtio-gpu-bswap.h"
@@ -154,12 +154,11 @@ static void virtio_gpu_gl_device_realize(DeviceState *qdev, Error **errp)
     virtio_gpu_device_realize(qdev, errp);
 }
 
-static Property virtio_gpu_gl_properties[] = {
+static const Property virtio_gpu_gl_properties[] = {
     DEFINE_PROP_BIT("stats", VirtIOGPU, parent_obj.conf.flags,
                     VIRTIO_GPU_FLAG_STATS_ENABLED, false),
     DEFINE_PROP_BIT("venus", VirtIOGPU, parent_obj.conf.flags,
                     VIRTIO_GPU_FLAG_VENUS_ENABLED, false),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void virtio_gpu_gl_device_unrealize(DeviceState *qdev)

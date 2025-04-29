@@ -19,9 +19,9 @@
 #include "block/blockjob.h"
 #include "block/block_int.h"
 #include "block/block_backup.h"
-#include "sysemu/block-backend.h"
+#include "system/block-backend.h"
 #include "qapi/error.h"
-#include "qapi/qmp/qdict.h"
+#include "qobject/qdict.h"
 #include "block/replication.h"
 
 typedef enum {
@@ -576,7 +576,6 @@ static void replication_start(ReplicationState *rs, ReplicationMode mode,
             return;
         }
         bdrv_op_block_all(top_bs, s->blocker);
-        bdrv_op_unblock(top_bs, BLOCK_OP_TYPE_DATAPLANE, s->blocker);
 
         bdrv_graph_wrunlock();
 

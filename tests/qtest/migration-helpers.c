@@ -12,11 +12,11 @@
 
 #include "qemu/osdep.h"
 #include "qemu/ctype.h"
-#include "qapi/qmp/qjson.h"
+#include "qobject/qjson.h"
 #include "qapi/qapi-visit-sockets.h"
 #include "qapi/qobject-input-visitor.h"
 #include "qapi/error.h"
-#include "qapi/qmp/qlist.h"
+#include "qobject/qlist.h"
 #include "qemu/cutils.h"
 #include "qemu/memalign.h"
 
@@ -140,8 +140,8 @@ static void migrate_set_ports(QTestState *to, QList *channel_list)
         if (qdict_haskey(addrdict, "port") &&
             qdict_haskey(addr, "port") &&
             (strcmp(qdict_get_str(addrdict, "port"), "0") == 0)) {
-            addr_port = qdict_get_str(addr, "port");
-            qdict_put_str(addrdict, "port", addr_port);
+                addr_port = qdict_get_str(addr, "port");
+                qdict_put_str(addrdict, "port", addr_port);
         }
     }
 

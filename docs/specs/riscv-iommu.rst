@@ -4,17 +4,17 @@ RISC-V IOMMU support for RISC-V machines
 ========================================
 
 QEMU implements a RISC-V IOMMU emulation based on the RISC-V IOMMU spec
-version 1.0 `iommu1.0`_.
+version 1.0 `iommu1.0.0`_.
 
-The emulation includes a PCI reference device, riscv-iommu-pci, that QEMU
-RISC-V boards can use.  The 'virt' RISC-V machine is compatible with this
-device.
+The emulation includes a PCI reference device (riscv-iommu-pci) and a platform
+bus device (riscv-iommu-sys) that QEMU RISC-V boards can use.  The 'virt'
+RISC-V machine is compatible with both devices.
 
 riscv-iommu-pci reference device
 --------------------------------
 
 This device implements the RISC-V IOMMU emulation as recommended by the section
-"Integrating an IOMMU as a PCIe device" of `iommu1.0`_: a PCI device with base
+"Integrating an IOMMU as a PCIe device" of `iommu1.0.0`_: a PCI device with base
 class 08h, sub-class 06h and programming interface 00h.
 
 As a reference device it doesn't implement anything outside of the specification,
@@ -82,8 +82,34 @@ Several options are available to control the capabilities of the device, namely:
 - "off" (Out-of-reset translation mode: 'on' for DMA disabled, 'off' for 'BARE' (passthrough))
 - "s-stage": enable s-stage support
 - "g-stage": enable g-stage support
+- "hpm-counters": number of hardware performance counters available. Maximum value is 31.
+  Default value is 31. Use 0 (zero) to disable HPM support
 
-.. _iommu1.0: https://github.com/riscv-non-isa/riscv-iommu/releases/download/v1.0/riscv-iommu.pdf
+riscv-iommu-sys device
+----------------------
+
+This device implements the RISC-V IOMMU emulation as a platform bus device that
+RISC-V boards can use.
+
+For the 'virt' board the device is disabled by default.  To enable it use the
+'iommu-sys' machine option:
+
+.. code-block:: bash
+
+  $ qemu-system-riscv64 -M virt,iommu-sys=on (...)
+
+There is no options to configure the capabilities of this device in the 'virt'
+board using the QEMU command line.  The device is configured with the following
+riscv-iommu options:
+
+- "ioatc-limit": default value (2Mb)
+- "intremap": enabled
+- "ats": enabled
+- "off": on (DMA disabled)
+- "s-stage": enabled
+- "g-stage": enabled
+
+.. _iommu1.0.0: https://github.com/riscv-non-isa/riscv-iommu/releases/download/v1.0.0/riscv-iommu.pdf
 
 .. _linux-v8: https://lore.kernel.org/linux-riscv/cover.1718388908.git.tjeznach@rivosinc.com/
 

@@ -35,7 +35,7 @@
 #include "block/raw-aio.h"
 #include "qemu/coroutine_int.h"
 #include "qemu/coroutine-tls.h"
-#include "sysemu/cpu-timers.h"
+#include "system/cpu-timers.h"
 #include "trace.h"
 
 /***********************************************************/
@@ -369,7 +369,7 @@ aio_ctx_finalize(GSource     *source)
     QEMUBH *bh;
     unsigned flags;
 
-    thread_pool_free(ctx->thread_pool);
+    thread_pool_free_aio(ctx->thread_pool);
 
 #ifdef CONFIG_LINUX_AIO
     if (ctx->linux_aio) {
@@ -435,10 +435,10 @@ GSource *aio_get_g_source(AioContext *ctx)
     return &ctx->source;
 }
 
-ThreadPool *aio_get_thread_pool(AioContext *ctx)
+ThreadPoolAio *aio_get_thread_pool(AioContext *ctx)
 {
     if (!ctx->thread_pool) {
-        ctx->thread_pool = thread_pool_new(ctx);
+        ctx->thread_pool = thread_pool_new_aio(ctx);
     }
     return ctx->thread_pool;
 }
@@ -609,7 +609,6 @@ AioContext *aio_context_new(Error **errp)
     qemu_rec_mutex_init(&ctx->lock);
     timerlistgroup_init(&ctx->tlg, aio_timerlist_notify, ctx);
 
-    ctx->poll_ns = 0;
     ctx->poll_max_ns = 0;
     ctx->poll_grow = 0;
     ctx->poll_shrink = 0;

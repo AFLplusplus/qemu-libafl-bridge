@@ -100,10 +100,6 @@ static inline void stl_phys_notdirty(AddressSpace *as, hwaddr addr, uint32_t val
 #include "exec/cpu-defs.h"
 #include "exec/target_page.h"
 
-//// --- Begin LibAFL code ---
-IntervalTreeRoot* pageflags_get_root(void);
-//// --- End LibAFL code ---
-
 CPUArchState *cpu_copy(CPUArchState *env);
 
 #include "cpu.h"

@@ -1,7 +1,8 @@
 #pragma once
 
 #include "qemu/osdep.h"
-#include "exec/cpu-defs.h"
+#include "exec/cpu_ldst.h"
+#include "hw/core/cpu.h"
 
 #define EXCP_LIBAFL_EXIT 0xf4775747
 

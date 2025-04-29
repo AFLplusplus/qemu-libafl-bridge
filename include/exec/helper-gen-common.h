@@ -11,4 +11,10 @@
 #include "exec/helper-gen.h.inc"
 #undef  HELPER_H
 
+//// --- Begin LibAFL code ---
+#define HELPER_H "libafl/tcg-helper.h"
+#include "exec/helper-gen.h.inc"
+#undef  HELPER_H
+//// --- End LibAFL code ---
+
 #endif /* HELPER_GEN_COMMON_H */

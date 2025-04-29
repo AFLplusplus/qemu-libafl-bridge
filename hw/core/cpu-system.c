@@ -31,6 +31,14 @@
 #include "migration/vmstate.h"
 #include "system/tcg.h"
 
+//// --- Begin LibAFL code ---
+
+#ifndef CONFIG_USER_ONLY
+#include "libafl/syx-snapshot/device-save.h"
+#endif
+
+//// --- End LibAFL code ---
+
 bool cpu_has_work(CPUState *cpu)
 {
     return cpu->cc->sysemu_ops->has_work(cpu);
@@ -214,7 +222,16 @@ static int cpu_common_post_load(void *opaque, int version_id)
          * memory we've translated code from. So we must flush all TBs,
          * which will now be stale.
          */
-        tb_flush(cpu);
+        //tb_flush(cpu);
+        //// --- Begin LibAFL code ---
+
+        // flushing the TBs every restore makes it really slow
+        // TODO handle writes to X code with specific calls to tb_invalidate_phys_addr
+        if (!libafl_devices_is_restoring()) {
+            tb_flush(cpu);
+        }
+
+        //// --- End LibAFL code ---
     }
 
     return 0;

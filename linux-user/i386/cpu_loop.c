@@ -25,6 +25,10 @@
 #include "signal-common.h"
 #include "user-mmap.h"
 
+//// --- Begin LibAFL code ---
+#include "libafl/exit.h"
+//// --- End LibAFL code ---
+
 /***********************************************************/
 /* CPUX86 core interface */
 

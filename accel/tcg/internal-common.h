@@ -54,6 +54,7 @@ void tb_reset_jump(TranslationBlock *tb, int n);
 TranslationBlock *tb_link_page(TranslationBlock *tb);
 void cpu_restore_state_from_tb(CPUState *cpu, TranslationBlock *tb,
                                uintptr_t host_pc);
+int encode_search(TranslationBlock *tb, uint8_t *block);
 
 /**
  * tlb_init - initialize a CPU's TLB

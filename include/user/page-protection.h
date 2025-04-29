@@ -96,4 +96,8 @@ int walk_memory_regions(void *, walk_memory_regions_fn);
 
 void page_dump(FILE *f);
 
+//// --- Begin LibAFL code ---
+IntervalTreeRoot* pageflags_get_root(void);
+//// --- End LibAFL code ---
+
 #endif

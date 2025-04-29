@@ -77,7 +77,10 @@ G_NORETURN void cpu_loop_exit_sigbus(CPUState *cpu, target_ulong addr,
                                      MMUAccessType access_type,
                                      uintptr_t ra);
 
-G_NORETURN void cpu_loop(CPUArchState *env);
+//// --- Begin LibAFL code ---
+/* G_NORETURN */
+//// --- End LibAFL code ---
+void cpu_loop(CPUArchState *env);
 
 void target_exception_dump(CPUArchState *env, const char *fmt, int code);
 #define EXCP_DUMP(env, fmt, code) \

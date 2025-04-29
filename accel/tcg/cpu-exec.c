@@ -45,6 +45,15 @@
 #include "internal-common.h"
 #include "internal-target.h"
 
+//// --- Begin LibAFL code ---
+
+#include "libafl/exit.h"
+#include "libafl/tcg.h"
+#include "libafl/hooks/tcg/edge.h"
+
+//// --- End LibAFL code ---
+
+
 /* -icount align implementation. */
 
 typedef struct SyncClocks {
@@ -702,12 +711,6 @@ static inline void cpu_handle_debug_exception(CPUState *cpu)
     }
 }
 
-//// --- Begin LibAFL code ---
-
-#include "libafl/exit.h"
-
-//// --- End LibAFL code ---
-
 static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
 {
     //// --- Begin LibAFL code ---
@@ -957,14 +960,6 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
     }
 #endif
 }
-
-//// --- Begin LibAFL code ---
-
-TranslationBlock *libafl_gen_edge(CPUState *cpu, target_ulong src_block,
-                                  target_ulong dst_block, int exit_n, target_ulong cs_base,
-                                  uint32_t flags, int cflags);
-
-//// --- End LibAFL code ---
 
 /* main execution loop */
 

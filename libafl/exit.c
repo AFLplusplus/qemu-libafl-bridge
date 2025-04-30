@@ -4,7 +4,12 @@
 #include "tcg/tcg-op.h"
 
 #include "cpu.h"
+#include "libafl/defs.h"
 #include "libafl/cpu.h"
+
+#ifndef CONFIG_USER_ONLY
+#include "system/runstate.h"
+#endif
 
 #ifdef CONFIG_USER_ONLY
 #define THREAD_MODIFIER __thread

@@ -10,13 +10,8 @@
 
 #include "qemu/osdep.h"
 
-#include "qom/object.h"
-#include "sysemu/sysemu.h"
-
 #include "device-save.h"
 #include "syx-cow-cache.h"
-
-#include "libafl/syx-misc.h"
 
 #define SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE 64
 #define SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS (1024 * 1024)

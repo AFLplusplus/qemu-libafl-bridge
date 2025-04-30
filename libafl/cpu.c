@@ -11,7 +11,7 @@
 #include "hw/core/sysemu-cpu-ops.h"
 
 #include "libafl/cpu.h"
-
+#include "libafl/exit.h"
 #include "libafl/hook.h"
 
 int gdb_write_register(CPUState* cpu, uint8_t* mem_buf, int reg);

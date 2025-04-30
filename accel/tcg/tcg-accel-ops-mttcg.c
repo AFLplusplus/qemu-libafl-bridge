@@ -35,6 +35,13 @@
 #include "tcg-accel-ops.h"
 #include "tcg-accel-ops-mttcg.h"
 
+//// --- Begin LibAFL code ---
+
+#include "libafl/defs.h"
+
+//// --- End LibAFL code ---
+
+
 typedef struct MttcgForceRcuNotifier {
     Notifier notifier;
     CPUState *cpu;
@@ -54,12 +61,6 @@ static void mttcg_force_rcu(Notifier *notify, void *data)
      */
     async_run_on_cpu(cpu, do_nothing, RUN_ON_CPU_NULL);
 }
-
-//// --- Begin LibAFL code ---
-
-#include "libafl/exit.h"
-
-//// --- End LibAFL code ---
 
 /*
  * In the multi-threaded case each vCPU has its own thread. The TLS

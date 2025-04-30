@@ -37,6 +37,12 @@
 #include "tcg-accel-ops-rr.h"
 #include "tcg-accel-ops-icount.h"
 
+//// --- Begin LibAFL code ---
+
+#include "libafl/defs.h"
+
+//// --- End LibAFL code ---
+
 /* Kick all RR vCPUs */
 void rr_kick_vcpu_thread(CPUState *unused)
 {
@@ -168,12 +174,6 @@ static int rr_cpu_count(void)
 
     return cpu_count;
 }
-
-//// --- Begin LibAFL code ---
-
-#include "libafl/exit.h"
-
-//// --- End LibAFL code ---
 
 /*
  * In the single-threaded case each vCPU is simulated in turn. If

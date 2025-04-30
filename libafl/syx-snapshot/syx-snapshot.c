@@ -1,16 +1,14 @@
 #include "qemu/osdep.h"
 
 #include "qemu/main-loop.h"
-#include "sysemu/sysemu.h"
-#include "migration/vmstate.h"
 #include "cpu.h"
 
 #include "exec/ramlist.h"
 #include "exec/ram_addr.h"
-#include "exec/exec-all.h"
 
 #include "libafl/syx-snapshot/syx-snapshot.h"
 #include "libafl/syx-snapshot/device-save.h"
+#include "libafl/syx-misc.h"
 
 #define SYX_SNAPSHOT_LIST_INIT_SIZE 4096
 #define SYX_SNAPSHOT_LIST_GROW_FACTOR 2

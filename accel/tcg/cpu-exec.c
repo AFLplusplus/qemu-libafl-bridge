@@ -47,6 +47,7 @@
 
 //// --- Begin LibAFL code ---
 
+#include "libafl/defs.h"
 #include "libafl/exit.h"
 #include "libafl/tcg.h"
 #include "libafl/hooks/tcg/edge.h"

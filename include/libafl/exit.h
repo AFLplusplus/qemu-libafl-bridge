@@ -4,6 +4,8 @@
 #include "hw/core/cpu.h"
 #include "exec/cpu-defs.h"
 
+#include "libafl/defs.h"
+
 struct libafl_breakpoint {
     target_ulong addr;
     struct libafl_breakpoint* next;

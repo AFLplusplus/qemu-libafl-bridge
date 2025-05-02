@@ -29,7 +29,7 @@
 #include "target/arm/syndrome.h"
 
 //// --- Begin LibAFL code ---
-///
+
 #include "libafl/exit.h"
 
 //// --- End LibAFL code ---

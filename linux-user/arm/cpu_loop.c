@@ -28,6 +28,12 @@
 #include "user/page-protection.h"
 #include "target/arm/syndrome.h"
 
+//// --- Begin LibAFL code ---
+///
+#include "libafl/exit.h"
+
+//// --- End LibAFL code ---
+
 #define get_user_code_u32(x, gaddr, env)                \
     ({ abi_long __r = get_user_u32((x), (gaddr));       \
         if (!__r && bswap_code(arm_sctlr_b(env))) {     \

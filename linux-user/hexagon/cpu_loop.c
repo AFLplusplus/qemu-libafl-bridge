@@ -25,6 +25,12 @@
 #include "signal-common.h"
 #include "internal.h"
 
+//// --- Begin LibAFL code ---
+///
+#include "libafl/exit.h"
+
+//// --- End LibAFL code ---
+
 void cpu_loop(CPUHexagonState *env)
 {
     CPUState *cs = env_cpu(env);

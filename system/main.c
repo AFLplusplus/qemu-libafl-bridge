@@ -41,20 +41,6 @@
 #include <CoreFoundation/CoreFoundation.h>
 #endif
 
-static void *qemu_default_main(void *opaque)
-{
-    int status;
-
-    replay_mutex_lock();
-    bql_lock();
-    status = qemu_main_loop();
-    qemu_cleanup(status);
-    bql_unlock();
-    replay_mutex_unlock();
-
-    exit(status);
-}
-
 int (*qemu_main)(void);
 
 #ifdef CONFIG_DARWIN
@@ -69,6 +55,21 @@ int (*qemu_main)(void) = os_darwin_cfrunloop_main;
 //// --- Begin LibAFL code ---
 #ifndef AS_LIB
 //// --- End LibAFL code ---
+
+static void *qemu_default_main(void *opaque)
+{
+    int status;
+
+    replay_mutex_lock();
+    bql_lock();
+    status = qemu_main_loop();
+    qemu_cleanup(status);
+    bql_unlock();
+    replay_mutex_unlock();
+
+    exit(status);
+}
+
 int main(int argc, char **argv)
 {
     qemu_init(argc, argv);
@@ -84,6 +85,7 @@ int main(int argc, char **argv)
         g_assert_not_reached();
     }
 }
+
 //// --- Begin LibAFL code ---
 #endif
 //// --- End LibAFL code ---

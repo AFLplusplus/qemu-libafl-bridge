@@ -1,10 +1,9 @@
 /*
  * QEMU PowerPC sPAPR XIVE interrupt controller model
  *
- * Copyright (c) 2017-2018, IBM Corporation.
+ * Copyright (c) 2017-2024, IBM Corporation.
  *
- * This code is licensed under the GPL version 2 or later. See the
- * COPYING file in the top-level directory.
+ * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
 #include "qemu/osdep.h"
@@ -13,8 +12,8 @@
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "target/ppc/cpu.h"
-#include "sysemu/cpus.h"
-#include "sysemu/reset.h"
+#include "system/cpus.h"
+#include "system/reset.h"
 #include "migration/vmstate.h"
 #include "hw/ppc/fdt.h"
 #include "hw/ppc/spapr.h"
@@ -431,7 +430,8 @@ static int spapr_xive_write_nvt(XiveRouter *xrtr, uint8_t nvt_blk,
 
 static int spapr_xive_match_nvt(XivePresenter *xptr, uint8_t format,
                                 uint8_t nvt_blk, uint32_t nvt_idx,
-                                bool cam_ignore, uint8_t priority,
+                                bool crowd, bool cam_ignore,
+                                uint8_t priority,
                                 uint32_t logic_serv, XiveTCTXMatch *match)
 {
     CPUState *cs;
@@ -627,13 +627,12 @@ static void spapr_xive_free_irq(SpaprInterruptController *intc, int lisn)
     xive->eat[lisn].w &= cpu_to_be64(~EAS_VALID);
 }
 
-static Property spapr_xive_properties[] = {
+static const Property spapr_xive_properties[] = {
     DEFINE_PROP_UINT32("nr-irqs", SpaprXive, nr_irqs, 0),
     DEFINE_PROP_UINT32("nr-ends", SpaprXive, nr_ends, 0),
     DEFINE_PROP_UINT64("vc-base", SpaprXive, vc_base, SPAPR_XIVE_VC_BASE),
     DEFINE_PROP_UINT64("tm-base", SpaprXive, tm_base, SPAPR_XIVE_TM_BASE),
     DEFINE_PROP_UINT8("hv-prio", SpaprXive, hv_prio, 7),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static int spapr_xive_cpu_intc_create(SpaprInterruptController *intc,

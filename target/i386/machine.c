@@ -1,6 +1,6 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
-#include "exec/exec-all.h"
+#include "exec/cputlb.h"
 #include "hw/isa/isa.h"
 #include "migration/cpu.h"
 #include "kvm/hyperv.h"
@@ -8,9 +8,9 @@
 #include "kvm/kvm_i386.h"
 #include "hw/xen/xen.h"
 
-#include "sysemu/kvm.h"
-#include "sysemu/kvm_xen.h"
-#include "sysemu/tcg.h"
+#include "system/kvm.h"
+#include "system/kvm_xen.h"
+#include "system/tcg.h"
 
 #include "qemu/error-report.h"
 

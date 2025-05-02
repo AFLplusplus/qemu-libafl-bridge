@@ -33,7 +33,7 @@
 #include "qemu/cutils.h"
 #include "qemu/log.h"
 #include "qemu/units.h"
-#include "sysemu/dma.h"
+#include "system/dma.h"
 #include "trace.h"
 
 REG32(NPCM_DMA_BUS_MODE, 0x1000)
@@ -912,9 +912,8 @@ static const VMStateDescription vmstate_npcm_gmac = {
     },
 };
 
-static Property npcm_gmac_properties[] = {
+static const Property npcm_gmac_properties[] = {
     DEFINE_NIC_PROPERTIES(NPCMGMACState, conf),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void npcm_gmac_class_init(ObjectClass *klass, void *data)

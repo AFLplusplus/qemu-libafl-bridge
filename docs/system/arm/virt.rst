@@ -1,3 +1,5 @@
+.. _arm-virt:
+
 'virt' generic virtual platform (``virt``)
 ==========================================
 
@@ -18,6 +20,10 @@ the QEMU 5.0 release, and migration should work between ``virt-5.0``
 of the 5.0 release and ``virt-5.0`` of the 5.1 release. Migration
 is not guaranteed to work between different QEMU releases for
 the non-versioned ``virt`` machine type.
+
+VM migration is not guaranteed when using ``-cpu max``, as features
+supported may change between QEMU versions.  To ensure your VM can be
+migrated, it is recommended to use another cpu model instead.
 
 Supported devices
 """""""""""""""""
@@ -64,11 +70,11 @@ Supported guest CPU types:
 - ``cortex-a76`` (64-bit)
 - ``cortex-a710`` (64-bit)
 - ``a64fx`` (64-bit)
-- ``host`` (with KVM only)
+- ``host`` (with KVM and HVF only)
 - ``neoverse-n1`` (64-bit)
 - ``neoverse-v1`` (64-bit)
 - ``neoverse-n2`` (64-bit)
-- ``max`` (same as ``host`` for KVM; best possible emulation with TCG)
+- ``max`` (same as ``host`` for KVM and HVF; best possible emulation with TCG)
 
 Note that the default is ``cortex-a15``, so for an AArch64 guest you must
 specify a CPU type.
@@ -138,6 +144,10 @@ highmem-mmio
   Set ``on``/``off`` to enable/disable the high memory region for PCI MMIO.
   The default is ``on``.
 
+highmem-mmio-size
+  Set the high memory region size for PCI MMIO. Must be a power of 2 and
+  greater than or equal to the default size (512G).
+
 gic-version
   Specify the version of the Generic Interrupt Controller (GIC) to provide.
   Valid values are:
@@ -167,9 +177,17 @@ iommu
   ``smmuv3``
     Create an SMMUv3
 
+default-bus-bypass-iommu
+  Set ``on``/``off`` to enable/disable `bypass_iommu
+  <https://gitlab.com/qemu-project/qemu/-/blob/master/docs/bypass-iommu.txt>`_
+  for default root bus.
+
 ras
   Set ``on``/``off`` to enable/disable reporting host memory errors to a guest
   using ACPI and guest external abort exceptions. The default is off.
+
+acpi
+  Set ``on``/``off``/``auto`` to enable/disable ACPI.
 
 dtb-randomness
   Set ``on``/``off`` to pass random seeds via the guest DTB
@@ -183,6 +201,14 @@ dtb-randomness
 
 dtb-kaslr-seed
   A deprecated synonym for dtb-randomness.
+
+x-oem-id
+  Set string (up to 6 bytes) to override the default value of field OEMID in ACPI
+  table header.
+
+x-oem-table-id
+  Set string (up to 8 bytes) to override the default value of field OEM Table ID
+  in ACPI table header.
 
 Linux guest kernel configuration
 """"""""""""""""""""""""""""""""

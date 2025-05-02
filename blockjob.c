@@ -29,7 +29,7 @@
 #include "block/blockjob_int.h"
 #include "block/block_int.h"
 #include "block/trace.h"
-#include "sysemu/block-backend.h"
+#include "system/block-backend.h"
 #include "qapi/error.h"
 #include "qapi/qapi-events-block-core.h"
 #include "qapi/qmp/qerror.h"
@@ -538,8 +538,6 @@ void *block_job_create(const char *job_id, const BlockJobDriver *driver,
     if (ret < 0) {
         goto fail;
     }
-
-    bdrv_op_unblock(bs, BLOCK_OP_TYPE_DATAPLANE, job->blocker);
 
     if (!block_job_set_speed(job, speed, errp)) {
         goto fail;

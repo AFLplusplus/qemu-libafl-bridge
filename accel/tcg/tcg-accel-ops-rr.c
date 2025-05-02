@@ -25,17 +25,23 @@
 
 #include "qemu/osdep.h"
 #include "qemu/lockable.h"
-#include "sysemu/tcg.h"
-#include "sysemu/replay.h"
-#include "sysemu/cpu-timers.h"
+#include "system/tcg.h"
+#include "system/replay.h"
+#include "system/cpu-timers.h"
 #include "qemu/main-loop.h"
 #include "qemu/notify.h"
 #include "qemu/guest-random.h"
-#include "exec/exec-all.h"
+#include "exec/cpu-common.h"
 #include "tcg/startup.h"
 #include "tcg-accel-ops.h"
 #include "tcg-accel-ops-rr.h"
 #include "tcg-accel-ops-icount.h"
+
+//// --- Begin LibAFL code ---
+
+#include "libafl/defs.h"
+
+//// --- End LibAFL code ---
 
 /* Kick all RR vCPUs */
 void rr_kick_vcpu_thread(CPUState *unused)
@@ -168,12 +174,6 @@ static int rr_cpu_count(void)
 
     return cpu_count;
 }
-
-//// --- Begin LibAFL code ---
-
-#include "libafl/exit.h"
-
-//// --- End LibAFL code ---
 
 /*
  * In the single-threaded case each vCPU is simulated in turn. If

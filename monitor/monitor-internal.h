@@ -28,10 +28,10 @@
 #include "chardev/char-fe.h"
 #include "monitor/monitor.h"
 #include "qapi/qapi-types-control.h"
-#include "qapi/qmp/dispatch.h"
-#include "qapi/qmp/json-parser.h"
+#include "qapi/qmp-registry.h"
+#include "qobject/json-parser.h"
 #include "qemu/readline.h"
-#include "sysemu/iothread.h"
+#include "system/iothread.h"
 
 /*
  * Supported types:

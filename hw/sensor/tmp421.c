@@ -68,7 +68,7 @@ struct TMP421State {
 
 struct TMP421Class {
     I2CSlaveClass parent_class;
-    DeviceInfo *dev;
+    const DeviceInfo *dev;
 };
 
 #define TYPE_TMP421 "tmp421-generic"
@@ -384,7 +384,7 @@ static void tmp421_register_types(void)
             .class_init = tmp421_class_init,
             .class_data = (void *) &devices[i],
         };
-        type_register(&ti);
+        type_register_static(&ti);
     }
 }
 

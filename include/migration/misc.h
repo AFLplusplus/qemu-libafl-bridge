@@ -45,16 +45,17 @@ bool migrate_ram_is_ignored(RAMBlock *block);
 /* migration/block.c */
 
 AnnounceParameters *migrate_announce_params(void);
+
 /* migration/savevm.c */
 
 void dump_vmstate_json_to_file(FILE *out_fp);
+void qemu_loadvm_start_load_thread(MigrationLoadThread function,
+                                   void *opaque);
 
 /* migration/migration.c */
 void migration_object_init(void);
 void migration_shutdown(void);
 
-bool migration_is_active(void);
-bool migration_is_device(void);
 bool migration_is_running(void);
 bool migration_thread_is_self(void);
 
@@ -105,5 +106,38 @@ bool migration_incoming_postcopy_advised(void);
 
 /* True if background snapshot is active */
 bool migration_in_bg_snapshot(void);
+
+/* Wrapper for block active/inactive operations */
+bool migration_block_activate(Error **errp);
+bool migration_block_inactivate(void);
+
+/* True if @uri starts with a syntactically valid URI prefix */
+bool migrate_is_uri(const char *uri);
+
+/* Parse @uri and return @channel, returning true on success */
+bool migrate_uri_parse(const char *uri, MigrationChannel **channel,
+                       Error **errp);
+
+/* migration/multifd-device-state.c */
+typedef struct SaveLiveCompletePrecopyThreadData {
+    SaveLiveCompletePrecopyThreadHandler hdlr;
+    char *idstr;
+    uint32_t instance_id;
+    void *handler_opaque;
+} SaveLiveCompletePrecopyThreadData;
+
+bool multifd_queue_device_state(char *idstr, uint32_t instance_id,
+                                char *data, size_t len);
+bool multifd_device_state_supported(void);
+
+void
+multifd_spawn_device_state_save_thread(SaveLiveCompletePrecopyThreadHandler hdlr,
+                                       char *idstr, uint32_t instance_id,
+                                       void *opaque);
+
+bool multifd_device_state_save_thread_should_exit(void);
+
+void multifd_abort_device_state_save_threads(void);
+bool multifd_join_device_state_save_threads(void);
 
 #endif

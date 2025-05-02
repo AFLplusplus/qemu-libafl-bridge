@@ -43,7 +43,7 @@
 #include "qom/object_interfaces.h"
 #include "qemu/error-report.h"
 #include "trace.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
 #include "hw/boards.h"
 #include "hw/remote/machine.h"
 #include "qapi/error.h"
@@ -52,7 +52,7 @@
 #include "qemu/notify.h"
 #include "qemu/thread.h"
 #include "qemu/main-loop.h"
-#include "sysemu/sysemu.h"
+#include "system/system.h"
 #include "libvfio-user.h"
 #include "hw/qdev-core.h"
 #include "hw/pci/pci.h"
@@ -358,7 +358,7 @@ static int vfu_object_mr_rw(MemoryRegion *mr, uint8_t *buf, hwaddr offset,
     int access_size;
     uint64_t val;
 
-    if (memory_access_is_direct(mr, is_write)) {
+    if (memory_access_is_direct(mr, is_write, MEMTXATTRS_UNSPECIFIED)) {
         /**
          * Some devices expose a PCI expansion ROM, which could be buffer
          * based as compared to other regions which are primarily based on

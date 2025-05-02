@@ -1,5 +1,9 @@
 #include "qemu/osdep.h"
-#include "sysemu/sysemu.h"
+#include "exec/vaddr.h"
+#include "system/system.h"
+#include "system/accel-ops.h"
+#include "system/cpus.h"
+#include "gdbstub/enums.h"
 
 #include "libafl/system.h"
 

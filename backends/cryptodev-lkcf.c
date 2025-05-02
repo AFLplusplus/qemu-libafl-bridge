@@ -30,7 +30,7 @@
 #include "qemu/error-report.h"
 #include "qemu/queue.h"
 #include "qom/object.h"
-#include "sysemu/cryptodev.h"
+#include "system/cryptodev.h"
 #include "standard-headers/linux/virtio_crypto.h"
 
 #include <keyutils.h>
@@ -330,6 +330,8 @@ static void cryptodev_lkcf_execute_task(CryptoDevLKCFTask *task)
             cryptodev_lkcf_set_op_desc(&session->akcipher_opts, op_desc,
                                        sizeof(op_desc), &local_error) != 0) {
             error_report_err(local_error);
+            status = -VIRTIO_CRYPTO_ERR;
+            goto out;
         } else {
             key_id = add_key(KCTL_KEY_TYPE_PKEY, "lkcf-backend-priv-key",
                              p8info, p8info_len, KCTL_KEY_RING);
@@ -346,6 +348,7 @@ static void cryptodev_lkcf_execute_task(CryptoDevLKCFTask *task)
                                         session->key, session->keylen,
                                         &local_error);
         if (!akcipher) {
+            error_report_err(local_error);
             status = -VIRTIO_CRYPTO_ERR;
             goto out;
         }

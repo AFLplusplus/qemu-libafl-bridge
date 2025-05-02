@@ -1,14 +1,15 @@
-#include "libafl/qemu_snapshot.h"
-
-#include "sysemu/runstate.h"
-#include "migration/snapshot.h"
+#include "qemu/osdep.h"
 #include "qapi/error.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+#include "migration/snapshot.h"
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
 #include "hw/core/cpu.h"
-#include "sysemu/hw_accel.h"
-#include <stdlib.h>
-#include <string.h>
+#include "system/runstate.h"
+#include "libafl/qemu_snapshot.h"
 
 static void save_snapshot_cb(void* opaque)
 {

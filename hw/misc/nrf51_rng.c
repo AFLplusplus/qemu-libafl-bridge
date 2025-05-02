@@ -219,12 +219,11 @@ static void nrf51_rng_reset(DeviceState *dev)
 }
 
 
-static Property nrf51_rng_properties[] = {
+static const Property nrf51_rng_properties[] = {
     DEFINE_PROP_UINT16("period_unfiltered_us", NRF51RNGState,
             period_unfiltered_us, 167),
     DEFINE_PROP_UINT16("period_filtered_us", NRF51RNGState,
             period_filtered_us, 660),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static const VMStateDescription vmstate_rng = {

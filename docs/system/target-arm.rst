@@ -95,6 +95,7 @@ Board-specific documentation
    arm/imx25-pdk
    arm/mcimx6ul-evk
    arm/mcimx7d-sabre
+   arm/imx8mp-evk
    arm/orangepi
    arm/raspi
    arm/collie
@@ -102,6 +103,7 @@ Board-specific documentation
    arm/stellaris
    arm/stm32
    arm/virt
+   arm/vmapple
    arm/xenpvh
    arm/xlnx-versal-virt
    arm/xlnx-zynq

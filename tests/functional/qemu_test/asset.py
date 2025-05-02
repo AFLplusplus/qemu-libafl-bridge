@@ -9,14 +9,22 @@ import hashlib
 import logging
 import os
 import stat
-import subprocess
 import sys
 import unittest
 import urllib.request
 from time import sleep
 from pathlib import Path
 from shutil import copyfileobj
+from urllib.error import HTTPError
 
+class AssetError(Exception):
+    def __init__(self, asset, msg, transient=False):
+        self.url = asset.url
+        self.msg = msg
+        self.transient = transient
+
+    def __str__(self):
+        return "%s: %s" % (self.url, self.msg)
 
 # Instances of this class must be declared as class level variables
 # starting with a name "ASSET_". This enables the pre-caching logic
@@ -40,6 +48,9 @@ class Asset:
         return "Asset: url=%s hash=%s cache=%s" % (
             self.url, self.hash, self.cache_file)
 
+    def __str__(self):
+        return str(self.cache_file)
+
     def _check(self, cache_file):
         if self.hash is None:
             return True
@@ -48,7 +59,7 @@ class Asset:
         elif len(self.hash) == 128:
             hl = hashlib.sha512()
         else:
-            raise Exception("unknown hash type")
+            raise AssetError(self, "unknown hash type")
 
         # Calculate the hash of the file:
         with open(cache_file, 'rb') as file:
@@ -62,6 +73,12 @@ class Asset:
 
     def valid(self):
         return self.cache_file.exists() and self._check(self.cache_file)
+
+    def fetchable(self):
+        return not os.environ.get("QEMU_TEST_NO_DOWNLOAD", False)
+
+    def available(self):
+        return self.valid() or self.fetchable()
 
     def _wait_for_other_download(self, tmp_cache_file):
         # Another thread already seems to download the asset, so wait until
@@ -101,8 +118,9 @@ class Asset:
                            self.cache_file, self.url)
             return str(self.cache_file)
 
-        if os.environ.get("QEMU_TEST_NO_DOWNLOAD", False):
-            raise Exception("Asset cache is invalid and downloads disabled")
+        if not self.fetchable():
+            raise AssetError(self,
+                             "Asset cache is invalid and downloads disabled")
 
         self.log.info("Downloading %s to %s...", self.url, self.cache_file)
         tmp_cache_file = self.cache_file.with_suffix(".download")
@@ -112,6 +130,20 @@ class Asset:
                 with tmp_cache_file.open("xb") as dst:
                     with urllib.request.urlopen(self.url) as resp:
                         copyfileobj(resp, dst)
+                        length_hdr = resp.getheader("Content-Length")
+
+                # Verify downloaded file size against length metadata, if
+                # available.
+                if length_hdr is not None:
+                    length = int(length_hdr)
+                    fsize = tmp_cache_file.stat().st_size
+                    if fsize != length:
+                        self.log.error("Unable to download %s: "
+                                       "connection closed before "
+                                       "transfer complete (%d/%d)",
+                                       self.url, fsize, length)
+                        tmp_cache_file.unlink()
+                        continue
                 break
             except FileExistsError:
                 self.log.debug("%s already exists, "
@@ -124,10 +156,23 @@ class Asset:
                                tmp_cache_file)
                 tmp_cache_file.unlink()
                 continue
-            except Exception as e:
-                self.log.error("Unable to download %s: %s", self.url, e)
+            except HTTPError as e:
                 tmp_cache_file.unlink()
-                raise
+                self.log.error("Unable to download %s: HTTP error %d",
+                               self.url, e.code)
+                # Treat 404 as fatal, since it is highly likely to
+                # indicate a broken test rather than a transient
+                # server or networking problem
+                if e.code == 404:
+                    raise AssetError(self, "Unable to download: "
+                                     "HTTP error %d" % e.code)
+                continue
+            except Exception as e:
+                tmp_cache_file.unlink()
+                raise AssetError(self, "Unable to download: " % e)
+
+        if not os.path.exists(tmp_cache_file):
+            raise AssetError(self, "Download retries exceeded", transient=True)
 
         try:
             # Set these just for informational purposes
@@ -141,8 +186,7 @@ class Asset:
 
         if not self._check(tmp_cache_file):
             tmp_cache_file.unlink()
-            raise Exception("Hash of %s does not match %s" %
-                            (self.url, self.hash))
+            raise AssetError(self, "Hash does not match %s" % self.hash)
         tmp_cache_file.replace(self.cache_file)
         # Remove write perms to stop tests accidentally modifying them
         os.chmod(self.cache_file, stat.S_IRUSR | stat.S_IRGRP)
@@ -162,7 +206,13 @@ class Asset:
         for name, asset in vars(test.__class__).items():
             if name.startswith("ASSET_") and type(asset) == Asset:
                 log.info("Attempting to cache '%s'" % asset)
-                asset.fetch()
+                try:
+                    asset.fetch()
+                except AssetError as e:
+                    if not e.transient:
+                        raise
+                    log.error("%s: skipping asset precache" % e)
+
         log.removeHandler(handler)
 
     def precache_suite(suite):

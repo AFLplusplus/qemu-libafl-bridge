@@ -29,6 +29,9 @@ The `Repology`_ site is a useful resource to identify
 currently shipped versions of software in various operating systems,
 though it does not cover all distros listed below.
 
+You can find how to install build dependencies for different systems on the
+:ref:`setup-build-env` page.
+
 Supported host architectures
 ----------------------------
 
@@ -98,7 +101,7 @@ Python runtime
   option of the ``configure`` script to point QEMU to a supported
   version of the Python runtime.
 
-  As of QEMU |version|, the minimum supported version of Python is 3.7.
+  As of QEMU |version|, the minimum supported version of Python is 3.8.
 
 Python build dependencies
   Some of QEMU's build dependencies are written in Python.  Usually these
@@ -129,7 +132,6 @@ Optional build dependencies
   download them from repositories such as EPEL, to use container-based
   cross compilation using ``docker`` or ``podman``, or to use pre-built
   binaries distributed with QEMU.
-
 
 Windows
 -------

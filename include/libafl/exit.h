@@ -1,9 +1,10 @@
 #pragma once
 
 #include "qemu/osdep.h"
+#include "hw/core/cpu.h"
 #include "exec/cpu-defs.h"
 
-#define EXCP_LIBAFL_EXIT 0xf4775747
+#include "libafl/defs.h"
 
 struct libafl_breakpoint {
     target_ulong addr;

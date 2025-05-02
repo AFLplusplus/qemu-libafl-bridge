@@ -2,7 +2,24 @@
 # vim: filetype=python
 
 ##
-# = QEMU guest agent protocol commands and structs
+# This manual describes the commands supported by the QEMU Guest
+# Agent Protocol.
+#
+# For locating  a particular item, please see the `qapi-qga-index`.
+#
+# The following notation is used in examples:
+#
+# .. qmp-example::
+#
+#   -> ... text sent by client (commands) ...
+#   <- ... text sent by server (command responses and events) ...
+#
+# Example text is formatted for readability.  However, in real
+# protocol usage, its commonly emitted as a single line.
+#
+# Please refer to the
+# :doc:`QEMU Machine Protocol Specification </interop/qmp-spec>`
+# for the general format of commands, responses, and events.
 ##
 
 { 'pragma': { 'doc-required': true } }
@@ -1841,6 +1858,43 @@
 { 'command': 'guest-get-cpustats',
   'returns': ['GuestCpuStats'],
   'if': 'CONFIG_LINUX'
+}
+
+
+##
+# @GuestLoadAverage:
+#
+# Statistics about process load information
+#
+# @load1m: 1-minute load avage
+#
+# @load5m: 5-minute load avage
+#
+# @load15m: 15-minute load avage
+#
+# Since: 10.0
+##
+{ 'struct': 'GuestLoadAverage',
+  'data': {
+      'load1m': 'number',
+      'load5m': 'number',
+      'load15m': 'number'
+  },
+  'if': 'CONFIG_GETLOADAVG'
+}
+
+##
+# @guest-get-load:
+#
+# Retrieve CPU process load information
+#
+# Returns: load information
+#
+# Since: 10.0
+##
+{ 'command': 'guest-get-load',
+  'returns': 'GuestLoadAverage',
+  'if': 'CONFIG_GETLOADAVG'
 }
 
 ##

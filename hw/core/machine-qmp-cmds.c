@@ -15,16 +15,16 @@
 #include "qapi/error.h"
 #include "qapi/qapi-builtin-visit.h"
 #include "qapi/qapi-commands-machine.h"
-#include "qapi/qmp/qobject.h"
+#include "qobject/qobject.h"
 #include "qapi/qobject-input-visitor.h"
 #include "qapi/type-helpers.h"
 #include "qemu/uuid.h"
 #include "qom/qom-qobject.h"
-#include "sysemu/hostmem.h"
-#include "sysemu/hw_accel.h"
-#include "sysemu/numa.h"
-#include "sysemu/runstate.h"
-#include "sysemu/sysemu.h"
+#include "system/hostmem.h"
+#include "system/hw_accel.h"
+#include "system/numa.h"
+#include "system/runstate.h"
+#include "system/system.h"
 
 /*
  * fast means: we NEVER interrupt vCPU threads to retrieve

@@ -30,7 +30,7 @@
 #include "hw/misc/unimp.h"
 #include "hw/usb/hcd-ehci.h"
 #include "hw/loader.h"
-#include "sysemu/sysemu.h"
+#include "system/system.h"
 #include "hw/arm/allwinner-r40.h"
 #include "hw/misc/allwinner-r40-dramc.h"
 #include "target/arm/cpu-qom.h"
@@ -492,7 +492,7 @@ static void allwinner_r40_realize(DeviceState *dev, Error **errp)
 
         serial_mm_init(get_system_memory(), addr, 2,
                        qdev_get_gpio_in(DEVICE(&s->gic), uart_irqs[i]),
-                       115200, serial_hd(i), DEVICE_NATIVE_ENDIAN);
+                       115200, serial_hd(i), DEVICE_LITTLE_ENDIAN);
     }
 
     /* I2C */

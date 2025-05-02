@@ -25,7 +25,7 @@
 #include "qemu/module.h"
 #include "hw/qdev-properties.h"
 #include "hw/rtc/allwinner-rtc.h"
-#include "sysemu/rtc.h"
+#include "system/rtc.h"
 #include "trace.h"
 
 /* RTC registers */
@@ -259,7 +259,7 @@ static void allwinner_rtc_write(void *opaque, hwaddr offset,
 static const MemoryRegionOps allwinner_rtc_ops = {
     .read = allwinner_rtc_read,
     .write = allwinner_rtc_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_LITTLE_ENDIAN,
     .valid = {
         .min_access_size = 4,
         .max_access_size = 4,
@@ -311,9 +311,8 @@ static const VMStateDescription allwinner_rtc_vmstate = {
     }
 };
 
-static Property allwinner_rtc_properties[] = {
+static const Property allwinner_rtc_properties[] = {
     DEFINE_PROP_INT32("base-year", AwRtcState, base_year, 0),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void allwinner_rtc_class_init(ObjectClass *klass, void *data)

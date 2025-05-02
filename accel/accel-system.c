@@ -26,7 +26,8 @@
 #include "qemu/osdep.h"
 #include "qemu/accel.h"
 #include "hw/boards.h"
-#include "sysemu/cpus.h"
+#include "system/accel-ops.h"
+#include "system/cpus.h"
 #include "qemu/error-report.h"
 #include "accel-system.h"
 

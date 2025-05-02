@@ -1160,7 +1160,7 @@ DisplayState *init_displaystate(void)
          * all QemuConsoles are created and the order / numbering
          * doesn't change any more */
         name = g_strdup_printf("console[%d]", con->index);
-        object_property_add_child(container_get(object_get_root(), "/backend"),
+        object_property_add_child(object_get_container("backend"),
                                   name, OBJECT(con));
         g_free(name);
     }
@@ -1386,9 +1386,7 @@ char *qemu_console_get_label(QemuConsole *con)
                                        object_get_typename(c->device),
                                        c->head);
             } else {
-                return g_strdup_printf("%s", dev->id ?
-                                       dev->id :
-                                       object_get_typename(c->device));
+                return g_strdup(dev->id ? : object_get_typename(c->device));
             }
         }
         return g_strdup("VGA");

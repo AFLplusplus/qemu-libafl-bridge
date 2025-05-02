@@ -78,12 +78,19 @@ struct RISCVCPUConfig {
     bool ext_ztso;
     bool ext_smstateen;
     bool ext_sstc;
+    bool ext_smcdeleg;
+    bool ext_ssccfg;
     bool ext_smcntrpmf;
+    bool ext_smcsrind;
+    bool ext_sscsrind;
+    bool ext_ssdbltrp;
+    bool ext_smdbltrp;
     bool ext_svadu;
     bool ext_svinval;
     bool ext_svnapot;
     bool ext_svpbmt;
     bool ext_svvptc;
+    bool ext_svukte;
     bool ext_zdinx;
     bool ext_zaamo;
     bool ext_zacas;
@@ -126,8 +133,16 @@ struct RISCVCPUConfig {
     bool ext_zvfhmin;
     bool ext_smaia;
     bool ext_ssaia;
+    bool ext_smctr;
+    bool ext_ssctr;
     bool ext_sscofpmf;
     bool ext_smepmp;
+    bool ext_smrnmi;
+    bool ext_ssnpm;
+    bool ext_smnpm;
+    bool ext_smmpm;
+    bool ext_sspm;
+    bool ext_supm;
     bool rvv_ta_all_1s;
     bool rvv_ma_all_1s;
     bool rvv_vl_half_avl;
@@ -139,6 +154,8 @@ struct RISCVCPUConfig {
     /* Named features  */
     bool ext_svade;
     bool ext_zic64b;
+    bool ext_ssstateen;
+    bool ext_sha;
 
     /*
      * Always 'true' booleans for named features
@@ -148,6 +165,9 @@ struct RISCVCPUConfig {
     bool has_priv_1_13;
     bool has_priv_1_12;
     bool has_priv_1_11;
+
+    /* Always enabled for TCG if has_priv_1_11 */
+    bool ext_ziccrse;
 
     /* Vendor-specific custom extensions */
     bool ext_xtheadba;

@@ -24,17 +24,23 @@
  */
 
 #include "qemu/osdep.h"
-#include "sysemu/tcg.h"
-#include "sysemu/replay.h"
-#include "sysemu/cpu-timers.h"
+#include "system/tcg.h"
+#include "system/replay.h"
+#include "system/cpu-timers.h"
 #include "qemu/main-loop.h"
 #include "qemu/notify.h"
 #include "qemu/guest-random.h"
-#include "exec/exec-all.h"
 #include "hw/boards.h"
 #include "tcg/startup.h"
 #include "tcg-accel-ops.h"
 #include "tcg-accel-ops-mttcg.h"
+
+//// --- Begin LibAFL code ---
+
+#include "libafl/defs.h"
+
+//// --- End LibAFL code ---
+
 
 typedef struct MttcgForceRcuNotifier {
     Notifier notifier;
@@ -55,12 +61,6 @@ static void mttcg_force_rcu(Notifier *notify, void *data)
      */
     async_run_on_cpu(cpu, do_nothing, RUN_ON_CPU_NULL);
 }
-
-//// --- Begin LibAFL code ---
-
-#include "libafl/exit.h"
-
-//// --- End LibAFL code ---
 
 /*
  * In the multi-threaded case each vCPU has its own thread. The TLS

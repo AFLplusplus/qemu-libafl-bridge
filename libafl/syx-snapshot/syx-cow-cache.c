@@ -1,6 +1,7 @@
-#include "libafl/syx-snapshot/syx-cow-cache.h"
+#include "qemu/osdep.h"
 
-#include "sysemu/block-backend.h"
+#include "libafl/syx-snapshot/syx-cow-cache.h"
+#include "system/block-backend-io.h"
 
 #define IS_POWER_OF_TWO(x) ((x != 0) && ((x & (x - 1)) == 0))
 

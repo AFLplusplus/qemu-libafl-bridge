@@ -33,7 +33,7 @@
 #include "hw/boards.h"
 #include "hw/arm/boot.h"
 #include "hw/block/flash.h"
-#include "sysemu/qtest.h"
+#include "system/qtest.h"
 #include "exec/address-spaces.h"
 #include "qemu/cutils.h"
 #include "qemu/error-report.h"
@@ -76,10 +76,6 @@ static uint64_t static_read(void *opaque, hwaddr offset,
 static void static_write(void *opaque, hwaddr offset,
                          uint64_t value, unsigned size)
 {
-#ifdef SPY
-    printf("%s: value %" PRIx64 " %u bytes written at 0x%x\n",
-                    __func__, value, size, (int)offset);
-#endif
 }
 
 static const MemoryRegionOps static_ops = {
@@ -216,6 +212,7 @@ static void sx1_machine_v2_class_init(ObjectClass *oc, void *data)
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("ti925t");
     mc->default_ram_size = SDRAM_SIZE;
     mc->default_ram_id = "omap1.dram";
+    mc->auto_create_sdcard = true;
 }
 
 static const TypeInfo sx1_machine_v2_type = {
@@ -234,6 +231,7 @@ static void sx1_machine_v1_class_init(ObjectClass *oc, void *data)
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("ti925t");
     mc->default_ram_size = SDRAM_SIZE;
     mc->default_ram_id = "omap1.dram";
+    mc->auto_create_sdcard = true;
 }
 
 static const TypeInfo sx1_machine_v1_type = {

@@ -22,11 +22,11 @@
 #include "qapi/error.h"
 #include "qapi/visitor.h"
 #include "qapi/qapi-visit-common.h"
-#include "sysemu/sysemu.h"
-#include "sysemu/cpus.h"
-#include "sysemu/numa.h"
-#include "sysemu/reset.h"
-#include "sysemu/runstate.h"
+#include "system/system.h"
+#include "system/cpus.h"
+#include "system/numa.h"
+#include "system/reset.h"
+#include "system/runstate.h"
 #include "acpi-microvm.h"
 #include "microvm-dt.h"
 
@@ -139,7 +139,7 @@ static void create_gpex(MicrovmMachineState *mms)
                                     mms->gpex.mmio64.base, mmio64_alias);
     }
 
-    for (i = 0; i < GPEX_NUM_IRQS; i++) {
+    for (i = 0; i < PCI_NUM_PINS; i++) {
         sysbus_connect_irq(SYS_BUS_DEVICE(dev), i,
                            x86ms->gsi[mms->gpex.irq + i]);
     }
@@ -451,10 +451,43 @@ static HotplugHandler *microvm_get_hotplug_handler(MachineState *machine,
     return NULL;
 }
 
+static void microvm_machine_done(Notifier *notifier, void *data)
+{
+    MicrovmMachineState *mms = container_of(notifier, MicrovmMachineState,
+                                            machine_done);
+    X86MachineState *x86ms = X86_MACHINE(mms);
+
+    acpi_setup_microvm(mms);
+    dt_setup_microvm(mms);
+    fw_cfg_add_e820(x86ms->fw_cfg);
+}
+
+static void microvm_powerdown_req(Notifier *notifier, void *data)
+{
+    MicrovmMachineState *mms = container_of(notifier, MicrovmMachineState,
+                                            powerdown_req);
+    X86MachineState *x86ms = X86_MACHINE(mms);
+
+    if (x86ms->acpi_dev) {
+        Object *obj = OBJECT(x86ms->acpi_dev);
+        AcpiDeviceIfClass *adevc = ACPI_DEVICE_IF_GET_CLASS(obj);
+        adevc->send_event(ACPI_DEVICE_IF(x86ms->acpi_dev),
+                          ACPI_POWER_DOWN_STATUS);
+    }
+}
+
 static void microvm_machine_state_init(MachineState *machine)
 {
     MicrovmMachineState *mms = MICROVM_MACHINE(machine);
     X86MachineState *x86ms = X86_MACHINE(machine);
+
+    /* State */
+    mms->kernel_cmdline_fixed = false;
+
+    mms->machine_done.notify = microvm_machine_done;
+    qemu_add_machine_init_done_notifier(&mms->machine_done);
+    mms->powerdown_req.notify = microvm_powerdown_req;
+    qemu_register_powerdown_notifier(&mms->powerdown_req);
 
     microvm_memory_init(mms);
 
@@ -581,31 +614,6 @@ static void microvm_machine_set_auto_kernel_cmdline(Object *obj, bool value,
     mms->auto_kernel_cmdline = value;
 }
 
-static void microvm_machine_done(Notifier *notifier, void *data)
-{
-    MicrovmMachineState *mms = container_of(notifier, MicrovmMachineState,
-                                            machine_done);
-    X86MachineState *x86ms = X86_MACHINE(mms);
-
-    acpi_setup_microvm(mms);
-    dt_setup_microvm(mms);
-    fw_cfg_add_e820(x86ms->fw_cfg);
-}
-
-static void microvm_powerdown_req(Notifier *notifier, void *data)
-{
-    MicrovmMachineState *mms = container_of(notifier, MicrovmMachineState,
-                                            powerdown_req);
-    X86MachineState *x86ms = X86_MACHINE(mms);
-
-    if (x86ms->acpi_dev) {
-        Object *obj = OBJECT(x86ms->acpi_dev);
-        AcpiDeviceIfClass *adevc = ACPI_DEVICE_IF_GET_CLASS(obj);
-        adevc->send_event(ACPI_DEVICE_IF(x86ms->acpi_dev),
-                          ACPI_POWER_DOWN_STATUS);
-    }
-}
-
 static void microvm_machine_initfn(Object *obj)
 {
     MicrovmMachineState *mms = MICROVM_MACHINE(obj);
@@ -617,14 +625,6 @@ static void microvm_machine_initfn(Object *obj)
     mms->isa_serial = true;
     mms->option_roms = true;
     mms->auto_kernel_cmdline = true;
-
-    /* State */
-    mms->kernel_cmdline_fixed = false;
-
-    mms->machine_done.notify = microvm_machine_done;
-    qemu_add_machine_init_done_notifier(&mms->machine_done);
-    mms->powerdown_req.notify = microvm_powerdown_req;
-    qemu_register_powerdown_notifier(&mms->powerdown_req);
 }
 
 GlobalProperty microvm_properties[] = {

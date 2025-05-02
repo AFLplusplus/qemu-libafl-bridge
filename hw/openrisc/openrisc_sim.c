@@ -29,11 +29,11 @@
 #include "hw/openrisc/boot.h"
 #include "hw/qdev-properties.h"
 #include "exec/address-spaces.h"
-#include "sysemu/device_tree.h"
-#include "sysemu/sysemu.h"
+#include "system/device_tree.h"
+#include "system/system.h"
 #include "hw/sysbus.h"
-#include "sysemu/qtest.h"
-#include "sysemu/reset.h"
+#include "system/qtest.h"
+#include "system/reset.h"
 #include "hw/core/split-irq.h"
 
 #include <libfdt.h>
@@ -266,7 +266,7 @@ static void openrisc_sim_serial_init(Or1ksimState *state, hwaddr base,
     }
     serial_mm_init(get_system_memory(), base, 0, serial_irq, 115200,
                    serial_hd(uart_idx),
-                   DEVICE_NATIVE_ENDIAN);
+                   DEVICE_BIG_ENDIAN);
 
     /* Add device tree node for serial. */
     nodename = g_strdup_printf("/serial@%" HWADDR_PRIx, base);
@@ -305,8 +305,6 @@ static void openrisc_sim_init(MachineState *machine)
             fprintf(stderr, "Unable to find CPU definition!\n");
             exit(1);
         }
-
-        cpu_openrisc_clock_init(cpus[n]);
 
         qemu_register_reset(main_cpu_reset, cpus[n]);
     }
@@ -354,7 +352,7 @@ static void openrisc_sim_init(MachineState *machine)
                                              machine->initrd_filename,
                                              load_addr, machine->ram_size);
         }
-        boot_info.fdt_addr = openrisc_load_fdt(state->fdt, load_addr,
+        boot_info.fdt_addr = openrisc_load_fdt(machine, state->fdt, load_addr,
                                                machine->ram_size);
     }
 }

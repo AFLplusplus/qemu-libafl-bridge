@@ -21,8 +21,9 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "elf.h"
-#include "sysemu/dump.h"
+#include "system/dump.h"
 #include "cpu-features.h"
+#include "internals.h"
 
 /* struct user_pt_regs from arch/arm64/include/uapi/asm/ptrace.h */
 struct aarch64_user_regs {

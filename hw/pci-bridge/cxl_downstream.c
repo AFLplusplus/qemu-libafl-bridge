@@ -212,12 +212,11 @@ static void cxl_dsp_exitfn(PCIDevice *d)
     pci_bridge_exitfn(d);
 }
 
-static Property cxl_dsp_props[] = {
+static const Property cxl_dsp_props[] = {
     DEFINE_PROP_PCIE_LINK_SPEED("x-speed", PCIESlot,
                                 speed, PCIE_LINK_SPEED_64),
     DEFINE_PROP_PCIE_LINK_WIDTH("x-width", PCIESlot,
                                 width, PCIE_LINK_WIDTH_16),
-    DEFINE_PROP_END_OF_LIST()
 };
 
 static void cxl_dsp_class_init(ObjectClass *oc, void *data)

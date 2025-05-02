@@ -24,9 +24,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "qapi/qmp/qjson.h"
+#include "qobject/qjson.h"
 
-#include "sysemu/block-backend.h"
+#include "system/block-backend.h"
 #include "qemu/cutils.h"
 #include "qapi/error.h"
 #include "block/block_int.h"

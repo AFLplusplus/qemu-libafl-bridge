@@ -7,13 +7,13 @@
  */
 
 #include "qemu/osdep.h"
-#include "qapi/qmp/qdict.h"
+#include "qobject/qdict.h"
 #include "qapi/error.h"
 #include "monitor/monitor.h"
 #include "monitor/hmp-target.h"
-#include "sysemu/hw_accel.h"
-#include "sysemu/kvm.h"
-#include "sysemu/xen.h"
+#include "system/hw_accel.h"
+#include "system/kvm.h"
+#include "system/xen.h"
 #include "exec/address-spaces.h"
 #include "hw/qdev-properties.h"
 #include "hw/i386/apic_internal.h"

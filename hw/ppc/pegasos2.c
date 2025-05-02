@@ -20,23 +20,23 @@
 #include "hw/ide/pci.h"
 #include "hw/i2c/smbus_eeprom.h"
 #include "hw/qdev-properties.h"
-#include "sysemu/reset.h"
-#include "sysemu/runstate.h"
-#include "sysemu/qtest.h"
+#include "system/reset.h"
+#include "system/runstate.h"
+#include "system/qtest.h"
 #include "hw/boards.h"
 #include "hw/loader.h"
 #include "hw/fw-path-provider.h"
 #include "elf.h"
 #include "qemu/log.h"
 #include "qemu/error-report.h"
-#include "sysemu/kvm.h"
+#include "system/kvm.h"
 #include "kvm_ppc.h"
 #include "exec/address-spaces.h"
 #include "qom/qom-qobject.h"
-#include "qapi/qmp/qdict.h"
+#include "qobject/qdict.h"
 #include "trace.h"
 #include "qemu/datadir.h"
-#include "sysemu/device_tree.h"
+#include "system/device_tree.h"
 #include "hw/ppc/vof.h"
 
 #include <libfdt.h>
@@ -160,8 +160,8 @@ static void pegasos2_init(MachineState *machine)
     }
     memory_region_init_rom(rom, NULL, "pegasos2.rom", PROM_SIZE, &error_fatal);
     memory_region_add_subregion(get_system_memory(), PROM_ADDR, rom);
-    sz = load_elf(filename, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1,
-                  PPC_ELF_MACHINE, 0, 0);
+    sz = load_elf(filename, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+                  ELFDATA2MSB, PPC_ELF_MACHINE, 0, 0);
     if (sz <= 0) {
         sz = load_image_targphys(filename, pm->vof ? 0 : PROM_ADDR, PROM_SIZE);
     }
@@ -239,8 +239,8 @@ static void pegasos2_init(MachineState *machine)
 
     if (machine->kernel_filename) {
         sz = load_elf(machine->kernel_filename, NULL, NULL, NULL,
-                      &pm->kernel_entry, &pm->kernel_addr, NULL, NULL, 1,
-                      PPC_ELF_MACHINE, 0, 0);
+                      &pm->kernel_entry, &pm->kernel_addr, NULL, NULL,
+                      ELFDATA2MSB, PPC_ELF_MACHINE, 0, 0);
         if (sz <= 0) {
             error_report("Could not load kernel '%s'",
                          machine->kernel_filename);
@@ -417,7 +417,6 @@ static void pegasos2_machine_reset(MachineState *machine, ResetType type)
     d[1] = cpu_to_be64(pm->kernel_size - (pm->kernel_entry - pm->kernel_addr));
     qemu_fdt_setprop(fdt, "/chosen", "qemu,boot-kernel", d, sizeof(d));
 
-    qemu_fdt_dumpdtb(fdt, fdt_totalsize(fdt));
     g_free(pm->fdt_blob);
     pm->fdt_blob = fdt;
 

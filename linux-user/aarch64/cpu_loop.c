@@ -27,6 +27,10 @@
 #include "target/arm/syndrome.h"
 #include "target/arm/cpu-features.h"
 
+//// --- Begin LibAFL code ---
+#include "libafl/exit.h"
+//// --- End LibAFL code ---
+
 /* AArch64 main loop */
 void cpu_loop(CPUARMState *env)
 {

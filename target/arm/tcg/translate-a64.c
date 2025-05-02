@@ -8370,8 +8370,8 @@ static bool do_addsub_ext(DisasContext *s, arg_addsub_ext *a,
 
 //// --- Begin LibAFL code ---
 
-    if (rd == 31 && sub_op) // cmp xX, xY
-      libafl_gen_cmp(s->pc_curr, tcg_rn, tcg_rm, sf ? MO_64 : MO_32);
+    if (a->rd == 31 && sub_op) // cmp xX, xY
+      libafl_gen_cmp(s->pc_curr, tcg_rn, tcg_rm, a->sf ? MO_64 : MO_32);
 
 //// --- End LibAFL code ---
 
@@ -8420,8 +8420,8 @@ static bool do_addsub_reg(DisasContext *s, arg_addsub_shift *a,
 
 //// --- Begin LibAFL code ---
 
-    if (rd == 31 && sub_op) // cmp xX, xY
-      libafl_gen_cmp(s->pc_curr, tcg_rn, tcg_rm, sf ? MO_64 : MO_32);
+    if (a->rd == 31 && sub_op) // cmp xX, xY
+      libafl_gen_cmp(s->pc_curr, tcg_rn, tcg_rm, a->sf ? MO_64 : MO_32);
 
 //// --- End LibAFL code ---
 
@@ -8616,7 +8616,7 @@ static bool trans_CCMP(DisasContext *s, arg_CCMP *a)
 
 //// --- Begin LibAFL code ---
 
-    libafl_gen_cmp(s->pc_curr, tcg_rn, tcg_y, sf ? MO_64 : MO_32);
+    libafl_gen_cmp(s->pc_curr, tcg_rn, tcg_y, a->sf ? MO_64 : MO_32);
 
 //// --- End LibAFL code ---
 

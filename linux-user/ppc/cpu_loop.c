@@ -24,6 +24,12 @@
 #include "user/cpu_loop.h"
 #include "signal-common.h"
 
+//// --- Begin LibAFL code ---
+
+#include "libafl/exit.h"
+
+//// --- End LibAFL code ---
+
 static inline uint64_t cpu_ppc_get_tb(CPUPPCState *env)
 {
     return cpu_get_host_ticks();

@@ -26,6 +26,12 @@
 #include "elf.h"
 #include "semihosting/common-semi.h"
 
+//// --- Begin LibAFL code ---
+
+#include "libafl/exit.h"
+
+//// --- End LibAFL code ---
+
 void cpu_loop(CPURISCVState *env)
 {
     CPUState *cs = env_cpu(env);

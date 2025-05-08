@@ -1248,7 +1248,20 @@ abi_long target_madvise(abi_ulong start, abi_ulong len_in, int advice)
     switch (advice) {
     case MADV_DONTDUMP:
         if (len > 0) {
-            page_set_flags(start, start + len - 1, PAGE_DONTDUMP);
+            /*
+            * To set the page permissons, we must OR our new flags with the
+            * existing flags. Only mark the pages as PAGE_DONTDUMP if the
+            * entire range has the same flags. If any part of the range
+            * differs, we would need to process it one page at a time which
+            * might not be very performant. Since we are not obliged to respect
+            * this flag, we will support it for the most likely usage scenario.
+            * Note that we don't set PAGE_ANON, since this can only be set with
+            * new mappings.
+            */
+            int flg = page_get_flags(start);
+            if (page_check_range(start, len, flg)) {
+                page_set_flags(start, start + len - 1, PAGE_DONTDUMP | (flg & ~PAGE_ANON) );
+            }
         }
         break;
     case MADV_WIPEONFORK:

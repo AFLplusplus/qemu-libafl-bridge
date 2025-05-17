@@ -93,6 +93,15 @@ QEMU_BUILD_BUG_ON(sizeof(vaddr) > sizeof(run_on_cpu_data));
 QEMU_BUILD_BUG_ON(NB_MMU_MODES > 16);
 #define ALL_MMUIDX_BITS ((1 << NB_MMU_MODES) - 1)
 
+//// --- Begin LibAFL code ---
+// Use this snippet multiple times below
+#define SYX_SNAPSHOT_DIRTY_LIST_ADD_HOSTADDR_PROBE(dbg, access_type, addr, entry_full, phost) { \
+    if (access_type == MMU_DATA_STORE && !(flags & (TLB_MMIO | TLB_DISCARD_WRITE))) { \
+        SYX_DEBUG("%s %llx %llx\n", dbg, addr, addr+ (entry_full)->xlat_section); \
+        syx_snapshot_dirty_list_add_hostaddr((phost)); \
+    }}\
+//// --- End LibAFL code ---
+
 static inline size_t tlb_n_entries(CPUTLBDescFast *fast)
 {
     return (fast->mask >> CPU_TLB_ENTRY_BITS) + 1;
@@ -1415,15 +1424,6 @@ static int probe_access_internal(CPUState *cpu, vaddr addr,
 
     return flags;
 }
-
-//// --- Begin LibAFL code ---
-// Use this snippet multiple times below
-#define SYX_SNAPSHOT_DIRTY_LIST_ADD_HOSTADDR_PROBE(dbg, access_type, addr, entry_full, phost) { \
-if (access_type == MMU_DATA_STORE && !(flags & (TLB_MMIO | TLB_DISCARD_WRITE))) { \
-    SYX_DEBUG("%s %llx %llx\n", dbg, addr, addr+ (entry_full)->xlat_section); \
-    syx_snapshot_dirty_list_add_hostaddr((phost)); \
-}}\
-//// --- End LibAFL code ---
 
 int probe_access_full(CPUArchState *env, vaddr addr, int size,
                       MMUAccessType access_type, int mmu_idx,

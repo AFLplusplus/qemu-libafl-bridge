@@ -218,8 +218,6 @@ void syx_cow_cache_read_entry(SyxCowCache* scc, BlockBackend* blk,
     size_t qiov_offset = 0;
     uint64_t chunk_size = 0;
 
-    //printf("[SYX] [%s] Read 0x%zx bytes @addr %lx\n", blk_name(blk), qiov->size, offset);
-
     // First read the backing block device normally.
     assert(blk_co_preadv(blk, offset, bytes, qiov, flags) >= 0);
 
@@ -227,12 +225,9 @@ void syx_cow_cache_read_entry(SyxCowCache* scc, BlockBackend* blk,
     if (!QTAILQ_EMPTY(&scc->layers)) {
         for (; qiov_offset < qiov->size;
              blk_offset += chunk_size, qiov_offset += chunk_size) {
-            int i = 0;
             QTAILQ_FOREACH(layer, &scc->layers, next)
             {
                 chunk_size = layer->chunk_size;
-                //printf("[SYX] check cache layer %d\n", i);
-                i++;
                 if (read_chunk_from_cache_layer(layer, blk, qiov, qiov_offset,
                                                 blk_offset)) {
                     break;

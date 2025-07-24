@@ -143,6 +143,19 @@ config OLIMEX_STM32_H405
     depends on TCG && ARM
     select STM32F405_SOC
 
+config ARMV7M_MACHINE
+    bool
+    default y
+    depends on TCG && ARM
+    select ARM_V7M
+    select PTIMER
+    select UNIMP
+    imply SERIAL
+    imply ARM_TIMER
+    select ARM_GIC
+    select OR_IRQ
+    select PFLASH_CFI01
+
 config OMAP
     bool
     select FRAMEBUFFER

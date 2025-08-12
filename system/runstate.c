@@ -421,7 +421,6 @@ static int shutdown_exit_code = EXIT_SUCCESS;
 static int shutdown_signal;
 static pid_t shutdown_pid;
 static int powerdown_requested;
-static int return_requested;
 static int debug_requested;
 static int suspend_requested;
 static WakeupReason wakeup_reason;
@@ -434,6 +433,12 @@ static NotifierList wakeup_notifiers =
 static NotifierList shutdown_notifiers =
     NOTIFIER_LIST_INITIALIZER(shutdown_notifiers);
 static uint32_t wakeup_reason_mask = ~(1 << QEMU_WAKEUP_REASON_NONE);
+
+//// --- Begin LibAFL code ---
+#ifdef AS_LIB
+static int return_requested;
+#endif
+//// --- End LibAFL code ---
 
 ShutdownCause qemu_shutdown_requested_get(void)
 {

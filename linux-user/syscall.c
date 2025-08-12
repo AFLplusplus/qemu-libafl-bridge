@@ -13953,9 +13953,9 @@ IntervalTreeNode * libafl_maps_next(IntervalTreeNode *pageflags_maps_node, Inter
         if (flags & PAGE_EXEC) libafl_flags |= PROT_EXEC;
 
         ret->is_valid = true;
-        ret->start = (target_ulong)h2g_nocheck(min);
-        ret->end = (target_ulong)h2g_nocheck(max);
-        ret->offset = (target_ulong)e->offset;
+        ret->start = (uint64_t) h2g_nocheck(min);
+        ret->end = (uint64_t) max;
+        ret->offset = (uint64_t) e->offset;
         ret->path = e->path;
         ret->flags = libafl_flags;
         ret->is_priv = e->is_priv;

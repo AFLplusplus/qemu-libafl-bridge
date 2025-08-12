@@ -95,7 +95,6 @@ void qemu_system_shutdown_request(ShutdownCause reason);
 void qemu_system_powerdown_request(void);
 void qemu_register_powerdown_notifier(Notifier *notifier);
 void qemu_register_shutdown_notifier(Notifier *notifier);
-void qemu_system_return_request(void);
 void qemu_system_debug_request(void);
 void qemu_system_vmstop_request(RunState reason);
 void qemu_system_vmstop_request_prepare(void);
@@ -108,6 +107,12 @@ void qemu_system_guest_panicked(GuestPanicInformation *info);
 void qemu_system_guest_crashloaded(GuestPanicInformation *info);
 void qemu_system_guest_pvshutdown(void);
 bool qemu_system_dump_in_progress(void);
+
+//// --- Begin LibAFL code ---
+#ifdef AS_LIB
+void qemu_system_return_request(void);
+#endif
+//// --- End LibAFL code ---
 
 #endif
 

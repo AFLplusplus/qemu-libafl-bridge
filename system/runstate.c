@@ -503,12 +503,16 @@ static int qemu_powerdown_requested(void)
     return r;
 }
 
+//// --- Begin LibAFL code ---
+#ifdef AS_LIB
 static int qemu_return_requested(void)
 {
     int r = return_requested;
     return_requested = 0;
     return r;
 }
+#endif
+//// --- End LibAFL code ---
 
 static int qemu_debug_requested(void)
 {
@@ -807,11 +811,15 @@ void qemu_register_shutdown_notifier(Notifier *notifier)
     notifier_list_add(&shutdown_notifiers, notifier);
 }
 
+//// --- Begin LibAFL code ---
+#ifdef AS_LIB
 void qemu_system_return_request(void)
 {
     return_requested = 1;
     qemu_notify_event();
 }
+#endif
+//// --- End LibAFL code ---
 
 void qemu_system_debug_request(void)
 {

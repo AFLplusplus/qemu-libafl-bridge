@@ -297,17 +297,13 @@ void cpu_loop(CPUARMState *env)
     abi_ulong ret;
 
 //// --- Begin LibAFL code ---
-
     libafl_exit_signal_vm_start();
-
 //// --- End LibAFL code ---
 
     for(;;) {
 
 //// --- Begin LibAFL code ---
-
         if (libafl_exit_asap()) return;
-
 //// --- End LibAFL code ---
 
         cpu_exec_start(cs);
@@ -318,10 +314,8 @@ void cpu_loop(CPUARMState *env)
         switch(trapnr) {
 
 //// --- Begin LibAFL code ---
-
         case EXCP_LIBAFL_EXIT:
             return;
-
 //// --- End LibAFL code ---
 
         case EXCP_UDEF:

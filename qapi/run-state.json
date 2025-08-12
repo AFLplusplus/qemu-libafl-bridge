@@ -52,12 +52,15 @@
 # @colo: guest is paused to save/restore VM state under colo
 #     checkpoint, VM can not get into this state unless colo
 #     capability is enabled for migration.  (since 2.8)
+#
+# @ret: guest stopped to return to the library caller.
+#     this is only valid if QEMU is compiled as a library (with AS_LIB).
 ##
 { 'enum': 'RunState',
   'data': [ 'debug', 'inmigrate', 'internal-error', 'io-error', 'paused',
             'postmigrate', 'prelaunch', 'finish-migrate', 'restore-vm',
             'running', 'save-vm', 'shutdown', 'suspended', 'watchdog',
-            'guest-panicked', 'colo' ] }
+            'guest-panicked', 'colo', 'ret' ] }
 
 ##
 # @ShutdownCause:

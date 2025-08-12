@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: [self-hosted, qemu]
+    runs-on: ubuntu-24.04
     container: registry.gitlab.com/qemu-project/qemu/qemu/ubuntu2204:latest
     steps:
       - uses: actions/checkout@v4

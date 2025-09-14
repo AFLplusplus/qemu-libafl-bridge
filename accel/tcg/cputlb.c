@@ -48,6 +48,11 @@
 #endif
 #include "tcg/tcg-ldst.h"
 
+//// --- Begin LibAFL code ---
+//#define CONFIG_DEBUG_SYX
+#include "libafl/syx-snapshot/syx-snapshot.h"
+//// --- End LibAFL code ---
+
 /* DEBUG defines, enable DEBUG_TLB_LOG to log to the CPU_LOG_MMU target */
 /* #define DEBUG_TLB */
 /* #define DEBUG_TLB_LOG */
@@ -88,13 +93,6 @@ QEMU_BUILD_BUG_ON(sizeof(vaddr) > sizeof(run_on_cpu_data));
  */
 QEMU_BUILD_BUG_ON(NB_MMU_MODES > 16);
 #define ALL_MMUIDX_BITS ((1 << NB_MMU_MODES) - 1)
-
-//// --- Begin LibAFL code ---
-
-// void syx_snapshot_dirty_list_add(hwaddr paddr);
-void syx_snapshot_dirty_list_add_hostaddr(void* host_addr);
-
-//// --- End LibAFL code ---
 
 static inline size_t tlb_n_entries(CPUTLBDescFast *fast)
 {
@@ -437,6 +435,15 @@ void tlb_flush_by_mmuidx_all_cpus_synced(CPUState *src_cpu, uint16_t idxmap)
 void tlb_flush_all_cpus_synced(CPUState *src_cpu)
 {
     tlb_flush_by_mmuidx_all_cpus_synced(src_cpu, ALL_MMUIDX_BITS);
+}
+
+void tlb_flush_all_cpus(void) 
+{
+    const run_on_cpu_func fn = tlb_flush_by_mmuidx_async_work;
+
+    tlb_debug("mmu_idx: 0x%"PRIx16"\n", ALL_MMUIDX_BITS);
+
+    flush_all_helper(NULL, fn, RUN_ON_CPU_HOST_INT(ALL_MMUIDX_BITS));
 }
 
 static bool tlb_hit_page_mask_anyprot(CPUTLBEntry *tlb_entry,
@@ -1410,15 +1417,18 @@ static int probe_access_internal(CPUState *cpu, vaddr addr,
 
     /* Everything else is RAM. */
     *phost = (void *)((uintptr_t)addr + entry->addend);
-//// --- Begin LibAFL code ---
 
-    if (access_type == MMU_DATA_STORE) {
-        syx_snapshot_dirty_list_add_hostaddr(*phost);
+    return flags;
     }
 
+//// --- Begin LibAFL code ---
+// Use this snippet multiple times below
+#define SYX_SNAPSHOT_DIRTY_LIST_ADD_HOSTADDR_PROBE(dbg, access_type, addr, entry_full, phost) { \
+if (access_type == MMU_DATA_STORE && !(flags & (TLB_MMIO | TLB_DISCARD_WRITE))) { \
+    SYX_DEBUG("%s %llx %llx\n", dbg, addr, addr+ (entry_full)->xlat_section); \
+    syx_snapshot_dirty_list_add_hostaddr((phost)); \
+}}\
 //// --- End LibAFL code ---
-    return flags;
-}
 
 int probe_access_full(CPUArchState *env, vaddr addr, int size,
                       MMUAccessType access_type, int mmu_idx,
@@ -1434,6 +1444,9 @@ int probe_access_full(CPUArchState *env, vaddr addr, int size,
         int dirtysize = size == 0 ? 1 : size;
         notdirty_write(env_cpu(env), addr, dirtysize, *pfull, retaddr);
         flags &= ~TLB_NOTDIRTY;
+        //// --- Begin LibAFL code ---
+        SYX_SNAPSHOT_DIRTY_LIST_ADD_HOSTADDR_PROBE("probe_access_full", access_type, addr, *pfull, *phost);
+        //// --- End LibAFL code ---
     }
 
     return flags;
@@ -1458,6 +1471,9 @@ int probe_access_full_mmu(CPUArchState *env, vaddr addr, int size,
         int dirtysize = size == 0 ? 1 : size;
         notdirty_write(env_cpu(env), addr, dirtysize, *pfull, 0);
         flags &= ~TLB_NOTDIRTY;
+        //// --- Begin LibAFL code ---
+        SYX_SNAPSHOT_DIRTY_LIST_ADD_HOSTADDR_PROBE("probe_access_full_mmu", access_type, addr, *pfull, *phost);
+        //// --- End LibAFL code ---
     }
 
     return flags;
@@ -1481,6 +1497,9 @@ int probe_access_flags(CPUArchState *env, vaddr addr, int size,
         int dirtysize = size == 0 ? 1 : size;
         notdirty_write(env_cpu(env), addr, dirtysize, full, retaddr);
         flags &= ~TLB_NOTDIRTY;
+        //// --- Begin LibAFL code ---
+        SYX_SNAPSHOT_DIRTY_LIST_ADD_HOSTADDR_PROBE("probe_access_flags", access_type, addr, full, *phost);
+        //// --- End LibAFL code ---
     }
 
     return flags;
@@ -1516,6 +1535,9 @@ void *probe_access(CPUArchState *env, vaddr addr, int size,
         /* Handle clean RAM pages.  */
         if (flags & TLB_NOTDIRTY) {
             notdirty_write(env_cpu(env), addr, size, full, retaddr);
+            //// --- Begin LibAFL code ---
+            SYX_SNAPSHOT_DIRTY_LIST_ADD_HOSTADDR_PROBE("probe_access", access_type, addr, full, host);
+            //// --- End LibAFL code ---
         }
     }
 
@@ -1732,6 +1754,12 @@ static void mmu_watch_or_dirty(CPUState *cpu, MMULookupPageData *data,
     if (flags & TLB_NOTDIRTY) {
         notdirty_write(cpu, addr, size, full, ra);
         flags &= ~TLB_NOTDIRTY;
+        //// --- Begin LibAFL code ---
+        if (!(flags & (TLB_MMIO | TLB_DISCARD_WRITE))) {
+            SYX_DEBUG("mmu_watch_or_dirty %llx %llx\n", addr, addr+full->xlat_section);
+            syx_snapshot_dirty_list_add_hostaddr(data->haddr);
+        }
+        //// --- End LibAFL code ---
     }
     data->flags = flags;
 }
@@ -1776,14 +1804,6 @@ static bool mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
             l->memop ^= MO_BSWAP;
         }
 
-        //// --- Begin LibAFL code ---
-
-        // TODO: Does not work?
-        // if (type == MMU_DATA_STORE) {
-            syx_snapshot_dirty_list_add_hostaddr(l->page[0].haddr);
-        // }
-
-        //// --- End LibAFL code ---
 
     } else {
         /* Finish compute of page crossing. */
@@ -1806,15 +1826,6 @@ static bool mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
             mmu_watch_or_dirty(cpu, &l->page[0], type, ra);
             mmu_watch_or_dirty(cpu, &l->page[1], type, ra);
         }
-
-        //// --- Begin LibAFL code ---
-
-        // if (type == MMU_DATA_STORE) {
-            syx_snapshot_dirty_list_add_hostaddr(l->page[0].haddr);
-            syx_snapshot_dirty_list_add_hostaddr(l->page[1].haddr);
-        // }
-
-        //// --- End LibAFL code ---
 
         /*
          * Since target/sparc is the only user of TLB_BSWAP, and all
@@ -1911,14 +1922,13 @@ static void *atomic_mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
     hostaddr = (void *)((uintptr_t)addr + tlbe->addend);
     full = &cpu->neg.tlb.d[mmu_idx].fulltlb[index];
 
-    //// --- Begin LibAFL code ---
-
-    syx_snapshot_dirty_list_add_hostaddr(hostaddr);
-
-    //// --- End LibAFL code ---
-
     if (unlikely(tlb_addr & TLB_NOTDIRTY)) {
         notdirty_write(cpu, addr, size, full, retaddr);
+    	//// --- Begin LibAFL code ---
+
+        SYX_DEBUG("atomic_mmu_lookup %llx %llx\n", addr, addr+full->xlat_section);
+    	syx_snapshot_dirty_list_add_hostaddr(hostaddr);
+    	//// --- End LibAFL code ---
     }
 
     if (unlikely(tlb_addr & TLB_FORCE_SLOW)) {

@@ -5,6 +5,8 @@
 
 #include "exec/ramlist.h"
 #include "exec/ram_addr.h"
+#include "exec/exec-all.h"
+#include "exec/address-spaces.h"
 
 #include "libafl/syx-snapshot/syx-snapshot.h"
 #include "libafl/syx-snapshot/device-save.h"
@@ -96,6 +98,22 @@ static void root_restore_check_memory_rb(gpointer rb_idstr_hash,
 static SyxSnapshotIncrement*
 syx_snapshot_increment_free(SyxSnapshotIncrement* increment);
 
+//set all RAM as clear (not dirty)
+static void all_ram_notdirty(void) {
+    
+    MemoryRegion *sysmem, *subregion, *next;
+    sysmem = get_system_memory();
+    QTAILQ_FOREACH_SAFE(subregion, &sysmem->subregions, subregions_link,
+                        next)
+    {
+        if (subregion->ram) {
+            #ifdef SYX_SNAPSHOT_DEBUG
+            printf("memory_region_reset_dirty: %llx %llx\n", subregion->addr, subregion->size);
+            #endif
+            memory_region_reset_dirty(subregion, 0, subregion->size, DIRTY_MEMORY_MIGRATION);
+        }
+    }
+}
 static RAMBlock* ramblock_lookup(gpointer rb_idstr_hash)
 {
     RAMBlock* block;
@@ -171,20 +189,27 @@ SyxSnapshot* syx_snapshot_new(bool track, bool is_active_bdrv_cache,
     snapshot->rbs_dirty_list =
         g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL,
                               (GDestroyNotify)g_hash_table_remove_all);
-    snapshot->bdrvs_cow_cache = syx_cow_cache_new();
 
     if (is_active_bdrv_cache) {
-        syx_cow_cache_move(snapshot->bdrvs_cow_cache,
-                           &syx_snapshot_state.before_fuzz_cache);
-        syx_snapshot_state.active_bdrv_cache_snapshot = snapshot;
+        // we have cached writes from BEFORE fuzzing starts
+        snapshot->bdrvs_cow_cache = syx_snapshot_state.before_fuzz_cache;
+        syx_snapshot_state.before_fuzz_cache = NULL;
     } else {
-        syx_cow_cache_push_layer(snapshot->bdrvs_cow_cache,
-                                 SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE,
-                                 SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS);
+        snapshot->bdrvs_cow_cache = syx_cow_cache_new();
     }
+    syx_cow_cache_push_layer(snapshot->bdrvs_cow_cache,
+        SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE,
+        SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS);
+    syx_snapshot_state.active_bdrv_cache_snapshot = snapshot;
 
     if (track) {
         syx_snapshot_track(&syx_snapshot_state.tracked_snapshots, snapshot);
+
+        //make sure to catch all new writes
+        //with a filled TLB there might be missed writes
+        tlb_flush_all_cpus();
+
+        all_ram_notdirty();
     }
 
     syx_snapshot_state.is_enabled = true;
@@ -623,6 +648,11 @@ static void root_restore_rb_page(gpointer offset_within_rb, gpointer _unused,
     memcpy(host_rb_restore, host_snapshot_rb_restore,
            syx_snapshot_state.page_size);
     // TODO: manage special case of TSEG.
+
+    // Invalidate TBs
+    tb_invalidate_phys_range(rb->offset + (ram_addr_t)offset_within_rb,
+                             rb->offset + (ram_addr_t)offset_within_rb +
+                                 syx_snapshot_state.page_size);
 }
 
 static void root_restore_rb(gpointer rb_idstr_hash,
@@ -735,6 +765,7 @@ void syx_snapshot_root_restore(SyxSnapshot* snapshot)
     }
 
     syx_snapshot_dirty_list_flush(snapshot);
+    all_ram_notdirty();
 
     if (must_unlock_bql) {
         bql_unlock();

@@ -1924,11 +1924,11 @@ static void *atomic_mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
 
     if (unlikely(tlb_addr & TLB_NOTDIRTY)) {
         notdirty_write(cpu, addr, size, full, retaddr);
-    	//// --- Begin LibAFL code ---
+        //// --- Begin LibAFL code ---
 
         SYX_DEBUG("atomic_mmu_lookup %llx %llx\n", addr, addr+full->xlat_section);
-    	syx_snapshot_dirty_list_add_hostaddr(hostaddr);
-    	//// --- End LibAFL code ---
+        syx_snapshot_dirty_list_add_hostaddr(hostaddr);
+        //// --- End LibAFL code ---
     }
 
     if (unlikely(tlb_addr & TLB_FORCE_SLOW)) {

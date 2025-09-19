@@ -7,7 +7,6 @@
 #include "hw/misc/unimp.h"
 #include "qom/object.h"
 #include "qapi/visitor.h"
-#include "system/system.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -50,6 +49,7 @@ static void armv7m_soc_initfn(Object *obj)
     
     // 创建系统时钟输入
     s->sysclk = qdev_init_clock_in(DEVICE(s), "sysclk", NULL, NULL, 0);
+    s->refclk = qdev_init_clock_in(DEVICE(s), "refclk", NULL, NULL, 0);
 }
 
 static void armv7m_soc_realize(DeviceState *dev_soc, Error **errp)
@@ -60,10 +60,19 @@ static void armv7m_soc_realize(DeviceState *dev_soc, Error **errp)
 
     load_config_from_env();
 
+    if (clock_has_source(s->refclk)) {
+        error_setg(errp, "refclk clock must not be wired up by the board code");
+        return;
+    }
+    
     if (!clock_has_source(s->sysclk)) {
         error_setg(errp, "sysclk clock must be wired up by the board code");
         return;
     }
+
+    /* The refclk always runs at frequency HCLK / 8 */
+    clock_set_mul_div(s->refclk, 8, 1);
+    clock_set_source(s->refclk, s->sysclk);
     
     // 初始化Flash内存
     memory_region_init_rom(&s->flash, OBJECT(dev_soc), "flash", flash_size, &err);
@@ -79,7 +88,7 @@ static void armv7m_soc_realize(DeviceState *dev_soc, Error **errp)
     
     // 初始化SRAM内存
     memory_region_init_ram(&s->sram, NULL, "sram", sram_size, &err);
-    if (err) {
+    if (err != NULL) {
         error_propagate(errp, err);
         return;
     }
@@ -96,6 +105,7 @@ static void armv7m_soc_realize(DeviceState *dev_soc, Error **errp)
     
     // 连接时钟
     qdev_connect_clock_in(armv7m_dev, "cpuclk", s->sysclk);
+    qdev_connect_clock_in(armv7m_dev, "refclk", s->refclk);
 
     object_property_set_link(OBJECT(&s->armv7m), "memory",
                              OBJECT(system_memory), &error_abort);
@@ -106,75 +116,7 @@ static void armv7m_soc_realize(DeviceState *dev_soc, Error **errp)
     }
 
     // 所有外设都用未实现设备占位
-    create_unimplemented_device("RCC",         0x40023800, 0x400);
-    create_unimplemented_device("SYSCFG",      0x40013800, 0x400);
-    create_unimplemented_device("USART1",      0x40011000, 0x400);
-    create_unimplemented_device("USART2",      0x40004400, 0x400);
-    create_unimplemented_device("USART3",      0x40004800, 0x400);
-    create_unimplemented_device("UART4",       0x40004C00, 0x400);
-    create_unimplemented_device("UART5",       0x40005000, 0x400);
-    create_unimplemented_device("USART6",      0x40011400, 0x400);
-    create_unimplemented_device("UART7",       0x40007800, 0x400);
-    create_unimplemented_device("UART8",       0x40007C00, 0x400);
-    create_unimplemented_device("TIMER2",      0x40000000, 0x400);
-    create_unimplemented_device("TIMER3",      0x40000400, 0x400);
-    create_unimplemented_device("TIMER4",      0x40000800, 0x400);
-    create_unimplemented_device("TIMER5",      0x40000C00, 0x400);
-    create_unimplemented_device("ADC1",        0x40012000, 0x400);
-    create_unimplemented_device("ADC2",        0x40012100, 0x400);
-    create_unimplemented_device("ADC3",        0x40012200, 0x400);
-    create_unimplemented_device("ADC4",        0x40012300, 0x400);
-    create_unimplemented_device("ADC5",        0x40012400, 0x400);
-    create_unimplemented_device("ADC6",        0x40012500, 0x400);
-    create_unimplemented_device("SPI1",        0x40013000, 0x400);
-    create_unimplemented_device("SPI2",        0x40003800, 0x400);
-    create_unimplemented_device("SPI3",        0x40003C00, 0x400);
-    create_unimplemented_device("SPI4",        0x40013400, 0x400);
-    create_unimplemented_device("SPI5",        0x40015000, 0x400);
-    create_unimplemented_device("SPI6",        0x40015400, 0x400);
-    create_unimplemented_device("EXTI",        0x40013C00, 0x400);
-    create_unimplemented_device("timer[7]",    0x40001400, 0x400);
-    create_unimplemented_device("timer[12]",   0x40001800, 0x400);
-    create_unimplemented_device("timer[6]",    0x40001000, 0x400);
-    create_unimplemented_device("timer[13]",   0x40001C00, 0x400);
-    create_unimplemented_device("timer[14]",   0x40002000, 0x400);
-    create_unimplemented_device("RTC and BKP", 0x40002800, 0x400);
-    create_unimplemented_device("WWDG",        0x40002C00, 0x400);
-    create_unimplemented_device("IWDG",        0x40003000, 0x400);
-    create_unimplemented_device("I2S2ext",     0x40003000, 0x400);
-    create_unimplemented_device("I2S3ext",     0x40004000, 0x400);
-    create_unimplemented_device("I2C1",        0x40005400, 0x400);
-    create_unimplemented_device("I2C2",        0x40005800, 0x400);
-    create_unimplemented_device("I2C3",        0x40005C00, 0x400);
-    create_unimplemented_device("CAN1",        0x40006400, 0x400);
-    create_unimplemented_device("CAN2",        0x40006800, 0x400);
-    create_unimplemented_device("PWR",         0x40007000, 0x400);
-    create_unimplemented_device("DAC",         0x40007400, 0x400);
-    create_unimplemented_device("timer[1]",    0x40010000, 0x400);
-    create_unimplemented_device("timer[8]",    0x40010400, 0x400);
-    create_unimplemented_device("SDIO",        0x40012C00, 0x400);
-    create_unimplemented_device("timer[9]",    0x40014000, 0x400);
-    create_unimplemented_device("timer[10]",   0x40014400, 0x400);
-    create_unimplemented_device("timer[11]",   0x40014800, 0x400);
-    create_unimplemented_device("GPIOA",       0x40020000, 0x400);
-    create_unimplemented_device("GPIOB",       0x40020400, 0x400);
-    create_unimplemented_device("GPIOC",       0x40020800, 0x400);
-    create_unimplemented_device("GPIOD",       0x40020C00, 0x400);
-    create_unimplemented_device("GPIOE",       0x40021000, 0x400);
-    create_unimplemented_device("GPIOF",       0x40021400, 0x400);
-    create_unimplemented_device("GPIOG",       0x40021800, 0x400);
-    create_unimplemented_device("GPIOH",       0x40021C00, 0x400);
-    create_unimplemented_device("GPIOI",       0x40022000, 0x400);
-    create_unimplemented_device("CRC",         0x40023000, 0x400);
-    create_unimplemented_device("Flash Int",   0x40023C00, 0x400);
-    create_unimplemented_device("BKPSRAM",     0x40024000, 0x400);
-    create_unimplemented_device("DMA1",        0x40026000, 0x400);
-    create_unimplemented_device("DMA2",        0x40026400, 0x400);
-    create_unimplemented_device("Ethernet",    0x40028000, 0x1400);
-    create_unimplemented_device("USB OTG HS",  0x40040000, 0x30000);
-    create_unimplemented_device("USB OTG FS",  0x50000000, 0x31000);
-    create_unimplemented_device("DCMI",        0x50050000, 0x400);
-    create_unimplemented_device("RNG",         0x50060800, 0x400);
+    create_unimplemented_device("empty",       0x40000000, 0x20000000);
 }
 
 static void armv7m_soc_class_init(ObjectClass *klass, void *data)
@@ -197,4 +139,4 @@ static void armv7m_soc_register_types(void)
     type_register_static(&armv7m_soc_info);
 }
 
-type_init(armv7m_soc_register_types);
+type_init(armv7m_soc_register_types)

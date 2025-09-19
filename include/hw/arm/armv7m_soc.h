@@ -26,6 +26,7 @@ struct ARMV7MSoCState {
     
     /* Clocks */
     Clock *sysclk;          /* System clock input */
+    Clock *refclk;          /* Reference clock input */
     
 };
 

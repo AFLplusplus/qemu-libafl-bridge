@@ -11,11 +11,11 @@
 # later.  See the COPYING file in the top-level directory.
 
 import socket
-from typing import List
-from qemu.machine.machine import VMLaunchFailure
 
+from qemu.machine.machine import VMLaunchFailure
 from qemu_test import QemuSystemTest
 from qemu_test.ports import Ports
+
 
 VNC_ADDR = '127.0.0.1'
 
@@ -31,6 +31,7 @@ def check_connect(port: int) -> bool:
 class Vnc(QemuSystemTest):
 
     def test_no_vnc_change_password(self):
+        self.set_machine('none')
         self.vm.add_args('-nodefaults', '-S')
         self.vm.launch()
 
@@ -55,11 +56,14 @@ class Vnc(QemuSystemTest):
         except VMLaunchFailure as excp:
             if "-vnc: invalid option" in excp.output:
                 self.skipTest("VNC support not available")
+            elif "Cipher backend does not support DES algorithm" in excp.output:
+                self.skipTest("No cryptographic backend available")
             else:
                 self.log.info("unhandled launch failure: %s", excp.output)
                 raise excp
 
     def test_change_password_requires_a_password(self):
+        self.set_machine('none')
         self.vm.add_args('-nodefaults', '-S', '-vnc', ':1,to=999')
         self.launch_guarded()
         self.assertTrue(self.vm.qmp('query-vnc')['return']['enabled'])
@@ -72,6 +76,7 @@ class Vnc(QemuSystemTest):
                          'Could not set password')
 
     def test_change_password(self):
+        self.set_machine('none')
         self.vm.add_args('-nodefaults', '-S', '-vnc', ':1,to=999,password=on')
         self.launch_guarded()
         self.assertTrue(self.vm.qmp('query-vnc')['return']['enabled'])
@@ -101,6 +106,7 @@ class Vnc(QemuSystemTest):
         self.assertTrue(check_connect(c))
 
     def test_change_listen(self):
+        self.set_machine('none')
         with Ports() as ports:
             a, b, c = ports.find_free_ports(3)
             self.do_test_change_listen(a, b, c)

@@ -21,8 +21,8 @@
 
 #include "cpu.h"
 #include "exec/cputlb.h"
-#include "exec/exec-all.h"
 #include "exec/page-protection.h"
+#include "exec/target_page.h"
 #include "exec/log.h"
 
 #if !defined(CONFIG_USER_ONLY)

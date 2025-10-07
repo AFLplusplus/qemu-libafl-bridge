@@ -33,7 +33,7 @@
 #include "hw/arm/armv7m.h"
 #include "hw/or-irq.h"
 #include "hw/boards.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "system/system.h"
 #include "hw/qdev-properties.h"
 #include "hw/misc/unimp.h"
@@ -468,7 +468,7 @@ static void mps2_common_init(MachineState *machine)
                        0, 0x400000);
 }
 
-static void mps2_class_init(ObjectClass *oc, void *data)
+static void mps2_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 
@@ -478,7 +478,7 @@ static void mps2_class_init(ObjectClass *oc, void *data)
     mc->default_ram_id = "mps.ram";
 }
 
-static void mps2_an385_class_init(ObjectClass *oc, void *data)
+static void mps2_an385_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     MPS2MachineClass *mmc = MPS2_MACHINE_CLASS(oc);
@@ -497,7 +497,7 @@ static void mps2_an385_class_init(ObjectClass *oc, void *data)
     mmc->has_block_ram = true;
 }
 
-static void mps2_an386_class_init(ObjectClass *oc, void *data)
+static void mps2_an386_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     MPS2MachineClass *mmc = MPS2_MACHINE_CLASS(oc);
@@ -516,7 +516,7 @@ static void mps2_an386_class_init(ObjectClass *oc, void *data)
     mmc->has_block_ram = true;
 }
 
-static void mps2_an500_class_init(ObjectClass *oc, void *data)
+static void mps2_an500_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     MPS2MachineClass *mmc = MPS2_MACHINE_CLASS(oc);
@@ -535,7 +535,7 @@ static void mps2_an500_class_init(ObjectClass *oc, void *data)
     mmc->has_block_ram = false;
 }
 
-static void mps2_an511_class_init(ObjectClass *oc, void *data)
+static void mps2_an511_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     MPS2MachineClass *mmc = MPS2_MACHINE_CLASS(oc);

@@ -14,7 +14,7 @@
 #include "qemu/queue.h"
 #include "qemu/event_notifier.h"
 #include "chardev/char-fe.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "qom/object.h"
 #include "hw/sysbus.h"
 
@@ -36,7 +36,7 @@ typedef struct IvshmemFTState IvshmemFTState;
 
 DECLARE_INSTANCE_CHECKER(IvshmemFTState, IVSHMEM_FLAT, TYPE_IVSHMEM_FLAT)
 
-/* Ivshmem registers. See ./docs/specs/ivshmem-spec.txt for details. */
+/* Ivshmem registers. See docs/specs/ivshmem-spec.rst for details. */
 enum ivshmem_registers {
     INTMASK = 0,
     INTSTATUS = 4,

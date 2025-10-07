@@ -1,7 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+
 vfio_ss = ss.source_set()
 vfio_ss.add(files(
-  'common.c',
+  'listener.c',
+  'container-base.c',
   'container.c',
+  'helpers.c',
 ))
 vfio_ss.add(when: 'CONFIG_PSERIES', if_true: files('spapr.c'))
 vfio_ss.add(when: 'CONFIG_VFIO_PCI', if_true: files(
@@ -18,15 +22,18 @@ specific_ss.add_all(when: 'CONFIG_VFIO', if_true: vfio_ss)
 system_ss.add(when: 'CONFIG_VFIO_XGMAC', if_true: files('calxeda-xgmac.c'))
 system_ss.add(when: 'CONFIG_VFIO_AMD_XGBE', if_true: files('amd-xgbe.c'))
 system_ss.add(when: 'CONFIG_VFIO', if_true: files(
-  'helpers.c',
-  'container-base.c',
+  'cpr.c',
+  'cpr-legacy.c',
+  'device.c',
   'migration.c',
   'migration-multifd.c',
-  'cpr.c',
+  'region.c',
 ))
 system_ss.add(when: ['CONFIG_VFIO', 'CONFIG_IOMMUFD'], if_true: files(
   'iommufd.c',
+  'cpr-iommufd.c',
 ))
+system_ss.add(when: 'CONFIG_IOMMUFD', if_false: files('iommufd-stubs.c'))
 system_ss.add(when: 'CONFIG_VFIO_PCI', if_true: files(
   'display.c',
 ))

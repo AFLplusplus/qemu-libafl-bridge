@@ -150,7 +150,6 @@ static void pnv_occ_common_area_write(void *opaque, hwaddr addr,
                                              uint64_t val, unsigned width)
 {
     /* callback function defined to occ common area write */
-    return;
 }
 
 static const MemoryRegionOps pnv_occ_power8_xscom_ops = {
@@ -173,7 +172,7 @@ const MemoryRegionOps pnv_occ_sram_ops = {
     .endianness = DEVICE_BIG_ENDIAN,
 };
 
-static void pnv_occ_power8_class_init(ObjectClass *klass, void *data)
+static void pnv_occ_power8_class_init(ObjectClass *klass, const void *data)
 {
     PnvOCCClass *poc = PNV_OCC_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -247,7 +246,7 @@ static const MemoryRegionOps pnv_occ_power9_xscom_ops = {
     .endianness = DEVICE_BIG_ENDIAN,
 };
 
-static void pnv_occ_power9_class_init(ObjectClass *klass, void *data)
+static void pnv_occ_power9_class_init(ObjectClass *klass, const void *data)
 {
     PnvOCCClass *poc = PNV_OCC_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -267,7 +266,7 @@ static const TypeInfo pnv_occ_power9_type_info = {
     .class_init    = pnv_occ_power9_class_init,
 };
 
-static void pnv_occ_power10_class_init(ObjectClass *klass, void *data)
+static void pnv_occ_power10_class_init(ObjectClass *klass, const void *data)
 {
     PnvOCCClass *poc = PNV_OCC_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -336,7 +335,7 @@ static const Property pnv_occ_properties[] = {
     DEFINE_PROP_LINK("homer", PnvOCC, homer, TYPE_PNV_HOMER, PnvHomer *),
 };
 
-static void pnv_occ_class_init(ObjectClass *klass, void *data)
+static void pnv_occ_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -790,7 +789,7 @@ static bool occ_opal_process_command(PnvOCC *occ,
 
 static bool occ_model_tick(PnvOCC *occ)
 {
-    struct occ_dynamic_data dynamic_data;
+    QEMU_UNINITIALIZED struct occ_dynamic_data dynamic_data;
 
     if (!occ_read_dynamic_data(occ, &dynamic_data, NULL)) {
         /* Can't move OCC state field to safe because we can't map it! */

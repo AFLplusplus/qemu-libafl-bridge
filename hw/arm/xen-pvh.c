@@ -10,7 +10,6 @@
 #include "hw/boards.h"
 #include "system/system.h"
 #include "hw/xen/xen-pvh-common.h"
-#include "hw/xen/arch_hvm.h"
 
 #define TYPE_XEN_ARM  MACHINE_TYPE_NAME("xenpvh")
 
@@ -49,7 +48,7 @@ static void xen_pvh_set_pci_intx_irq(void *opaque, int intx_irq, int level)
     }
 }
 
-static void xen_arm_machine_class_init(ObjectClass *oc, void *data)
+static void xen_arm_machine_class_init(ObjectClass *oc, const void *data)
 {
     XenPVHMachineClass *xpc = XEN_PVH_MACHINE_CLASS(oc);
     MachineClass *mc = MACHINE_CLASS(oc);

@@ -1,9 +1,9 @@
 // Copyright (C) 2024 Intel Corporation.
-// Author(s): Zhao Liu <zhai1.liu@intel.com>
+// Author(s): Zhao Liu <zhao1.liu@intel.com>
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 use std::{
-    os::raw::{c_int, c_void},
+    ffi::{c_int, c_void},
     pin::Pin,
 };
 
@@ -81,7 +81,7 @@ impl Timer {
                 scale as c_int,
                 attributes as c_int,
                 Some(timer_cb),
-                (opaque as *const T).cast::<c_void>() as *mut c_void,
+                (opaque as *const T).cast::<c_void>().cast_mut(),
             )
         }
     }
@@ -121,3 +121,5 @@ impl ClockType {
 pub const CLOCK_VIRTUAL: ClockType = ClockType {
     id: QEMUClockType::QEMU_CLOCK_VIRTUAL,
 };
+
+pub const NANOSECONDS_PER_SECOND: u64 = 1000000000;

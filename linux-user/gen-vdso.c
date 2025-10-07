@@ -56,13 +56,14 @@ static unsigned rt_sigreturn_addr;
 
 int main(int argc, char **argv)
 {
-    FILE *inf, *outf;
+    FILE *inf = NULL, *outf = NULL;
     long total_len;
     const char *prefix = "vdso";
     const char *inf_name;
     const char *outf_name = NULL;
-    unsigned char *buf;
+    unsigned char *buf = NULL;
     bool need_bswap;
+    int ret = EXIT_FAILURE;
 
     while (1) {
         int opt = getopt(argc, argv, "o:p:r:s:");
@@ -112,9 +113,21 @@ int main(int argc, char **argv)
      * We expect the vdso to be small, on the order of one page,
      * therefore we do not expect a partial read.
      */
-    fseek(inf, 0, SEEK_END);
+    if (fseek(inf, 0, SEEK_END) < 0) {
+        goto perror_inf;
+    }
     total_len = ftell(inf);
-    fseek(inf, 0, SEEK_SET);
+    if (total_len < 0) {
+        goto perror_inf;
+    }
+    if (fseek(inf, 0, SEEK_SET) < 0) {
+        goto perror_inf;
+    }
+
+    if (total_len < EI_NIDENT) {
+        fprintf(stderr, "%s: file too small (truncated?)\n", inf_name);
+        return EXIT_FAILURE;
+    }
 
     buf = malloc(total_len);
     if (buf == NULL) {
@@ -129,7 +142,6 @@ int main(int argc, char **argv)
         fprintf(stderr, "%s: incomplete read\n", inf_name);
         return EXIT_FAILURE;
     }
-    fclose(inf);
 
     /*
      * Identify which elf flavor we're processing.
@@ -205,19 +217,24 @@ int main(int argc, char **argv)
     fprintf(outf, "    .rt_sigreturn_ofs = 0x%x,\n", rt_sigreturn_addr);
     fprintf(outf, "};\n");
 
-    /*
-     * Everything should have gone well.
-     */
-    if (fclose(outf)) {
-        goto perror_outf;
+    ret = EXIT_SUCCESS;
+
+ cleanup:
+    free(buf);
+
+    if (outf && fclose(outf) != 0) {
+        ret = EXIT_FAILURE;
     }
-    return EXIT_SUCCESS;
+    if (inf && fclose(inf) != 0) {
+        ret = EXIT_FAILURE;
+    }
+    return ret;
 
  perror_inf:
     perror(inf_name);
-    return EXIT_FAILURE;
+    goto cleanup;
 
  perror_outf:
     perror(outf_name);
-    return EXIT_FAILURE;
+    goto cleanup;
 }

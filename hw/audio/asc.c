@@ -407,7 +407,6 @@ static void asc_fifo_write(void *opaque, hwaddr addr, uint64_t value,
     } else {
         fs->fifo[addr] = value;
     }
-    return;
 }
 
 static const MemoryRegionOps asc_fifo_ops = {
@@ -665,7 +664,7 @@ static void asc_realize(DeviceState *dev, Error **errp)
     s->samples = AUD_get_buffer_size_out(s->voice) >> s->shift;
     s->mixbuf = g_malloc0(s->samples << s->shift);
 
-    s->silentbuf = g_malloc0(s->samples << s->shift);
+    s->silentbuf = g_malloc(s->samples << s->shift);
     memset(s->silentbuf, 0x80, s->samples << s->shift);
 
     /* Add easc registers if required */
@@ -707,7 +706,7 @@ static const Property asc_properties[] = {
     DEFINE_PROP_UINT8("asctype", ASCState, type, ASC_TYPE_ASC),
 };
 
-static void asc_class_init(ObjectClass *oc, void *data)
+static void asc_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     ResettableClass *rc = RESETTABLE_CLASS(oc);

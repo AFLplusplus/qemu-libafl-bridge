@@ -761,7 +761,7 @@ void force_sigsegv(int oldsig)
 #endif
 
 // called when the signal is cause by the target, and is not because of the host
-void cpu_loop_exit_sigsegv(CPUState *cpu, target_ulong addr,
+void cpu_loop_exit_sigsegv(CPUState *cpu, vaddr addr,
                            MMUAccessType access_type, bool maperr, uintptr_t ra)
 {
     const TCGCPUOps *tcg_ops = cpu->cc->tcg_ops;
@@ -777,7 +777,7 @@ void cpu_loop_exit_sigsegv(CPUState *cpu, target_ulong addr,
     cpu_loop_exit_restore(cpu, ra);
 }
 
-void cpu_loop_exit_sigbus(CPUState *cpu, target_ulong addr,
+void cpu_loop_exit_sigbus(CPUState *cpu, vaddr addr,
                           MMUAccessType access_type, uintptr_t ra)
 {
     const TCGCPUOps *tcg_ops = cpu->cc->tcg_ops;

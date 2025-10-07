@@ -20,11 +20,11 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "exec/cputlb.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "exec/tb-flush.h"
-#include "exec/tswap.h"
+#include "qemu/target-info.h"
 #include "hw/qdev-core.h"
 #include "hw/qdev-properties.h"
 #include "hw/core/sysemu-cpu-ops.h"
@@ -141,7 +141,7 @@ bool cpu_virtio_is_big_endian(CPUState *cpu)
     if (cpu->cc->sysemu_ops->virtio_is_big_endian) {
         return cpu->cc->sysemu_ops->virtio_is_big_endian(cpu);
     }
-    return target_words_bigendian();
+    return target_big_endian();
 }
 
 GuestPanicInformation *cpu_get_crash_info(CPUState *cpu)

@@ -27,6 +27,8 @@
 #include "target/s390x/kvm/pv.h"
 #include "system/hw_accel.h"
 #include "system/runstate.h"
+#include "exec/target_page.h"
+#include "exec/watchpoint.h"
 
 void s390x_tod_timer(void *opaque)
 {
@@ -89,7 +91,9 @@ void s390_handle_wait(S390CPU *cpu)
 {
     CPUState *cs = CPU(cpu);
 
-    if (s390_cpu_halt(cpu) == 0) {
+    s390_cpu_halt(cpu);
+
+    if (s390_count_running_cpus() == 0) {
         if (is_special_wait_psw(cpu->env.psw.addr)) {
             qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
         } else {

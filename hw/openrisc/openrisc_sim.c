@@ -28,7 +28,7 @@
 #include "net/net.h"
 #include "hw/openrisc/boot.h"
 #include "hw/qdev-properties.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "system/device_tree.h"
 #include "system/system.h"
 #include "hw/sysbus.h"
@@ -357,7 +357,7 @@ static void openrisc_sim_init(MachineState *machine)
     }
 }
 
-static void openrisc_sim_machine_init(ObjectClass *oc, void *data)
+static void openrisc_sim_machine_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 

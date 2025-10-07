@@ -426,9 +426,8 @@ qcrypto_tls_creds_load_cert(QCryptoTLSCredsX509 *creds,
 static int
 qcrypto_tls_creds_load_ca_cert_list(QCryptoTLSCredsX509 *creds,
                                     const char *certFile,
-                                    gnutls_x509_crt_t *certs,
-                                    unsigned int certMax,
-                                    size_t *ncerts,
+                                    gnutls_x509_crt_t **certs,
+                                    unsigned int *ncerts,
                                     Error **errp)
 {
     gnutls_datum_t data;
@@ -449,20 +448,18 @@ qcrypto_tls_creds_load_ca_cert_list(QCryptoTLSCredsX509 *creds,
     data.data = (unsigned char *)buf;
     data.size = strlen(buf);
 
-    if (gnutls_x509_crt_list_import(certs, &certMax, &data,
-                                    GNUTLS_X509_FMT_PEM, 0) < 0) {
+    if (gnutls_x509_crt_list_import2(certs, ncerts, &data,
+                                     GNUTLS_X509_FMT_PEM, 0) < 0) {
         error_setg(errp,
                    "Unable to import CA certificate list %s",
                    certFile);
         return -1;
     }
-    *ncerts = certMax;
 
     return 0;
 }
 
 
-#define MAX_CERTS 16
 static int
 qcrypto_tls_creds_x509_sanity_check(QCryptoTLSCredsX509 *creds,
                                     bool isServer,
@@ -471,12 +468,11 @@ qcrypto_tls_creds_x509_sanity_check(QCryptoTLSCredsX509 *creds,
                                     Error **errp)
 {
     gnutls_x509_crt_t cert = NULL;
-    gnutls_x509_crt_t cacerts[MAX_CERTS];
-    size_t ncacerts = 0;
+    gnutls_x509_crt_t *cacerts = NULL;
+    unsigned int ncacerts = 0;
     size_t i;
     int ret = -1;
 
-    memset(cacerts, 0, sizeof(cacerts));
     if (certFile &&
         access(certFile, R_OK) == 0) {
         cert = qcrypto_tls_creds_load_cert(creds,
@@ -488,8 +484,9 @@ qcrypto_tls_creds_x509_sanity_check(QCryptoTLSCredsX509 *creds,
     }
     if (access(cacertFile, R_OK) == 0) {
         if (qcrypto_tls_creds_load_ca_cert_list(creds,
-                                                cacertFile, cacerts,
-                                                MAX_CERTS, &ncacerts,
+                                                cacertFile,
+                                                &cacerts,
+                                                &ncacerts,
                                                 errp) < 0) {
             goto cleanup;
         }
@@ -526,6 +523,8 @@ qcrypto_tls_creds_x509_sanity_check(QCryptoTLSCredsX509 *creds,
     for (i = 0; i < ncacerts; i++) {
         gnutls_x509_crt_deinit(cacerts[i]);
     }
+    g_free(cacerts);
+
     return ret;
 }
 
@@ -802,7 +801,7 @@ qcrypto_tls_creds_x509_finalize(Object *obj)
 
 
 static void
-qcrypto_tls_creds_x509_class_init(ObjectClass *oc, void *data)
+qcrypto_tls_creds_x509_class_init(ObjectClass *oc, const void *data)
 {
     UserCreatableClass *ucc = USER_CREATABLE_CLASS(oc);
     QCryptoTLSCredsClass *ctcc = QCRYPTO_TLS_CREDS_CLASS(oc);
@@ -828,7 +827,7 @@ static const TypeInfo qcrypto_tls_creds_x509_info = {
     .instance_finalize = qcrypto_tls_creds_x509_finalize,
     .class_size = sizeof(QCryptoTLSCredsX509Class),
     .class_init = qcrypto_tls_creds_x509_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_USER_CREATABLE },
         { }
     }

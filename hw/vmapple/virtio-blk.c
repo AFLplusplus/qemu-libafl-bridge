@@ -19,7 +19,6 @@
 #include "hw/vmapple/vmapple.h"
 #include "hw/virtio/virtio-blk.h"
 #include "hw/virtio/virtio-pci.h"
-#include "qemu/bswap.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "qapi/error.h"
@@ -82,7 +81,7 @@ static void vmapple_virtio_blk_get_config(VirtIODevice *vdev, uint8_t *config)
     stl_he_p(&blkcfg->max_secure_erase_sectors, dev->apple_type);
 }
 
-static void vmapple_virtio_blk_class_init(ObjectClass *klass, void *data)
+static void vmapple_virtio_blk_class_init(ObjectClass *klass, const void *data)
 {
     VirtIOBlkClass *vbk = VIRTIO_BLK_CLASS(klass);
     VirtioDeviceClass *vdc = VIRTIO_DEVICE_CLASS(klass);
@@ -165,7 +164,8 @@ static void vmapple_virtio_blk_pci_realize(VirtIOPCIProxy *vpci_dev, Error **err
                              PCI_DEVICE_ID_APPLE_VIRTIO_BLK);
 }
 
-static void vmapple_virtio_blk_pci_class_init(ObjectClass *klass, void *data)
+static void vmapple_virtio_blk_pci_class_init(ObjectClass *klass,
+                                              const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     VirtioPCIClass *k = VIRTIO_PCI_CLASS(klass);

@@ -241,6 +241,11 @@ void qio_channel_tls_handshake(QIOChannelTLS *ioc,
 {
     QIOTask *task;
 
+    if (qio_channel_has_feature(QIO_CHANNEL(ioc),
+                                QIO_CHANNEL_FEATURE_CONCURRENT_IO)) {
+        qcrypto_tls_session_require_thread_safety(ioc->session);
+    }
+
     task = qio_task_new(OBJECT(ioc),
                         func, opaque, destroy);
 
@@ -561,7 +566,7 @@ qio_channel_tls_get_session(QIOChannelTLS *ioc)
 }
 
 static void qio_channel_tls_class_init(ObjectClass *klass,
-                                       void *class_data G_GNUC_UNUSED)
+                                       const void *class_data G_GNUC_UNUSED)
 {
     QIOChannelClass *ioc_klass = QIO_CHANNEL_CLASS(klass);
 

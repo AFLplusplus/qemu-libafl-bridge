@@ -9,7 +9,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "hw/arm/bsa.h"
 #include "hw/arm/fsl-imx8mp.h"
 #include "hw/intc/arm_gicv3.h"
@@ -693,7 +693,7 @@ static const Property fsl_imx8mp_properties[] = {
     DEFINE_PROP_BOOL("fec1-phy-connected", FslImx8mpState, phy_connected, true),
 };
 
-static void fsl_imx8mp_class_init(ObjectClass *oc, void *data)
+static void fsl_imx8mp_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 

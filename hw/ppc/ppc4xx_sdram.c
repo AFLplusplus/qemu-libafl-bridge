@@ -34,7 +34,7 @@
 #include "qapi/error.h"
 #include "qemu/log.h"
 #include "qemu/error-report.h"
-#include "exec/address-spaces.h" /* get_system_memory() */
+#include "system/address-spaces.h" /* get_system_memory() */
 #include "hw/irq.h"
 #include "hw/qdev-properties.h"
 #include "hw/ppc/ppc4xx.h"
@@ -431,7 +431,7 @@ static const Property ppc4xx_sdram_ddr_props[] = {
     DEFINE_PROP_UINT32("nbanks", Ppc4xxSdramDdrState, nbanks, 4),
 };
 
-static void ppc4xx_sdram_ddr_class_init(ObjectClass *oc, void *data)
+static void ppc4xx_sdram_ddr_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
@@ -715,7 +715,7 @@ static const Property ppc4xx_sdram_ddr2_props[] = {
     DEFINE_PROP_UINT32("nbanks", Ppc4xxSdramDdr2State, nbanks, 4),
 };
 
-static void ppc4xx_sdram_ddr2_class_init(ObjectClass *oc, void *data)
+static void ppc4xx_sdram_ddr2_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 

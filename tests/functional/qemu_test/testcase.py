@@ -19,11 +19,12 @@ import shutil
 from subprocess import run
 import sys
 import tempfile
+import warnings
 import unittest
 import uuid
 
 from qemu.machine import QEMUMachine
-from qemu.utils import kvm_available, tcg_available
+from qemu.utils import hvf_available, kvm_available, tcg_available
 
 from .archive import archive_extract
 from .asset import Asset
@@ -232,8 +233,12 @@ class QemuBaseTest(unittest.TestCase):
             self.socketdir = None
         self.machinelog.removeHandler(self._log_fh)
         self.log.removeHandler(self._log_fh)
+        self._log_fh.close()
 
     def main():
+        warnings.simplefilter("default")
+        os.environ["PYTHONWARNINGS"] = "default"
+
         path = os.path.basename(sys.argv[0])[:-3]
 
         cache = os.environ.get("QEMU_TEST_PRECACHE", None)
@@ -244,7 +249,7 @@ class QemuBaseTest(unittest.TestCase):
         tr = pycotap.TAPTestRunner(message_log = pycotap.LogMode.LogToError,
                                    test_output_log = pycotap.LogMode.LogToError)
         res = unittest.main(module = None, testRunner = tr, exit = False,
-                            argv=["__dummy__", path])
+                            argv=[sys.argv[0], path] + sys.argv[1:])
         for (test, message) in res.result.errors + res.result.failures:
 
             if hasattr(test, "log_filename"):
@@ -317,7 +322,9 @@ class QemuSystemTest(QemuBaseTest):
         :type accelerator: str
         """
         checker = {'tcg': tcg_available,
-                   'kvm': kvm_available}.get(accelerator)
+                   'kvm': kvm_available,
+                   'hvf': hvf_available,
+                  }.get(accelerator)
         if checker is None:
             self.skipTest("Don't know how to check for the presence "
                           "of accelerator %s" % accelerator)
@@ -397,4 +404,5 @@ class QemuSystemTest(QemuBaseTest):
         for vm in self._vms.values():
             vm.shutdown()
         logging.getLogger('console').removeHandler(self._console_log_fh)
+        self._console_log_fh.close()
         super().tearDown()

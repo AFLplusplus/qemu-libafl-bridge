@@ -78,6 +78,17 @@ qio_channel_socket_new(void)
     return sioc;
 }
 
+int qio_channel_socket_set_send_buffer(QIOChannelSocket *ioc,
+                                       size_t size,
+                                       Error **errp)
+{
+    if (setsockopt(ioc->fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size)) < 0) {
+        error_setg_errno(errp, errno, "Unable to set socket send buffer size");
+        return -1;
+    }
+
+    return 0;
+}
 
 static int
 qio_channel_socket_set_fd(QIOChannelSocket *sioc,
@@ -949,7 +960,7 @@ static GSource *qio_channel_socket_create_watch(QIOChannel *ioc,
 }
 
 static void qio_channel_socket_class_init(ObjectClass *klass,
-                                          void *class_data G_GNUC_UNUSED)
+                                          const void *class_data G_GNUC_UNUSED)
 {
     QIOChannelClass *ioc_klass = QIO_CHANNEL_CLASS(klass);
 

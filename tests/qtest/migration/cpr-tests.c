@@ -24,9 +24,6 @@ static void *migrate_hook_start_mode_reboot(QTestState *from, QTestState *to)
     migrate_set_parameter_str(from, "mode", "cpr-reboot");
     migrate_set_parameter_str(to, "mode", "cpr-reboot");
 
-    migrate_set_capability(from, "x-ignore-shared", true);
-    migrate_set_capability(to, "x-ignore-shared", true);
-
     return NULL;
 }
 
@@ -39,6 +36,9 @@ static void test_mode_reboot(void)
         .connect_uri = uri,
         .listen_uri = "defer",
         .start_hook = migrate_hook_start_mode_reboot,
+        .start = {
+            .caps[MIGRATION_CAPABILITY_X_IGNORE_SHARED] = true,
+        },
     };
 
     test_file_common(&args, true);
@@ -60,13 +60,12 @@ static void test_mode_transfer_common(bool incoming_defer)
     g_autofree char *cpr_path = g_strdup_printf("%s/cpr.sock", tmpfs);
     g_autofree char *mig_path = g_strdup_printf("%s/migsocket", tmpfs);
     g_autofree char *uri = g_strdup_printf("unix:%s", mig_path);
+    g_autofree char *opts_target = NULL;
 
     const char *opts = "-machine aux-ram-share=on -nodefaults";
     g_autofree const char *cpr_channel = g_strdup_printf(
         "cpr,addr.transport=socket,addr.type=unix,addr.path=%s",
         cpr_path);
-    g_autofree char *opts_target = g_strdup_printf("-incoming %s %s",
-                                                   cpr_channel, opts);
 
     g_autofree char *connect_channels = g_strdup_printf(
         "[ { 'channel-type': 'main',"
@@ -75,6 +74,17 @@ static void test_mode_transfer_common(bool incoming_defer)
         "              'path': '%s' } } ]",
         mig_path);
 
+    /*
+     * Set up a UNIX domain socket for the CPR channel before
+     * launching the destination VM, to avoid timing issues
+     * during connection setup.
+     */
+    int cpr_sockfd = qtest_socket_server(cpr_path);
+    g_assert(cpr_sockfd >= 0);
+
+    opts_target = g_strdup_printf("-incoming cpr,addr.transport=socket,"
+                                  "addr.type=fd,addr.str=%d %s",
+                                  cpr_sockfd, opts);
     MigrateCommon args = {
         .start.opts_source = opts,
         .start.opts_target = opts_target,

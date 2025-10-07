@@ -235,6 +235,38 @@ to another list.) ``git send-email`` (`step-by-step setup guide
 works best for delivering the patch without mangling it, but
 attachments can be used as a last resort on a first-time submission.
 
+.. _use_b4:
+
+Use B4
+~~~~~~
+
+The `b4`_ tool, used for Linux kernel development, can also be used for QEMU
+development. It is packaged in most distros and PyPi. The QEMU source tree
+includes a ``b4`` project configuration file at the root: ``.b4-config``.
+
+Example workflow to prepare a patch series:
+
+1. Start with a clean checkout of the ``master`` branch.
+2. Create a new series with a topical branch name using ``b4 prep -n descriptive-name``.
+   ``b4`` will create a ``b4/descriptive-name`` branch and switch to it.
+3. Commit your changes, following this page's guidelines about proper commit messages etc.
+4. Write a descriptive cover letter with ``b4 prep --edit-cover``.
+5. Add maintainer and reviewer CCs with ``b4 prep --auto-to-cc``. You can make
+   changes to Cc: and To: recipients by editing the cover letter.
+6. Run patch checks with ``b4 prep --check``.
+7. Optionally review the patches with ``b4 send --dry-run`` which will print the
+   raw patches in standard output.
+
+To send the patches, you can:
+
+- Setup ``git-send-email`` and use ``b4 send``, or
+- Export the patches to files using ``b4 send -o OUTPUT_DIR`` and send them manually.
+
+For more details, consult the `b4 documentation`_.
+
+.. _b4 documentation: https://b4.docs.kernel.org/
+.. _b4: https://github.com/mricon/b4/
+
 .. _use_git_publish:
 
 Use git-publish
@@ -344,28 +376,9 @@ Patch emails must include a ``Signed-off-by:`` line
 
 Your patches **must** include a Signed-off-by: line. This is a hard
 requirement because it's how you say "I'm legally okay to contribute
-this and happy for it to go into QEMU". The process is modelled after
-the `Linux kernel
-<http://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/tree/Documentation/SubmittingPatches?id=f6f94e2ab1b33f0082ac22d71f66385a60d8157f#n297>`__
-policy.
+this and happy for it to go into QEMU". For full guidance, read the
+:ref:`code-provenance` documentation.
 
-If you wrote the patch, make sure your "From:" and "Signed-off-by:"
-lines use the same spelling. It's okay if you subscribe or contribute to
-the list via more than one address, but using multiple addresses in one
-commit just confuses things. If someone else wrote the patch, git will
-include a "From:" line in the body of the email (different from your
-envelope From:) that will give credit to the correct author; but again,
-that author's Signed-off-by: line is mandatory, with the same spelling.
-
-The name used with "Signed-off-by" does not need to be your legal name,
-nor birth name, nor appear on any government ID. It is the identity you
-choose to be known by in the community, but should not be anonymous,
-nor misrepresent whom you are.
-
-There are various tooling options for automatically adding these tags
-include using ``git commit -s`` or ``git format-patch -s``. For more
-information see `SubmittingPatches 1.12
-<http://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/tree/Documentation/SubmittingPatches?id=f6f94e2ab1b33f0082ac22d71f66385a60d8157f#n297>`__.
 
 .. _include_a_meaningful_cover_letter:
 
@@ -437,7 +450,7 @@ Retrieve an existing series
 ---------------------------
 
 If you want to apply an existing series on top of your tree, you can simply use
-`b4 <https://github.com/mricon/b4>`__.
+`b4`_.
 
 ::
 
@@ -552,7 +565,11 @@ summary belongs. The `git-publish
 <https://github.com/stefanha/git-publish>`__ script can help with
 tracking a good summary across versions. Also, the `git-backport-diff
 <https://github.com/codyprime/git-scripts>`__ script can help focus
-reviewers on what changed between revisions.
+reviewers on what changed between revisions. The ``b4`` tool automatically
+generates a version history section in the cover letter, including links to the
+previous versions on `Lore`_.
+
+.. _Lore: https://lore.kernel.org/
 
 .. _tips_and_tricks:
 

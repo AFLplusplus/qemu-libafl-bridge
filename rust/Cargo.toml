@@ -1,16 +1,24 @@
 [workspace]
 resolver = "2"
 members = [
+    "bits",
     "qemu-api-macros",
     "qemu-api",
     "hw/char/pl011",
     "hw/timer/hpet",
 ]
 
+[workspace.package]
+edition = "2021"
+homepage = "https://www.qemu.org"
+license = "GPL-2.0-or-later"
+repository = "https://gitlab.com/qemu-project/qemu/"
+rust-version = "1.77.0"
+
 [workspace.lints.rust]
 unexpected_cfgs = { level = "deny", check-cfg = [
     'cfg(MESON)', 'cfg(HAVE_GLIB_WITH_ALIGNED_ALLOC)',
-    'cfg(has_offset_of)'] }
+] }
 
 # Occasionally, we may need to silence warnings and clippy lints that
 # were only introduced in newer Rust compiler versions.  Do not croak
@@ -56,14 +64,15 @@ ignored_unit_patterns = "deny"
 implicit_clone = "deny"
 macro_use_imports = "deny"
 missing_safety_doc = "deny"
-multiple_crate_versions = "deny"
 mut_mut = "deny"
 needless_bitwise_bool = "deny"
 needless_pass_by_ref_mut = "deny"
+needless_update = "deny"
 no_effect_underscore_binding = "deny"
 option_option = "deny"
 or_fun_call = "deny"
 ptr_as_ptr = "deny"
+ptr_cast_constness = "deny"
 pub_underscore_fields = "deny"
 redundant_clone = "deny"
 redundant_closure_for_method_calls = "deny"
@@ -81,11 +90,11 @@ suspicious_operation_groupings = "deny"
 transmute_ptr_to_ptr = "deny"
 transmute_undefined_repr = "deny"
 type_repetition_in_bounds = "deny"
+uninlined_format_args = "deny"
 used_underscore_binding = "deny"
 
 # nice to have, but cannot be enabled yet
 #wildcard_imports = "deny"   # still have many bindings::* imports
-#ptr_cast_constness = "deny" # needs 1.65.0 for cast_mut()/cast_const()
 
 # these may have false positives
 #option_if_let_else = "deny"

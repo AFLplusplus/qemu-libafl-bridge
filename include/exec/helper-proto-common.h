@@ -13,6 +13,8 @@
 #include "exec/helper-proto.h.inc"
 #undef  HELPER_H
 
+#include "accel/tcg/getpc.h"
+
 //// --- Begin LibAFL code ---
 #define HELPER_H "libafl/tcg-helper.h"
 #include "exec/helper-proto.h.inc"

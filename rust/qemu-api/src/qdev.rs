@@ -5,21 +5,21 @@
 //! Bindings to create devices and access device functionality from Rust.
 
 use std::{
-    ffi::{CStr, CString},
-    os::raw::{c_int, c_void},
+    ffi::{c_int, c_void, CStr, CString},
     ptr::NonNull,
 };
 
 pub use bindings::{ClockEvent, DeviceClass, Property, ResetType};
 
 use crate::{
-    bindings::{self, qdev_init_gpio_in, qdev_init_gpio_out, Error, ResettableClass},
+    bindings::{self, qdev_init_gpio_in, qdev_init_gpio_out, ResettableClass},
     callbacks::FnCall,
     cell::{bql_locked, Opaque},
     chardev::Chardev,
+    error::{Error, Result},
     irq::InterruptSource,
     prelude::*,
-    qom::{ObjectClass, ObjectImpl, Owned},
+    qom::{ObjectClass, ObjectImpl, Owned, ParentInit},
     vmstate::VMStateDescription,
 };
 
@@ -109,7 +109,7 @@ pub trait DeviceImpl: ObjectImpl + ResettablePhasesImpl + IsA<DeviceState> {
     ///
     /// If not `None`, the parent class's `realize` method is overridden
     /// with the function pointed to by `REALIZE`.
-    const REALIZE: Option<fn(&Self)> = None;
+    const REALIZE: Option<fn(&Self) -> Result<()>> = None;
 
     /// An array providing the properties that the user can set on the
     /// device.  Not a `const` because referencing statics in constants
@@ -135,10 +135,13 @@ pub trait DeviceImpl: ObjectImpl + ResettablePhasesImpl + IsA<DeviceState> {
 /// readable/writeable from one thread at any time.
 unsafe extern "C" fn rust_realize_fn<T: DeviceImpl>(
     dev: *mut bindings::DeviceState,
-    _errp: *mut *mut Error,
+    errp: *mut *mut bindings::Error,
 ) {
     let state = NonNull::new(dev).unwrap().cast::<T>();
-    T::REALIZE.unwrap()(unsafe { state.as_ref() });
+    let result = T::REALIZE.unwrap()(unsafe { state.as_ref() });
+    unsafe {
+        Error::ok_or_propagate(result, errp);
+    }
 }
 
 unsafe impl InterfaceType for ResettableClass {
@@ -191,7 +194,7 @@ macro_rules! define_property {
             // use associated function syntax for type checking
             name: ::std::ffi::CStr::as_ptr($name),
             info: $prop,
-            offset: $crate::offset_of!($state, $field) as isize,
+            offset: ::std::mem::offset_of!($state, $field) as isize,
             bitnr: $bitnr,
             set_default: true,
             defval: $crate::bindings::Property__bindgen_ty_1 { u: $defval as u64 },
@@ -203,7 +206,7 @@ macro_rules! define_property {
             // use associated function syntax for type checking
             name: ::std::ffi::CStr::as_ptr($name),
             info: $prop,
-            offset: $crate::offset_of!($state, $field) as isize,
+            offset: ::std::mem::offset_of!($state, $field) as isize,
             set_default: true,
             defval: $crate::bindings::Property__bindgen_ty_1 { u: $defval as u64 },
             ..$crate::zeroable::Zeroable::ZERO
@@ -214,7 +217,7 @@ macro_rules! define_property {
             // use associated function syntax for type checking
             name: ::std::ffi::CStr::as_ptr($name),
             info: $prop,
-            offset: $crate::offset_of!($state, $field) as isize,
+            offset: ::std::mem::offset_of!($state, $field) as isize,
             set_default: false,
             ..$crate::zeroable::Zeroable::ZERO
         }
@@ -244,15 +247,9 @@ unsafe impl ObjectType for DeviceState {
 }
 qom_isa!(DeviceState: Object);
 
-/// Trait for methods exposed by the [`DeviceState`] class.  The methods can be
-/// called on all objects that have the trait `IsA<DeviceState>`.
-///
-/// The trait should only be used through the blanket implementation,
-/// which guarantees safety via `IsA`.
-pub trait DeviceMethods: ObjectDeref
-where
-    Self::Target: IsA<DeviceState>,
-{
+/// Initialization methods take a [`ParentInit`] and can be called as
+/// associated functions.
+impl DeviceState {
     /// Add an input clock named `name`.  Invoke the callback with
     /// `self` as the first parameter for the events that are requested.
     ///
@@ -263,12 +260,15 @@ where
     /// which Rust code has a reference to a child object) it would be
     /// possible for this function to return a `&Clock` too.
     #[inline]
-    fn init_clock_in<F: for<'a> FnCall<(&'a Self::Target, ClockEvent)>>(
-        &self,
+    pub fn init_clock_in<T: DeviceImpl, F: for<'a> FnCall<(&'a T, ClockEvent)>>(
+        this: &mut ParentInit<T>,
         name: &str,
         _cb: &F,
         events: ClockEvent,
-    ) -> Owned<Clock> {
+    ) -> Owned<Clock>
+    where
+        T::ParentType: IsA<DeviceState>,
+    {
         fn do_init_clock_in(
             dev: &DeviceState,
             name: &str,
@@ -284,10 +284,10 @@ where
             unsafe {
                 let cstr = CString::new(name).unwrap();
                 let clk = bindings::qdev_init_clock_in(
-                    dev.as_mut_ptr(),
+                    dev.0.as_mut_ptr(),
                     cstr.as_ptr(),
                     cb,
-                    dev.as_void_ptr(),
+                    dev.0.as_void_ptr(),
                     events.0,
                 );
 
@@ -304,12 +304,12 @@ where
                 // SAFETY: the opaque is "this", which is indeed a pointer to T
                 F::call((unsafe { &*(opaque.cast::<T>()) }, event))
             }
-            Some(rust_clock_cb::<Self::Target, F>)
+            Some(rust_clock_cb::<T, F>)
         } else {
             None
         };
 
-        do_init_clock_in(self.upcast(), name, cb, events)
+        do_init_clock_in(unsafe { this.upcast_mut() }, name, cb, events)
     }
 
     /// Add an output clock named `name`.
@@ -321,16 +321,30 @@ where
     /// which Rust code has a reference to a child object) it would be
     /// possible for this function to return a `&Clock` too.
     #[inline]
-    fn init_clock_out(&self, name: &str) -> Owned<Clock> {
+    pub fn init_clock_out<T: DeviceImpl>(this: &mut ParentInit<T>, name: &str) -> Owned<Clock>
+    where
+        T::ParentType: IsA<DeviceState>,
+    {
         unsafe {
             let cstr = CString::new(name).unwrap();
-            let clk = bindings::qdev_init_clock_out(self.upcast().as_mut_ptr(), cstr.as_ptr());
+            let dev: &mut DeviceState = this.upcast_mut();
+            let clk = bindings::qdev_init_clock_out(dev.0.as_mut_ptr(), cstr.as_ptr());
 
             let clk: &Clock = Clock::from_raw(clk);
             Owned::from(clk)
         }
     }
+}
 
+/// Trait for methods exposed by the [`DeviceState`] class.  The methods can be
+/// called on all objects that have the trait `IsA<DeviceState>`.
+///
+/// The trait should only be used through the blanket implementation,
+/// which guarantees safety via `IsA`.
+pub trait DeviceMethods: ObjectDeref
+where
+    Self::Target: IsA<DeviceState>,
+{
     fn prop_set_chr(&self, propname: &str, chr: &Owned<Chardev>) {
         assert!(bql_locked());
         let c_propname = CString::new(propname).unwrap();

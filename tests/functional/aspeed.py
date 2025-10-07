@@ -8,8 +8,13 @@ from qemu_test import LinuxKernelTest
 class AspeedTest(LinuxKernelTest):
 
     def do_test_arm_aspeed_openbmc(self, machine, image, uboot='2019.04',
-                                   cpu_id='0x0', soc='AST2500 rev A1'):
-        hostname = machine.removesuffix('-bmc')
+                                   cpu_id='0x0', soc='AST2500 rev A1',
+                                   image_hostname=None):
+        # Allow for the image hostname to not end in "-bmc"
+        if image_hostname is not None:
+            hostname = image_hostname
+        else:
+            hostname = machine.removesuffix('-bmc')
 
         self.set_machine(machine)
         self.vm.set_console()
@@ -44,7 +49,7 @@ class AspeedTest(LinuxKernelTest):
 
     def do_test_arm_aspeed_buildroot_poweroff(self):
         exec_command_and_wait_for_pattern(self, 'poweroff',
-                                          'System halted');
+                                          'System halted')
 
     def do_test_arm_aspeed_sdk_start(self, image):
         self.require_netdev('user')

@@ -118,11 +118,8 @@ static void pca9554_write(PCA9554State *s, uint8_t reg, uint8_t data)
 static uint8_t pca9554_recv(I2CSlave *i2c)
 {
     PCA9554State *s = PCA9554(i2c);
-    uint8_t ret;
 
-    ret = pca9554_read(s, s->pointer & 0x3);
-
-    return ret;
+    return pca9554_read(s, s->pointer & 0x3);
 }
 
 static int pca9554_send(I2CSlave *i2c, uint8_t data)
@@ -295,7 +292,7 @@ static const Property pca9554_properties[] = {
     DEFINE_PROP_STRING("description", PCA9554State, description),
 };
 
-static void pca9554_class_init(ObjectClass *klass, void *data)
+static void pca9554_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);

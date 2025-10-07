@@ -16,8 +16,8 @@
 #include "system/qtest.h"
 #include "system/runstate.h"
 #include "chardev/char-fe.h"
-#include "exec/ioport.h"
-#include "exec/memory.h"
+#include "system/ioport.h"
+#include "system/memory.h"
 #include "exec/tswap.h"
 #include "hw/qdev-core.h"
 #include "hw/irq.h"
@@ -29,6 +29,7 @@
 #include "qemu/error-report.h"
 #include "qemu/module.h"
 #include "qemu/cutils.h"
+#include "qemu/target-info.h"
 #include "qom/object_interfaces.h"
 
 #define MAX_IRQ 256
@@ -693,7 +694,7 @@ static void qtest_process_command(CharBackend *chr, gchar **words)
 
         qtest_send(chr, "OK\n");
     } else if (strcmp(words[0], "endianness") == 0) {
-        if (target_words_bigendian()) {
+        if (target_big_endian()) {
             qtest_sendf(chr, "OK big\n");
         } else {
             qtest_sendf(chr, "OK little\n");
@@ -994,7 +995,7 @@ static char *qtest_get_chardev(Object *obj, Error **errp)
     return g_strdup(q->chr_name);
 }
 
-static void qtest_class_init(ObjectClass *oc, void *data)
+static void qtest_class_init(ObjectClass *oc, const void *data)
 {
     UserCreatableClass *ucc = USER_CREATABLE_CLASS(oc);
 
@@ -1012,7 +1013,7 @@ static const TypeInfo qtest_info = {
     .parent = TYPE_OBJECT,
     .class_init = qtest_class_init,
     .instance_size = sizeof(QTest),
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_USER_CREATABLE },
         { }
     }

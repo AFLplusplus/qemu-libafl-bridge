@@ -28,7 +28,7 @@
 #include "qemu/units.h"
 #include "qapi/error.h"
 #include "qobject/qlist.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "cpu.h"
 #include "system/system.h"
 #include "hw/boards.h"
@@ -583,14 +583,14 @@ static void mps3r_set_default_ram_info(MPS3RMachineClass *mmc)
     g_assert_not_reached();
 }
 
-static void mps3r_class_init(ObjectClass *oc, void *data)
+static void mps3r_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 
     mc->init = mps3r_common_init;
 }
 
-static void mps3r_an536_class_init(ObjectClass *oc, void *data)
+static void mps3r_an536_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     MPS3RMachineClass *mmc = MPS3R_MACHINE_CLASS(oc);

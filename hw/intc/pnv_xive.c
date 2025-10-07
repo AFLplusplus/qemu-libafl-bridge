@@ -470,14 +470,13 @@ static bool pnv_xive_is_cpu_enabled(PnvXive *xive, PowerPCCPU *cpu)
     return xive->regs[reg >> 3] & PPC_BIT(bit);
 }
 
-static int pnv_xive_match_nvt(XivePresenter *xptr, uint8_t format,
-                              uint8_t nvt_blk, uint32_t nvt_idx,
-                              bool crowd, bool cam_ignore, uint8_t priority,
-                              uint32_t logic_serv, XiveTCTXMatch *match)
+static bool pnv_xive_match_nvt(XivePresenter *xptr, uint8_t format,
+                               uint8_t nvt_blk, uint32_t nvt_idx,
+                               bool crowd, bool cam_ignore, uint8_t priority,
+                               uint32_t logic_serv, XiveTCTXMatch *match)
 {
     PnvXive *xive = PNV_XIVE(xptr);
     PnvChip *chip = xive->chip;
-    int count = 0;
     int i, j;
 
     for (i = 0; i < chip->nr_cores; i++) {
@@ -510,17 +509,18 @@ static int pnv_xive_match_nvt(XivePresenter *xptr, uint8_t format,
                     qemu_log_mask(LOG_GUEST_ERROR, "XIVE: already found a "
                                   "thread context NVT %x/%x\n",
                                   nvt_blk, nvt_idx);
-                    return -1;
+                    match->count++;
+                    continue;
                 }
 
                 match->ring = ring;
                 match->tctx = tctx;
-                count++;
+                match->count++;
             }
         }
     }
 
-    return count;
+    return !!match->count;
 }
 
 static uint32_t pnv_xive_presenter_get_config(XivePresenter *xptr)
@@ -2068,7 +2068,7 @@ static const Property pnv_xive_properties[] = {
     DEFINE_PROP_LINK("chip", PnvXive, chip, TYPE_PNV_CHIP, PnvChip *),
 };
 
-static void pnv_xive_class_init(ObjectClass *klass, void *data)
+static void pnv_xive_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PnvXScomInterfaceClass *xdc = PNV_XSCOM_INTERFACE_CLASS(klass);
@@ -2106,7 +2106,7 @@ static const TypeInfo pnv_xive_info = {
     .instance_size = sizeof(PnvXive),
     .class_init    = pnv_xive_class_init,
     .class_size    = sizeof(PnvXiveClass),
-    .interfaces    = (InterfaceInfo[]) {
+    .interfaces    = (const InterfaceInfo[]) {
         { TYPE_PNV_XSCOM_INTERFACE },
         { }
     }

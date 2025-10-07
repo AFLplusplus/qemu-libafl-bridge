@@ -11,7 +11,7 @@
 #include "qemu/guest-random.h"
 #include "qapi/error.h"
 #include "cpu.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "hw/irq.h"
 #include "hw/boards.h"
 #include "hw/char/serial-mm.h"
@@ -543,7 +543,7 @@ static void openrisc_virt_init(MachineState *machine)
     }
 }
 
-static void openrisc_virt_machine_init(ObjectClass *oc, void *data)
+static void openrisc_virt_machine_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 

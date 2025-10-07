@@ -25,11 +25,14 @@
 #include "tcg_s390x.h"
 #include "exec/helper-proto.h"
 #include "exec/cpu-common.h"
-#include "exec/exec-all.h"
 #include "exec/cputlb.h"
 #include "exec/page-protection.h"
-#include "exec/cpu_ldst.h"
+#include "accel/tcg/cpu-ldst.h"
+#include "accel/tcg/probe.h"
+#include "exec/target_page.h"
+#include "exec/tlb-flags.h"
 #include "accel/tcg/cpu-ops.h"
+#include "accel/tcg/helper-retaddr.h"
 #include "qemu/int128.h"
 #include "qemu/atomic128.h"
 
@@ -123,8 +126,8 @@ static inline void cpu_stsize_data_ra(CPUS390XState *env, uint64_t addr,
 
 /* An access covers at most 4096 bytes and therefore at most two pages. */
 typedef struct S390Access {
-    target_ulong vaddr1;
-    target_ulong vaddr2;
+    vaddr vaddr1;
+    vaddr vaddr2;
     void *haddr1;
     void *haddr2;
     uint16_t size1;
@@ -145,7 +148,7 @@ typedef struct S390Access {
  * For !CONFIG_USER_ONLY, the TEC is stored stored to env->tlb_fill_tec.
  * For CONFIG_USER_ONLY, the faulting address is stored to env->__excp_addr.
  */
-static inline int s390_probe_access(CPUArchState *env, target_ulong addr,
+static inline int s390_probe_access(CPUArchState *env, vaddr addr,
                                     int size, MMUAccessType access_type,
                                     int mmu_idx, bool nonfault,
                                     void **phost, uintptr_t ra)
@@ -255,7 +258,7 @@ static void access_memset(CPUS390XState *env, S390Access *desta,
 static uint8_t access_get_byte(CPUS390XState *env, S390Access *access,
                                int offset, uintptr_t ra)
 {
-    target_ulong vaddr = access->vaddr1;
+    vaddr vaddr = access->vaddr1;
     void *haddr = access->haddr1;
 
     if (unlikely(offset >= access->size1)) {
@@ -275,7 +278,7 @@ static uint8_t access_get_byte(CPUS390XState *env, S390Access *access,
 static void access_set_byte(CPUS390XState *env, S390Access *access,
                             int offset, uint8_t byte, uintptr_t ra)
 {
-    target_ulong vaddr = access->vaddr1;
+    vaddr vaddr = access->vaddr1;
     void *haddr = access->haddr1;
 
     if (unlikely(offset >= access->size1)) {

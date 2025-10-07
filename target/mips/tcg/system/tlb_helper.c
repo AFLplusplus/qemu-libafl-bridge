@@ -22,9 +22,9 @@
 #include "cpu.h"
 #include "internal.h"
 #include "exec/cputlb.h"
-#include "exec/exec-all.h"
 #include "exec/page-protection.h"
-#include "exec/cpu_ldst.h"
+#include "exec/target_page.h"
+#include "accel/tcg/cpu-ldst.h"
 #include "exec/log.h"
 #include "exec/helper-proto.h"
 

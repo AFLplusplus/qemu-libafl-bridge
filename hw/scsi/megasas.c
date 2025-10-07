@@ -981,13 +981,11 @@ static int megasas_event_wait(MegasasState *s, MegasasCmd *cmd)
 
 static int megasas_dcmd_pd_get_list(MegasasState *s, MegasasCmd *cmd)
 {
-    struct mfi_pd_list info;
-    size_t dcmd_size = sizeof(info);
+    struct mfi_pd_list info = {};
     BusChild *kid;
     uint32_t offset, dcmd_limit, num_pd_disks = 0, max_pd_disks;
     dma_addr_t residual;
 
-    memset(&info, 0, dcmd_size);
     offset = 8;
     dcmd_limit = offset + sizeof(struct mfi_pd_address);
     if (cmd->iov_size < dcmd_limit) {
@@ -1429,11 +1427,10 @@ static int megasas_dcmd_cfg_read(MegasasState *s, MegasasCmd *cmd)
 
 static int megasas_dcmd_get_properties(MegasasState *s, MegasasCmd *cmd)
 {
-    struct mfi_ctrl_props info;
+    struct mfi_ctrl_props info = {};
     size_t dcmd_size = sizeof(info);
     dma_addr_t residual;
 
-    memset(&info, 0x0, dcmd_size);
     if (cmd->iov_size < dcmd_size) {
         trace_megasas_dcmd_invalid_xfer_len(cmd->index, cmd->iov_size,
                                             dcmd_size);
@@ -2226,7 +2223,6 @@ static uint64_t megasas_queue_read(void *opaque, hwaddr addr,
 static void megasas_queue_write(void *opaque, hwaddr addr,
                                uint64_t val, unsigned size)
 {
-    return;
 }
 
 static const MemoryRegionOps megasas_queue_ops = {
@@ -2487,7 +2483,7 @@ typedef struct MegasasInfo {
     const VMStateDescription *vmsd;
     const Property *props;
     size_t props_count;
-    InterfaceInfo *interfaces;
+    const InterfaceInfo *interfaces;
 } MegasasInfo;
 
 static struct MegasasInfo megasas_devices[] = {
@@ -2504,7 +2500,7 @@ static struct MegasasInfo megasas_devices[] = {
         .vmsd = &vmstate_megasas_gen1,
         .props = megasas_properties_gen1,
         .props_count = ARRAY_SIZE(megasas_properties_gen1),
-        .interfaces = (InterfaceInfo[]) {
+        .interfaces = (const InterfaceInfo[]) {
             { INTERFACE_CONVENTIONAL_PCI_DEVICE },
             { },
         },
@@ -2521,14 +2517,14 @@ static struct MegasasInfo megasas_devices[] = {
         .vmsd = &vmstate_megasas_gen2,
         .props = megasas_properties_gen2,
         .props_count = ARRAY_SIZE(megasas_properties_gen2),
-        .interfaces = (InterfaceInfo[]) {
+        .interfaces = (const InterfaceInfo[]) {
             { INTERFACE_PCIE_DEVICE },
             { }
         },
     }
 };
 
-static void megasas_class_init(ObjectClass *oc, void *data)
+static void megasas_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     PCIDeviceClass *pc = PCI_DEVICE_CLASS(oc);
@@ -2573,7 +2569,7 @@ static void megasas_register_types(void)
 
         type_info.name = info->name;
         type_info.parent = TYPE_MEGASAS_BASE;
-        type_info.class_data = (void *)info;
+        type_info.class_data = info;
         type_info.class_init = megasas_class_init;
         type_info.interfaces = info->interfaces;
 

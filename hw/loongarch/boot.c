@@ -35,12 +35,6 @@ struct loongarch_linux_hdr {
     uint32_t pe_header_offset;
 } QEMU_PACKED;
 
-struct memmap_entry *memmap_table;
-unsigned memmap_entries;
-
-ram_addr_t initrd_offset;
-uint64_t initrd_size;
-
 static const unsigned int slave_boot_code[] = {
                   /* Configure reset ebase.                    */
     0x0400302c,   /* csrwr      $t0, LOONGARCH_CSR_EENTRY      */
@@ -94,12 +88,16 @@ static inline void *guidcpy(void *dst, const void *src)
     return memcpy(dst, src, sizeof(efi_guid_t));
 }
 
-static void init_efi_boot_memmap(struct efi_system_table *systab,
+static void init_efi_boot_memmap(MachineState *ms,
+                                 struct efi_system_table *systab,
                                  void *p, void *start)
 {
     unsigned i;
     struct efi_boot_memmap *boot_memmap = p;
     efi_guid_t tbl_guid = LINUX_EFI_BOOT_MEMMAP_GUID;
+    LoongArchVirtMachineState *lvms = LOONGARCH_VIRT_MACHINE(ms);
+    struct memmap_entry *memmap_table;
+    unsigned int memmap_entries;
 
     /* efi_configuration_table 1 */
     guidcpy(&systab->tables[0].guid, &tbl_guid);
@@ -111,6 +109,8 @@ static void init_efi_boot_memmap(struct efi_system_table *systab,
     boot_memmap->map_size = 0;
 
     efi_memory_desc_t *map = p + sizeof(struct efi_boot_memmap);
+    memmap_table = lvms->memmap_table;
+    memmap_entries = lvms->memmap_entries;
     for (i = 0; i < memmap_entries; i++) {
         map = (void *)boot_memmap + sizeof(*map);
         map[i].type = memmap_table[i].type;
@@ -121,7 +121,8 @@ static void init_efi_boot_memmap(struct efi_system_table *systab,
     }
 }
 
-static void init_efi_initrd_table(struct efi_system_table *systab,
+static void init_efi_initrd_table(struct loongarch_boot_info *info,
+                                  struct efi_system_table *systab,
                                   void *p, void *start)
 {
     efi_guid_t tbl_guid = LINUX_EFI_INITRD_MEDIA_GUID;
@@ -132,8 +133,8 @@ static void init_efi_initrd_table(struct efi_system_table *systab,
     systab->tables[1].table = (struct efi_configuration_table *)(p - start);
     systab->nr_tables = 2;
 
-    initrd_table->base = initrd_offset;
-    initrd_table->size = initrd_size;
+    initrd_table->base = info->initrd_addr;
+    initrd_table->size = info->initrd_size;
 }
 
 static void init_efi_fdt_table(struct efi_system_table *systab)
@@ -146,10 +147,12 @@ static void init_efi_fdt_table(struct efi_system_table *systab)
     systab->nr_tables = 3;
 }
 
-static void init_systab(struct loongarch_boot_info *info, void *p, void *start)
+static void init_systab(MachineState *ms,
+                        struct loongarch_boot_info *info, void *p, void *start)
 {
     void *bp_tables_start;
     struct efi_system_table *systab = p;
+    LoongArchVirtMachineState *lvms = LOONGARCH_VIRT_MACHINE(ms);
 
     info->a2 = p - start;
 
@@ -166,10 +169,10 @@ static void init_systab(struct loongarch_boot_info *info, void *p, void *start)
     systab->tables = p;
     bp_tables_start = p;
 
-    init_efi_boot_memmap(systab, p, start);
+    init_efi_boot_memmap(ms, systab, p, start);
     p += ROUND_UP(sizeof(struct efi_boot_memmap) +
-                  sizeof(efi_memory_desc_t) * memmap_entries, 64 * KiB);
-    init_efi_initrd_table(systab, p, start);
+                  sizeof(efi_memory_desc_t) * lvms->memmap_entries, 64 * KiB);
+    init_efi_initrd_table(info, systab, p, start);
     p += ROUND_UP(sizeof(struct efi_initrd), 64 * KiB);
     init_efi_fdt_table(systab);
 
@@ -235,16 +238,56 @@ static int64_t load_loongarch_linux_image(const char *filename,
     return size;
 }
 
+static ram_addr_t alloc_initrd_memory(struct loongarch_boot_info *info,
+                uint64_t advice_start, ssize_t rd_size)
+{
+    hwaddr base, ram_size, gap, low_end;
+    ram_addr_t initrd_end, initrd_start;
+
+    base = VIRT_LOWMEM_BASE;
+    gap = VIRT_LOWMEM_SIZE;
+    initrd_start = advice_start;
+    initrd_end = initrd_start + rd_size;
+
+    ram_size = info->ram_size;
+    low_end = base + MIN(ram_size, gap);
+    if (initrd_end <= low_end) {
+        return initrd_start;
+    }
+
+    if (ram_size <= gap) {
+        error_report("The low memory too small for initial ram disk '%s',"
+             "You need to expand the ram",
+             info->initrd_filename);
+        exit(1);
+    }
+
+    /*
+     * Try to load initrd in the high memory
+     */
+    ram_size -= gap;
+    initrd_start = VIRT_HIGHMEM_BASE;
+    if (rd_size <= ram_size) {
+        return initrd_start;
+    }
+
+    error_report("The high memory too small for initial ram disk '%s',"
+         "You need to expand the ram",
+         info->initrd_filename);
+    exit(1);
+}
+
 static int64_t load_kernel_info(struct loongarch_boot_info *info)
 {
-    uint64_t kernel_entry, kernel_low, kernel_high;
-    ssize_t kernel_size;
+    uint64_t kernel_entry, kernel_low, kernel_high, initrd_offset = 0;
+    ssize_t kernel_size, initrd_size;
 
     kernel_size = load_elf(info->kernel_filename, NULL,
                            cpu_loongarch_virt_to_phys, NULL,
                            &kernel_entry, &kernel_low,
                            &kernel_high, NULL, ELFDATA2LSB,
                            EM_LOONGARCH, 1, 0);
+    kernel_entry = cpu_loongarch_virt_to_phys(NULL, kernel_entry);
     if (kernel_size < 0) {
         kernel_size = load_loongarch_linux_image(info->kernel_filename,
                                                  &kernel_entry, &kernel_low,
@@ -262,15 +305,10 @@ static int64_t load_kernel_info(struct loongarch_boot_info *info)
         initrd_size = get_image_size(info->initrd_filename);
         if (initrd_size > 0) {
             initrd_offset = ROUND_UP(kernel_high + 4 * kernel_size, 64 * KiB);
-
-            if (initrd_offset + initrd_size > info->ram_size) {
-                error_report("memory too small for initial ram disk '%s'",
-                             info->initrd_filename);
-                exit(1);
-            }
-
-            initrd_size = load_image_targphys(info->initrd_filename, initrd_offset,
-                                              info->ram_size - initrd_offset);
+            initrd_offset = alloc_initrd_memory(info, initrd_offset,
+                                                initrd_size);
+            initrd_size = load_image_targphys(info->initrd_filename,
+                                              initrd_offset, initrd_size);
         }
 
         if (initrd_size == (target_ulong)-1) {
@@ -278,8 +316,9 @@ static int64_t load_kernel_info(struct loongarch_boot_info *info)
                          info->initrd_filename);
             exit(1);
         }
-    } else {
-        initrd_size = 0;
+
+        info->initrd_addr = initrd_offset;
+        info->initrd_size = initrd_size;
     }
 
     return kernel_entry;
@@ -334,17 +373,19 @@ static void loongarch_firmware_boot(LoongArchVirtMachineState *lvms,
     fw_cfg_add_kernel_info(info, lvms->fw_cfg);
 }
 
-static void init_boot_rom(struct loongarch_boot_info *info, void *p)
+static void init_boot_rom(MachineState *ms,
+                          struct loongarch_boot_info *info, void *p)
 {
     void *start = p;
 
     init_cmdline(info, p, start);
     p += COMMAND_LINE_SIZE;
 
-    init_systab(info, p, start);
+    init_systab(ms, info, p, start);
 }
 
-static void loongarch_direct_kernel_boot(struct loongarch_boot_info *info)
+static void loongarch_direct_kernel_boot(MachineState *ms,
+                                         struct loongarch_boot_info *info)
 {
     void *p, *bp;
     int64_t kernel_addr = VIRT_FLASH0_BASE;
@@ -362,7 +403,7 @@ static void loongarch_direct_kernel_boot(struct loongarch_boot_info *info)
     /* Load cmdline and system tables at [0 - 1 MiB] */
     p = g_malloc0(1 * MiB);
     bp = p;
-    init_boot_rom(info, p);
+    init_boot_rom(ms, info, p);
     rom_add_blob_fixed_as("boot_info", bp, 1 * MiB, 0, &address_space_memory);
 
     /* Load slave boot code at pflash0 . */
@@ -402,6 +443,6 @@ void loongarch_load_kernel(MachineState *ms, struct loongarch_boot_info *info)
     if (lvms->bios_loaded) {
         loongarch_firmware_boot(lvms, info);
     } else {
-        loongarch_direct_kernel_boot(info);
+        loongarch_direct_kernel_boot(ms, info);
     }
 }

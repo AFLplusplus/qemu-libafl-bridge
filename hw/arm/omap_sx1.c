@@ -1,7 +1,7 @@
 /* omap_sx1.c Support for the Siemens SX1 smartphone emulation.
  *
  *   Copyright (C) 2008
- * 	Jean-Christophe PLAGNIOL-VILLARD <plagnioj@jcrosoft.com>
+ *   Jean-Christophe PLAGNIOL-VILLARD <plagnioj@jcrosoft.com>
  *   Copyright (C) 2007 Vladimir Ananiev <vovan888@gmail.com>
  *
  *   based on PalmOne's (TM) PDAs support (palm.c)
@@ -34,7 +34,7 @@
 #include "hw/arm/boot.h"
 #include "hw/block/flash.h"
 #include "system/qtest.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "qemu/cutils.h"
 #include "qemu/error-report.h"
 
@@ -202,7 +202,7 @@ static void sx1_init_v2(MachineState *machine)
     sx1_init(machine, 2);
 }
 
-static void sx1_machine_v2_class_init(ObjectClass *oc, void *data)
+static void sx1_machine_v2_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 
@@ -221,7 +221,7 @@ static const TypeInfo sx1_machine_v2_type = {
     .class_init = sx1_machine_v2_class_init,
 };
 
-static void sx1_machine_v1_class_init(ObjectClass *oc, void *data)
+static void sx1_machine_v1_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 

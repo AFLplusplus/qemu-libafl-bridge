@@ -22,9 +22,7 @@
 #include "hw/intc/arm_gic_common.h"
 #include "hw/misc/unimp.h"
 #include "hw/boards.h"
-#include "system/kvm.h"
 #include "system/system.h"
-#include "kvm_arm.h"
 #include "target/arm/cpu-qom.h"
 #include "target/arm/gtimer.h"
 
@@ -855,7 +853,7 @@ static const Property xlnx_zynqmp_props[] = {
                      CanBusState *),
 };
 
-static void xlnx_zynqmp_class_init(ObjectClass *oc, void *data)
+static void xlnx_zynqmp_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 

@@ -9,6 +9,7 @@
 #include "qemu/module.h"
 #include "qemu/error-report.h"
 #include "exec/tb-flush.h"
+#include "exec/target_page.h"
 #include "helper_regs.h"
 #include "hw/ppc/ppc.h"
 #include "hw/ppc/spapr.h"
@@ -981,7 +982,6 @@ static void spapr_check_setup_free_hpt(SpaprMachineState *spapr,
         /* RADIX->HASH || NOTHING->HASH : Allocate HPT */
         spapr_setup_hpt(spapr);
     }
-    return;
 }
 
 #define FLAGS_MASK              0x01FULL

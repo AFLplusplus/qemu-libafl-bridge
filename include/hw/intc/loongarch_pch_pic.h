@@ -16,12 +16,18 @@ OBJECT_DECLARE_TYPE(LoongarchPICState, LoongarchPICClass, LOONGARCH_PIC)
 
 struct LoongarchPICState {
     LoongArchPICCommonState parent_obj;
+    int dev_fd;
 };
 
 struct LoongarchPICClass {
     LoongArchPICCommonClass parent_class;
 
     DeviceRealize parent_realize;
+    ResettablePhases parent_phases;
 };
+
+void kvm_pic_realize(DeviceState *dev, Error **errp);
+int kvm_pic_get(void *opaque);
+int kvm_pic_put(void *opaque, int version_id);
 
 #endif /* HW_LOONGARCH_PCH_PIC_H */

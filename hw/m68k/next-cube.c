@@ -12,6 +12,7 @@
 
 #include "qemu/osdep.h"
 #include "exec/hwaddr.h"
+#include "exec/cpu-interrupt.h"
 #include "system/system.h"
 #include "system/qtest.h"
 #include "hw/irq.h"
@@ -793,7 +794,7 @@ static const VMStateDescription next_scsi_vmstate = {
     },
 };
 
-static void next_scsi_class_init(ObjectClass *klass, void *data)
+static void next_scsi_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -899,7 +900,6 @@ static void next_dummy_en_write(void *opaque, hwaddr addr, uint64_t val,
                                 unsigned size)
 {
     /* Do nothing */
-    return;
 }
 
 static uint64_t next_dummy_en_read(void *opaque, hwaddr addr, unsigned size)
@@ -1064,7 +1064,7 @@ static const VMStateDescription next_rtc_vmstate = {
     },
 };
 
-static void next_rtc_class_init(ObjectClass *klass, void *data)
+static void next_rtc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     ResettableClass *rc = RESETTABLE_CLASS(klass);
@@ -1228,7 +1228,7 @@ static const VMStateDescription next_pc_vmstate = {
     },
 };
 
-static void next_pc_class_init(ObjectClass *klass, void *data)
+static void next_pc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     ResettableClass *rc = RESETTABLE_CLASS(klass);
@@ -1348,7 +1348,7 @@ static void next_cube_init(MachineState *machine)
     memory_region_add_subregion(sysmem, 0x02000000, &m->dmamem);
 }
 
-static void next_machine_class_init(ObjectClass *oc, void *data)
+static void next_machine_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 

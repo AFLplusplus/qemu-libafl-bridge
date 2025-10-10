@@ -4,12 +4,32 @@
 #include "system/accel-ops.h"
 #include "system/cpus.h"
 #include "gdbstub/enums.h"
+#include "exec/target_page.h"
+#include "qemu/main-loop.h"
+#include "system/replay.h"
+#include "system/runstate.h"
 
 #include "libafl/system.h"
 
 int libafl_qemu_toggle_hw_breakpoint(vaddr addr, bool set);
 
-void libafl_qemu_init(int argc, char** argv) { qemu_init(argc, argv); }
+void libafl_qemu_init(int argc, char** argv)
+{
+    qemu_init(argc, argv);
+}
+
+int libafl_qemu_run(void)
+{
+    if (runstate_check(RUN_STATE_PRELAUNCH) || runstate_check(RUN_STATE_RET)) {
+        // we are starting the VM for the first time or resuming from a return to libafl
+        // transition to RUN_STATE_RUNNING
+        vm_start();
+    }
+
+    int status = qemu_main_loop();
+
+    return status;
+}
 
 int libafl_qemu_set_hw_breakpoint(vaddr addr)
 {
@@ -46,4 +66,16 @@ int libafl_qemu_toggle_hw_breakpoint(vaddr addr, bool set)
     }
 
     return 0;
+}
+
+inline size_t libafl_target_page_size(void) {
+    return TARGET_PAGE_SIZE;
+}
+
+inline int libafl_target_page_mask(void) {
+    return TARGET_PAGE_MASK;
+}
+
+int libafl_target_page_offset_mask(void) {
+    return ~TARGET_PAGE_MASK;
 }

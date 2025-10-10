@@ -7,7 +7,7 @@
 #include "libafl/defs.h"
 #include "libafl/cpu.h"
 
-#ifndef CONFIG_USER_ONLY
+#if !defined(CONFIG_USER_ONLY) && defined(AS_LIB)
 #include "system/runstate.h"
 #endif
 
@@ -79,8 +79,8 @@ static void prepare_qemu_exit(CPUState* cpu, target_ulong next_pc)
     last_exit_reason.cpu = cpu;
     last_exit_reason.next_pc = next_pc;
 
-#ifndef CONFIG_USER_ONLY
-    qemu_system_debug_request();
+#if !defined(CONFIG_USER_ONLY) && defined(AS_LIB)
+    qemu_system_return_request();
 #endif
 
     // in usermode, this may be called from the syscall hook, thus already out
@@ -146,7 +146,9 @@ void libafl_exit_request_timeout(void)
     last_exit_reason.kind = TIMEOUT;
     last_exit_reason.cpu = current_cpu;
 
-    qemu_system_debug_request();
+#ifdef AS_LIB
+    qemu_system_return_request();
+#endif
 }
 #endif
 

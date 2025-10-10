@@ -714,8 +714,7 @@ static inline void cpu_handle_debug_exception(CPUState *cpu)
 
 static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
 {
-    //// --- Begin LibAFL code ---
-
+//// --- Begin LibAFL code ---
     if (cpu->exception_index == EXCP_LIBAFL_EXIT) {
         *ret = cpu->exception_index;
         cpu->exception_index = -1;
@@ -723,8 +722,7 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
         libafl_sync_exit_cpu();
         return true; 
     }
-
-    //// --- End LibAFL code ---
+//// --- End LibAFL code ---
 
     if (cpu->exception_index < 0) {
 #ifndef CONFIG_USER_ONLY

@@ -108,5 +108,11 @@ void qemu_system_guest_crashloaded(GuestPanicInformation *info);
 void qemu_system_guest_pvshutdown(void);
 bool qemu_system_dump_in_progress(void);
 
+//// --- Begin LibAFL code ---
+#ifdef AS_LIB
+void qemu_system_return_request(void);
+#endif
+//// --- End LibAFL code ---
+
 #endif
 

@@ -7,9 +7,9 @@
 #include "exec/cpu-defs.h"
 
 struct libafl_mapinfo {
-    target_ulong start;
-    target_ulong end;
-    target_ulong offset;
+    uint64_t start;
+    uint64_t end;
+    uint64_t offset;
     const char* path;
     int flags;
     int is_priv;

@@ -518,7 +518,10 @@ static void ich9_lpc_rcba_update(ICH9LPCState *lpc, uint32_t rcba_old)
     if (rcba_old & ICH9_LPC_RCBA_EN) {
         memory_region_del_subregion(get_system_memory(), &lpc->rcrb_mem);
     }
-    if (rcba & ICH9_LPC_RCBA_EN) {
+    if (rcba & ICH9_LPC_RCBA_EN
+//// --- Begin LibAFL code ---
+        && !lpc->rcrb_mem.container) {
+//// --- End LibAFL code ---
         memory_region_add_subregion_overlap(get_system_memory(),
                                             rcba & ICH9_LPC_RCBA_BA_MASK,
                                             &lpc->rcrb_mem, 1);

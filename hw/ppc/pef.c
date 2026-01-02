@@ -19,7 +19,6 @@
 #define TYPE_PEF_GUEST "pef-guest"
 OBJECT_DECLARE_SIMPLE_TYPE(PefGuest, PEF_GUEST)
 
-typedef struct PefGuest PefGuest;
 typedef struct PefGuestClass PefGuestClass;
 
 struct PefGuestClass {
@@ -128,7 +127,7 @@ OBJECT_DEFINE_TYPE_WITH_INTERFACES(PefGuest,
                                    { TYPE_USER_CREATABLE },
                                    { NULL })
 
-static void pef_guest_class_init(ObjectClass *oc, void *data)
+static void pef_guest_class_init(ObjectClass *oc, const void *data)
 {
     ConfidentialGuestSupportClass *klass = CONFIDENTIAL_GUEST_SUPPORT_CLASS(oc);
 

@@ -428,14 +428,13 @@ static int spapr_xive_write_nvt(XiveRouter *xrtr, uint8_t nvt_blk,
     g_assert_not_reached();
 }
 
-static int spapr_xive_match_nvt(XivePresenter *xptr, uint8_t format,
-                                uint8_t nvt_blk, uint32_t nvt_idx,
-                                bool crowd, bool cam_ignore,
-                                uint8_t priority,
-                                uint32_t logic_serv, XiveTCTXMatch *match)
+static bool spapr_xive_match_nvt(XivePresenter *xptr, uint8_t format,
+                                 uint8_t nvt_blk, uint32_t nvt_idx,
+                                 bool crowd, bool cam_ignore,
+                                 uint8_t priority,
+                                 uint32_t logic_serv, XiveTCTXMatch *match)
 {
     CPUState *cs;
-    int count = 0;
 
     CPU_FOREACH(cs) {
         PowerPCCPU *cpu = POWERPC_CPU(cs);
@@ -463,16 +462,17 @@ static int spapr_xive_match_nvt(XivePresenter *xptr, uint8_t format,
             if (match->tctx) {
                 qemu_log_mask(LOG_GUEST_ERROR, "XIVE: already found a thread "
                               "context NVT %x/%x\n", nvt_blk, nvt_idx);
-                return -1;
+                match->count++;
+                continue;
             }
 
             match->ring = ring;
             match->tctx = tctx;
-            count++;
+            match->count++;
         }
     }
 
-    return count;
+    return !!match->count;
 }
 
 static uint32_t spapr_xive_presenter_get_config(XivePresenter *xptr)
@@ -809,7 +809,7 @@ static bool spapr_xive_in_kernel_xptr(const XivePresenter *xptr)
     return spapr_xive_in_kernel(SPAPR_XIVE(xptr));
 }
 
-static void spapr_xive_class_init(ObjectClass *klass, void *data)
+static void spapr_xive_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     XiveRouterClass *xrc = XIVE_ROUTER_CLASS(klass);
@@ -856,7 +856,7 @@ static const TypeInfo spapr_xive_info = {
     .instance_size = sizeof(SpaprXive),
     .class_init = spapr_xive_class_init,
     .class_size = sizeof(SpaprXiveClass),
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_SPAPR_INTC },
         { }
     },

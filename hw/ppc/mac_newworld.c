@@ -50,6 +50,7 @@
 #include "qemu/datadir.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
+#include "exec/target_page.h"
 #include "hw/ppc/ppc.h"
 #include "hw/qdev-properties.h"
 #include "hw/nvram/mac_nvram.h"
@@ -187,7 +188,8 @@ static void ppc_core99_init(MachineState *machine)
 
         if (bios_size <= 0) {
             /* or load binary ROM image */
-            bios_size = load_image_targphys(filename, PROM_BASE, PROM_SIZE);
+            bios_size = load_image_targphys(filename, PROM_BASE, PROM_SIZE,
+                                            &error_fatal);
         }
         g_free(filename);
     }
@@ -209,24 +211,16 @@ static void ppc_core99_init(MachineState *machine)
         if (kernel_size < 0) {
             kernel_size = load_image_targphys(machine->kernel_filename,
                                               kernel_base,
-                                              machine->ram_size - kernel_base);
-        }
-        if (kernel_size < 0) {
-            error_report("could not load kernel '%s'",
-                         machine->kernel_filename);
-            exit(1);
+                                              machine->ram_size - kernel_base,
+                                              &error_fatal);
         }
         /* load initrd */
         if (machine->initrd_filename) {
             initrd_base = TARGET_PAGE_ALIGN(kernel_base + kernel_size + KERNEL_GAP);
             initrd_size = load_image_targphys(machine->initrd_filename,
                                               initrd_base,
-                                              machine->ram_size - initrd_base);
-            if (initrd_size < 0) {
-                error_report("could not load initial ram disk '%s'",
-                             machine->initrd_filename);
-                exit(1);
-            }
+                                              machine->ram_size - initrd_base,
+                                              &error_fatal);
             cmdline_base = TARGET_PAGE_ALIGN(initrd_base + initrd_size);
         } else {
             cmdline_base = TARGET_PAGE_ALIGN(kernel_base + kernel_size + KERNEL_GAP);
@@ -562,7 +556,7 @@ static int core99_kvm_type(MachineState *machine, const char *arg)
     return 2;
 }
 
-static void core99_machine_class_init(ObjectClass *oc, void *data)
+static void core99_machine_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     FWPathProviderClass *fwc = FW_PATH_PROVIDER_CLASS(oc);
@@ -630,8 +624,6 @@ static void core99_instance_init(Object *obj)
     object_property_set_description(obj, "via",
                                     "Set VIA configuration. "
                                     "Valid values are cuda, pmu and pmu-adb");
-
-    return;
 }
 
 static const TypeInfo core99_machine_info = {
@@ -640,7 +632,7 @@ static const TypeInfo core99_machine_info = {
     .class_init    = core99_machine_class_init,
     .instance_init = core99_instance_init,
     .instance_size = sizeof(Core99MachineState),
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_FW_PATH_PROVIDER },
         { }
     },

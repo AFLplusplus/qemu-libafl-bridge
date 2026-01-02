@@ -93,13 +93,16 @@
 #define ISR_RXRDY(CH) (((CH) & 1) ? BIT(5) : BIT(1))
 #define ISR_BREAK(CH) (((CH) & 1) ? BIT(6) : BIT(2))
 
-typedef struct IPOctalState IPOctalState;
+#define TYPE_IPOCTAL "ipoctal232"
+
+OBJECT_DECLARE_SIMPLE_TYPE(IPOctalState, IPOCTAL)
+
 typedef struct SCC2698Channel SCC2698Channel;
 typedef struct SCC2698Block SCC2698Block;
 
 struct SCC2698Channel {
     IPOctalState *ipoctal;
-    CharBackend dev;
+    CharFrontend dev;
     bool rx_enabled;
     uint8_t mr[2];
     uint8_t mr_idx;
@@ -121,10 +124,6 @@ struct IPOctalState {
     SCC2698Block blk[N_BLOCKS];
     uint8_t irq_vector;
 };
-
-#define TYPE_IPOCTAL "ipoctal232"
-
-OBJECT_DECLARE_SIMPLE_TYPE(IPOctalState, IPOCTAL)
 
 static const VMStateDescription vmstate_scc2698_channel = {
     .name = "scc2698_channel",
@@ -569,7 +568,7 @@ static const Property ipoctal_properties[] = {
     DEFINE_PROP_CHR("chardev7", IPOctalState, ch[7].dev),
 };
 
-static void ipoctal_class_init(ObjectClass *klass, void *data)
+static void ipoctal_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     IPackDeviceClass *ic = IPACK_DEVICE_CLASS(klass);

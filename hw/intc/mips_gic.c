@@ -14,7 +14,7 @@
 #include "qemu/module.h"
 #include "qapi/error.h"
 #include "hw/sysbus.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "system/kvm.h"
 #include "system/reset.h"
 #include "kvm_mips.h"
@@ -255,7 +255,6 @@ static void gic_write_vp(MIPSGICState *gic, uint32_t vp_index, hwaddr addr,
     return;
 bad_offset:
     qemu_log_mask(LOG_GUEST_ERROR, "Wrong GIC offset at 0x%" PRIx64 "\n", addr);
-    return;
 }
 
 static void gic_write(void *opaque, hwaddr addr, uint64_t data, unsigned size)
@@ -443,7 +442,7 @@ static const Property mips_gic_properties[] = {
     DEFINE_PROP_UINT32("num-irq", MIPSGICState, num_irq, 256),
 };
 
-static void mips_gic_class_init(ObjectClass *klass, void *data)
+static void mips_gic_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

@@ -10,13 +10,13 @@
  */
 
 #include "qemu/osdep.h"
+#include "exec/target_page.h"
 #include "hw/s390x/s390-virtio-ccw.h"
 #include "migration/qemu-file.h"
 #include "hw/s390x/storage-attributes.h"
 #include "qemu/error-report.h"
 #include "system/kvm.h"
 #include "system/memory_mapping.h"
-#include "exec/ram_addr.h"
 #include "kvm/kvm_s390x.h"
 #include "qapi/error.h"
 
@@ -185,10 +185,10 @@ static long long kvm_s390_stattrib_get_dirtycount(S390StAttribState *sa)
 
 static int kvm_s390_stattrib_get_active(S390StAttribState *sa)
 {
-    return kvm_s390_cmma_active() && sa->migration_enabled;
+    return kvm_s390_cmma_active();
 }
 
-static void kvm_s390_stattrib_class_init(ObjectClass *oc, void *data)
+static void kvm_s390_stattrib_class_init(ObjectClass *oc, const void *data)
 {
     S390StAttribClass *sac = S390_STATTRIB_CLASS(oc);
     DeviceClass *dc = DEVICE_CLASS(oc);

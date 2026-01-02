@@ -400,7 +400,7 @@ static void scsi_qdev_realize(DeviceState *qdev, Error **errp)
         return;
     }
     dev->vmsentry = qdev_add_vm_change_state_handler(DEVICE(dev),
-            scsi_dma_restart_cb, dev);
+            scsi_dma_restart_cb, NULL, dev);
 }
 
 static void scsi_qdev_unrealize(DeviceState *qdev)
@@ -823,7 +823,6 @@ SCSIRequest *scsi_req_alloc(const SCSIReqOps *reqops, SCSIDevice *d,
 {
     SCSIRequest *req;
     SCSIBus *bus = scsi_bus_from_device(d);
-    BusState *qbus = BUS(bus);
     const int memset_off = offsetof(SCSIRequest, sense)
                            + sizeof(req->sense);
 
@@ -838,8 +837,6 @@ SCSIRequest *scsi_req_alloc(const SCSIReqOps *reqops, SCSIDevice *d,
     req->status = -1;
     req->host_status = -1;
     req->ops = reqops;
-    object_ref(OBJECT(d));
-    object_ref(OBJECT(qbus->parent));
     notifier_list_init(&req->cancel_notifiers);
 
     if (reqops->init_req) {
@@ -1496,15 +1493,15 @@ void scsi_device_report_change(SCSIDevice *dev, SCSISense sense)
 
 SCSIRequest *scsi_req_ref(SCSIRequest *req)
 {
-    assert(req->refcount > 0);
-    req->refcount++;
+    assert(qatomic_read(&req->refcount) > 0);
+    qatomic_inc(&req->refcount);
     return req;
 }
 
 void scsi_req_unref(SCSIRequest *req)
 {
-    assert(req->refcount > 0);
-    if (--req->refcount == 0) {
+    assert(qatomic_read(&req->refcount) > 0);
+    if (qatomic_fetch_dec(&req->refcount) == 1) {
         BusState *qbus = req->dev->qdev.parent_bus;
         SCSIBus *bus = DO_UPCAST(SCSIBus, qbus, qbus);
 
@@ -1514,8 +1511,6 @@ void scsi_req_unref(SCSIRequest *req)
         if (req->ops->free_req) {
             req->ops->free_req(req);
         }
-        object_unref(OBJECT(req->dev));
-        object_unref(OBJECT(qbus->parent));
         g_free(req);
     }
 }
@@ -2001,7 +1996,7 @@ static const Property scsi_props[] = {
     DEFINE_PROP_UINT32("lun", SCSIDevice, lun, -1),
 };
 
-static void scsi_device_class_init(ObjectClass *klass, void *data)
+static void scsi_device_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *k = DEVICE_CLASS(klass);
     set_bit(DEVICE_CATEGORY_STORAGE, k->categories);
@@ -2030,7 +2025,7 @@ static const TypeInfo scsi_device_type_info = {
     .instance_init = scsi_dev_instance_init,
 };
 
-static void scsi_bus_class_init(ObjectClass *klass, void *data)
+static void scsi_bus_class_init(ObjectClass *klass, const void *data)
 {
     BusClass *k = BUS_CLASS(klass);
     HotplugHandlerClass *hc = HOTPLUG_HANDLER_CLASS(klass);
@@ -2046,7 +2041,7 @@ static const TypeInfo scsi_bus_info = {
     .parent = TYPE_BUS,
     .instance_size = sizeof(SCSIBus),
     .class_init = scsi_bus_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_HOTPLUG_HANDLER },
         { }
     }

@@ -48,7 +48,7 @@ yet, so sometimes the source code is all you have.
 * `accel <https://gitlab.com/qemu-project/qemu/-/tree/master/accel>`_:
   Infrastructure and architecture agnostic code related to the various
   `accelerators <Accelerators>` supported by QEMU
-  (TCG, KVM, hvf, whpx, xen, nvmm).
+  (TCG, KVM, hvf, whpx, xen, nvmm, mshv).
   Contains interfaces for operations that will be implemented per
   `target <https://gitlab.com/qemu-project/qemu/-/tree/master/target>`_.
 * `audio <https://gitlab.com/qemu-project/qemu/-/tree/master/audio>`_:
@@ -175,11 +175,6 @@ yet, so sometimes the source code is all you have.
 * `tests <https://gitlab.com/qemu-project/qemu/-/tree/master/tests>`_:
   QEMU `test <testing>` suite
 
-  - `avocado <https://gitlab.com/qemu-project/qemu/-/tree/master/tests/avocado>`_:
-    Functional tests booting full VM using `Avocado framework <checkavocado-ref>`.
-    Those tests will be transformed and moved into
-    `tests/functional <https://gitlab.com/qemu-project/qemu/-/tree/master/tests/functional>`_
-    in the future.
   - `data <https://gitlab.com/qemu-project/qemu/-/tree/master/tests/data>`_:
     Data for various tests.
   - `decode <https://gitlab.com/qemu-project/qemu/-/tree/master/tests/decode>`_:

@@ -20,7 +20,6 @@
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "cpu.h"
-#include "exec/exec-all.h"
 #include "exec/helper-proto.h"
 #include "qemu/timer.h"
 #include "system/runstate.h"
@@ -136,7 +135,7 @@ void HELPER(rfi_r)(CPUHPPAState *env)
  */
 void HELPER(diag_console_output)(CPUHPPAState *env)
 {
-    CharBackend *serial_backend;
+    CharFrontend *fe;
     Chardev *serial_port;
     unsigned char c;
 
@@ -146,14 +145,14 @@ void HELPER(diag_console_output)(CPUHPPAState *env)
         return;
     }
 
-    /* get serial_backend for the serial port */
-    serial_backend = serial_port->be;
-    if (!serial_backend ||
-        !qemu_chr_fe_backend_connected(serial_backend)) {
+    /* get the frontend for the serial port */
+    fe = serial_port->fe;
+    if (!fe ||
+        !qemu_chr_fe_backend_connected(fe)) {
         return;
     }
 
     c = (unsigned char)env->gr[26];
-    qemu_chr_fe_write(serial_backend, &c, sizeof(c));
+    qemu_chr_fe_write(fe, &c, sizeof(c));
 }
 #endif

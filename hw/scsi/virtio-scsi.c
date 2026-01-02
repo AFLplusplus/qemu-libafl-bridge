@@ -116,11 +116,7 @@ static void virtio_scsi_complete_req(VirtIOSCSIReq *req, QemuMutex *vq_lock)
     }
 
     virtqueue_push(vq, &req->elem, req->qsgl.size + req->resp_iov.size);
-    if (s->dataplane_started && !s->dataplane_fenced) {
-        virtio_notify_irqfd(vdev, vq);
-    } else {
-        virtio_notify(vdev, vq);
-    }
+    virtio_notify(vdev, vq);
 
     if (vq_lock) {
         qemu_mutex_unlock(vq_lock);
@@ -343,6 +339,7 @@ static void virtio_scsi_do_tmf_aio_context(void *opaque)
     SCSIDevice *d = virtio_scsi_device_get(s, tmf->req.tmf.lun);
     SCSIRequest *r;
     bool match_tag;
+    g_autoptr(GList) reqs = NULL;
 
     if (!d) {
         tmf->resp.tmf.response = VIRTIO_SCSI_S_BAD_TARGET;
@@ -378,8 +375,19 @@ static void virtio_scsi_do_tmf_aio_context(void *opaque)
             if (match_tag && cmd_req->req.cmd.tag != tmf->req.tmf.tag) {
                 continue;
             }
-            virtio_scsi_tmf_cancel_req(tmf, r);
+            /*
+             * Cannot cancel directly, because scsi_req_dequeue() would deadlock
+             * when attempting to acquire the request_lock a second time. Taking
+             * a reference here is paired with an unref after cancelling below.
+             */
+            scsi_req_ref(r);
+            reqs = g_list_prepend(reqs, r);
         }
+    }
+
+    for (GList *elem = g_list_first(reqs); elem; elem = g_list_next(elem)) {
+        virtio_scsi_tmf_cancel_req(tmf, elem->data);
+        scsi_req_unref(elem->data);
     }
 
     /* Incremented by virtio_scsi_do_tmf() */
@@ -1395,7 +1403,7 @@ static const VMStateDescription vmstate_virtio_scsi = {
     },
 };
 
-static void virtio_scsi_common_class_init(ObjectClass *klass, void *data)
+static void virtio_scsi_common_class_init(ObjectClass *klass, const void *data)
 {
     VirtioDeviceClass *vdc = VIRTIO_DEVICE_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -1404,7 +1412,7 @@ static void virtio_scsi_common_class_init(ObjectClass *klass, void *data)
     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
 }
 
-static void virtio_scsi_class_init(ObjectClass *klass, void *data)
+static void virtio_scsi_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     VirtioDeviceClass *vdc = VIRTIO_DEVICE_CLASS(klass);
@@ -1438,7 +1446,7 @@ static const TypeInfo virtio_scsi_info = {
     .parent = TYPE_VIRTIO_SCSI_COMMON,
     .instance_size = sizeof(VirtIOSCSI),
     .class_init = virtio_scsi_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_HOTPLUG_HANDLER },
         { }
     }

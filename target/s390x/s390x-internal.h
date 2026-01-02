@@ -238,7 +238,8 @@ uint32_t calc_cc(CPUS390XState *env, uint32_t cc_op, uint64_t src, uint64_t dst,
 
 /* cpu.c */
 #ifndef CONFIG_USER_ONLY
-unsigned int s390_cpu_halt(S390CPU *cpu);
+unsigned int s390_count_running_cpus(void);
+void s390_cpu_halt(S390CPU *cpu);
 void s390_cpu_unhalt(S390CPU *cpu);
 void s390_cpu_system_init(Object *obj);
 bool s390_cpu_system_realize(DeviceState *dev, Error **errp);
@@ -246,16 +247,6 @@ void s390_cpu_finalize(Object *obj);
 void s390_cpu_system_class_init(CPUClass *cc);
 void s390_cpu_machine_reset_cb(void *opaque);
 bool s390_cpu_has_work(CPUState *cs);
-
-#else
-static inline unsigned int s390_cpu_halt(S390CPU *cpu)
-{
-    return 0;
-}
-
-static inline void s390_cpu_unhalt(S390CPU *cpu)
-{
-}
 #endif /* CONFIG_USER_ONLY */
 
 
@@ -332,11 +323,8 @@ void s390x_cpu_timer(void *opaque);
 void s390_handle_wait(S390CPU *cpu);
 hwaddr s390_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
 hwaddr s390_cpu_get_phys_addr_debug(CPUState *cpu, vaddr addr);
-#define S390_STORE_STATUS_DEF_ADDR offsetof(LowCore, floating_pt_save_area)
-int s390_store_status(S390CPU *cpu, hwaddr addr, bool store_arch);
-int s390_store_adtl_status(S390CPU *cpu, hwaddr addr, hwaddr len);
 LowCore *cpu_map_lowcore(CPUS390XState *env);
-void cpu_unmap_lowcore(LowCore *lowcore);
+void cpu_unmap_lowcore(CPUS390XState *env, LowCore *lowcore);
 #endif /* CONFIG_USER_ONLY */
 
 

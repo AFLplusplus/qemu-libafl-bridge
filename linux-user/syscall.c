@@ -26,8 +26,7 @@
 #include "tcg/startup.h"
 #include "target_mman.h"
 #include "exec/page-protection.h"
-#include "exec/tb-flush.h"
-#include "exec/translation-block.h"
+#include "exec/mmap-lock.h"
 #include <elf.h>
 #include <endian.h>
 #include <grp.h>
@@ -3592,7 +3591,7 @@ static abi_long do_sendto(int fd, abi_ulong msg, size_t len, int flags,
                           abi_ulong target_addr, socklen_t addrlen)
 {
     void *addr;
-    void *host_msg;
+    void *host_msg = NULL;
     void *copy_msg = NULL;
     abi_long ret;
 
@@ -3600,16 +3599,19 @@ static abi_long do_sendto(int fd, abi_ulong msg, size_t len, int flags,
         return -TARGET_EINVAL;
     }
 
-    host_msg = lock_user(VERIFY_READ, msg, len, 1);
-    if (!host_msg)
-        return -TARGET_EFAULT;
-    if (fd_trans_target_to_host_data(fd)) {
-        copy_msg = host_msg;
-        host_msg = g_malloc(len);
-        memcpy(host_msg, copy_msg, len);
-        ret = fd_trans_target_to_host_data(fd)(host_msg, len);
-        if (ret < 0) {
-            goto fail;
+    if (len != 0) {
+        host_msg = lock_user(VERIFY_READ, msg, len, 1);
+        if (!host_msg) {
+            return -TARGET_EFAULT;
+        }
+        if (fd_trans_target_to_host_data(fd)) {
+            copy_msg = host_msg;
+            host_msg = g_malloc(len);
+            memcpy(host_msg, copy_msg, len);
+            ret = fd_trans_target_to_host_data(fd)(host_msg, len);
+            if (ret < 0) {
+                goto fail;
+            }
         }
     }
     if (target_addr) {
@@ -6353,12 +6355,27 @@ abi_long do_arch_prctl(CPUX86State *env, int code, abi_ulong addr)
 #endif
 #ifndef PR_SET_SYSCALL_USER_DISPATCH
 # define PR_SET_SYSCALL_USER_DISPATCH 59
+# define PR_SYS_DISPATCH_OFF 0
+# define PR_SYS_DISPATCH_ON 1
+# define SYSCALL_DISPATCH_FILTER_ALLOW 0
+# define SYSCALL_DISPATCH_FILTER_BLOCK 1
 #endif
 #ifndef PR_SME_SET_VL
 # define PR_SME_SET_VL  63
 # define PR_SME_GET_VL  64
 # define PR_SME_VL_LEN_MASK  0xffff
 # define PR_SME_VL_INHERIT   (1 << 17)
+#endif
+#ifndef PR_GET_SHADOW_STACK_STATUS
+# define PR_GET_SHADOW_STACK_STATUS  74
+# define PR_SET_SHADOW_STACK_STATUS  75
+# define PR_LOCK_SHADOW_STACK_STATUS 76
+#endif
+#ifndef SHADOW_STACK_SET_TOKEN
+# define SHADOW_STACK_SET_TOKEN  (1u << 0)
+#endif
+#ifndef SHADOW_STACK_SET_MARKER
+# define SHADOW_STACK_SET_MARKER (1u << 1)
 #endif
 
 #include "target_prctl.h"
@@ -6406,6 +6423,45 @@ static abi_long do_prctl_inval1(CPUArchState *env, abi_long arg2)
 #ifndef do_prctl_sme_set_vl
 #define do_prctl_sme_set_vl do_prctl_inval1
 #endif
+#ifndef do_prctl_get_shadow_stack_status
+#define do_prctl_get_shadow_stack_status do_prctl_inval1
+#endif
+#ifndef do_prctl_set_shadow_stack_status
+#define do_prctl_set_shadow_stack_status do_prctl_inval1
+#endif
+#ifndef do_prctl_lock_shadow_stack_status
+#define do_prctl_lock_shadow_stack_status do_prctl_inval1
+#endif
+
+static abi_long do_prctl_syscall_user_dispatch(CPUArchState *env,
+                                               abi_ulong arg2, abi_ulong arg3,
+                                               abi_ulong arg4, abi_ulong arg5)
+{
+    CPUState *cpu = env_cpu(env);
+    TaskState *ts = get_task_state(cpu);
+
+    switch (arg2) {
+    case PR_SYS_DISPATCH_OFF:
+        if (arg3 || arg4 || arg5) {
+            return -TARGET_EINVAL;
+        }
+        ts->sys_dispatch_len = -1;
+        return 0;
+    case PR_SYS_DISPATCH_ON:
+        if (arg3 && arg3 + arg4 <= arg3) {
+            return -TARGET_EINVAL;
+        }
+        if (arg5 && !access_ok(cpu, VERIFY_READ, arg5, 1)) {
+            return -TARGET_EFAULT;
+        }
+        ts->sys_dispatch = arg3;
+        ts->sys_dispatch_len = arg4;
+        ts->sys_dispatch_selector = arg5;
+        return 0;
+    default:
+        return -TARGET_EINVAL;
+    }
+}
 
 static abi_long do_prctl(CPUArchState *env, abi_long option, abi_long arg2,
                          abi_long arg3, abi_long arg4, abi_long arg5)
@@ -6476,11 +6532,29 @@ static abi_long do_prctl(CPUArchState *env, abi_long option, abi_long arg2,
             return -TARGET_EINVAL;
         }
         return do_prctl_get_tagged_addr_ctrl(env);
+    case PR_GET_SHADOW_STACK_STATUS:
+        if (arg3 || arg4 || arg5) {
+            return -TARGET_EINVAL;
+        }
+        return do_prctl_get_shadow_stack_status(env, arg2);
+    case PR_SET_SHADOW_STACK_STATUS:
+        if (arg3 || arg4 || arg5) {
+            return -TARGET_EINVAL;
+        }
+        return do_prctl_set_shadow_stack_status(env, arg2);
+    case PR_LOCK_SHADOW_STACK_STATUS:
+        if (arg3 || arg4 || arg5) {
+            return -TARGET_EINVAL;
+        }
+        return do_prctl_lock_shadow_stack_status(env, arg2);
 
     case PR_GET_UNALIGN:
         return do_prctl_get_unalign(env, arg2);
     case PR_SET_UNALIGN:
         return do_prctl_set_unalign(env, arg2);
+
+    case PR_SET_SYSCALL_USER_DISPATCH:
+        return do_prctl_syscall_user_dispatch(env, arg2, arg3, arg4, arg5);
 
     case PR_CAP_AMBIENT:
     case PR_CAPBSET_READ:
@@ -6536,7 +6610,6 @@ static abi_long do_prctl(CPUArchState *env, abi_long option, abi_long arg2,
     case PR_SET_MM:
     case PR_GET_SECCOMP:
     case PR_SET_SECCOMP:
-    case PR_SET_SYSCALL_USER_DISPATCH:
     case PR_GET_THP_DISABLE:
     case PR_SET_THP_DISABLE:
     case PR_GET_TSC:
@@ -6550,6 +6623,54 @@ static abi_long do_prctl(CPUArchState *env, abi_long option, abi_long arg2,
         return -TARGET_EINVAL;
     }
 }
+
+#ifdef TARGET_AARCH64
+static abi_long do_map_shadow_stack(CPUArchState *env, abi_ulong addr,
+                                    abi_ulong size, abi_int flags)
+{
+    ARMCPU *cpu = env_archcpu(env);
+    abi_ulong alloc_size;
+
+    if (!cpu_isar_feature(aa64_gcs, cpu)) {
+        return -TARGET_EOPNOTSUPP;
+    }
+    if (flags & ~(SHADOW_STACK_SET_TOKEN | SHADOW_STACK_SET_MARKER)) {
+        return -TARGET_EINVAL;
+    }
+    if (addr & ~TARGET_PAGE_MASK) {
+        return -TARGET_EINVAL;
+    }
+    if (size == 8 || !QEMU_IS_ALIGNED(size, 8)) {
+        return -TARGET_EINVAL;
+    }
+
+    alloc_size = TARGET_PAGE_ALIGN(size);
+    if (alloc_size < size) {
+        return -TARGET_EOVERFLOW;
+    }
+
+    mmap_lock();
+    addr = gcs_alloc(addr, alloc_size);
+    if (addr != -1) {
+        if (flags & SHADOW_STACK_SET_TOKEN) {
+            abi_ptr cap_ptr = addr + size - 8;
+            uint64_t cap_val;
+
+            if (flags & SHADOW_STACK_SET_MARKER) {
+                /* Leave an extra empty frame at top-of-stack. */
+                cap_ptr -= 8;
+            }
+            cap_val = (cap_ptr & TARGET_PAGE_MASK) | 1;
+            if (put_user_u64(cap_val, cap_ptr)) {
+                /* Allocation succeeded above. */
+                g_assert_not_reached();
+            }
+        }
+    }
+    mmap_unlock();
+    return get_errno(addr);
+}
+#endif
 
 #define NEW_STACK_SIZE 0x40000
 
@@ -6641,6 +6762,21 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         ts = g_new0(TaskState, 1);
         init_task_state(ts);
 
+#ifdef TARGET_AARCH64
+        /*
+         * If GCS is enabled in the parent thread, it is also enabled
+         * in the child thread, but with a newly allocated stack.
+         */
+        abi_long new_gcspr = 0;
+        if (env->cp15.gcscr_el[0] & GCSCR_PCRSEL) {
+            new_gcspr = gcs_new_stack(ts);
+            if (new_gcspr == -1) {
+                g_free(ts);
+                return -TARGET_ENOMEM;
+            }
+        }
+#endif
+
         /* Grab a mutex so that thread setup appears atomic.  */
         pthread_mutex_lock(&clone_lock);
 
@@ -6649,10 +6785,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
          * generate code for parallel execution and flush old translations.
          * Do this now so that the copy gets CF_PARALLEL too.
          */
-        if (!tcg_cflags_has(cpu, CF_PARALLEL)) {
-            tcg_cflags_set(cpu, CF_PARALLEL);
-            tb_flush(cpu);
-        }
+        begin_parallel_context(cpu);
 
         /* we create a new CPU instance. */
         new_env = cpu_copy(env);
@@ -6664,6 +6797,11 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         ts->bprm = parent_ts->bprm;
         ts->info = parent_ts->info;
         ts->signal_mask = parent_ts->signal_mask;
+
+#ifdef TARGET_AARCH64
+        ts->gcs_el0_locked = parent_ts->gcs_el0_locked;
+        new_env->cp15.gcspr_el[0] = new_gcspr;
+#endif
 
         if (flags & CLONE_CHILD_CLEARTID) {
             ts->child_tidptr = child_tidptr;
@@ -8156,8 +8294,8 @@ static void open_self_maps_4(const struct open_self_maps_data *d,
  * Callback for walk_memory_regions, when read_self_maps() fails.
  * Proceed without the benefit of host /proc/self/maps cross-check.
  */
-static int open_self_maps_3(void *opaque, target_ulong guest_start,
-                            target_ulong guest_end, unsigned long flags)
+static int open_self_maps_3(void *opaque, vaddr guest_start,
+                            vaddr guest_end, int flags)
 {
     static const MapInfo mi = { .is_priv = true };
 
@@ -8168,8 +8306,8 @@ static int open_self_maps_3(void *opaque, target_ulong guest_start,
 /*
  * Callback for walk_memory_regions, when read_self_maps() succeeds.
  */
-static int open_self_maps_2(void *opaque, target_ulong guest_start,
-                            target_ulong guest_end, unsigned long flags)
+static int open_self_maps_2(void *opaque, vaddr guest_start,
+                            vaddr guest_end, int flags)
 {
     const struct open_self_maps_data *d = opaque;
     uintptr_t host_start = (uintptr_t)g2h_untagged(guest_start);
@@ -8256,6 +8394,9 @@ static int open_self_stat(CPUArchState *cpu_env, int fd)
         } else if (i == 3) {
             /* ppid */
             g_string_printf(buf, FMT_pid " ", getppid());
+        } else if (i == 4) {
+            /* pgid */
+            g_string_printf(buf, FMT_pid " ", getpgrp());
         } else if (i == 19) {
             /* num_threads */
             int cpus = 0;
@@ -9007,6 +9148,29 @@ static int do_getdents64(abi_long dirfd, abi_long arg2, abi_long count)
 #define     RISCV_HWPROBE_EXT_ZTSO          (1ULL << 33)
 #define     RISCV_HWPROBE_EXT_ZACAS         (1ULL << 34)
 #define     RISCV_HWPROBE_EXT_ZICOND        (1ULL << 35)
+#define     RISCV_HWPROBE_EXT_ZIHINTPAUSE   (1ULL << 36)
+#define     RISCV_HWPROBE_EXT_ZVE32X        (1ULL << 37)
+#define     RISCV_HWPROBE_EXT_ZVE32F        (1ULL << 38)
+#define     RISCV_HWPROBE_EXT_ZVE64X        (1ULL << 39)
+#define     RISCV_HWPROBE_EXT_ZVE64F        (1ULL << 40)
+#define     RISCV_HWPROBE_EXT_ZVE64D        (1ULL << 41)
+#define     RISCV_HWPROBE_EXT_ZIMOP         (1ULL << 42)
+#define     RISCV_HWPROBE_EXT_ZCA           (1ULL << 43)
+#define     RISCV_HWPROBE_EXT_ZCB           (1ULL << 44)
+#define     RISCV_HWPROBE_EXT_ZCD           (1ULL << 45)
+#define     RISCV_HWPROBE_EXT_ZCF           (1ULL << 46)
+#define     RISCV_HWPROBE_EXT_ZCMOP         (1ULL << 47)
+#define     RISCV_HWPROBE_EXT_ZAWRS         (1ULL << 48)
+#define     RISCV_HWPROBE_EXT_SUPM          (1ULL << 49)
+#define     RISCV_HWPROBE_EXT_ZICNTR        (1ULL << 50)
+#define     RISCV_HWPROBE_EXT_ZIHPM         (1ULL << 51)
+#define     RISCV_HWPROBE_EXT_ZFBFMIN       (1ULL << 52)
+#define     RISCV_HWPROBE_EXT_ZVFBFMIN      (1ULL << 53)
+#define     RISCV_HWPROBE_EXT_ZVFBFWMA      (1ULL << 54)
+#define     RISCV_HWPROBE_EXT_ZICBOM        (1ULL << 55)
+#define     RISCV_HWPROBE_EXT_ZAAMO         (1ULL << 56)
+#define     RISCV_HWPROBE_EXT_ZALRSC        (1ULL << 57)
+#define     RISCV_HWPROBE_EXT_ZABHA         (1ULL << 58)
 
 #define RISCV_HWPROBE_KEY_CPUPERF_0     5
 #define     RISCV_HWPROBE_MISALIGNED_UNKNOWN     (0 << 0)
@@ -9017,6 +9181,22 @@ static int do_getdents64(abi_long dirfd, abi_long arg2, abi_long count)
 #define     RISCV_HWPROBE_MISALIGNED_MASK        (7 << 0)
 
 #define RISCV_HWPROBE_KEY_ZICBOZ_BLOCK_SIZE 6
+#define RISCV_HWPROBE_KEY_HIGHEST_VIRT_ADDRESS 7
+#define RISCV_HWPROBE_KEY_TIME_CSR_FREQ 8
+#define RISCV_HWPROBE_KEY_MISALIGNED_SCALAR_PERF        9
+#define     RISCV_HWPROBE_MISALIGNED_SCALAR_UNKNOWN     0
+#define     RISCV_HWPROBE_MISALIGNED_SCALAR_EMULATED    1
+#define     RISCV_HWPROBE_MISALIGNED_SCALAR_SLOW        2
+#define     RISCV_HWPROBE_MISALIGNED_SCALAR_FAST        3
+#define     RISCV_HWPROBE_MISALIGNED_SCALAR_UNSUPPORTED 4
+#define RISCV_HWPROBE_KEY_MISALIGNED_VECTOR_PERF 10
+#define     RISCV_HWPROBE_MISALIGNED_VECTOR_UNKNOWN     0
+#define     RISCV_HWPROBE_MISALIGNED_VECTOR_SLOW        2
+#define     RISCV_HWPROBE_MISALIGNED_VECTOR_FAST        3
+#define     RISCV_HWPROBE_MISALIGNED_VECTOR_UNSUPPORTED 4
+#define RISCV_HWPROBE_KEY_VENDOR_EXT_THEAD_0     11
+#define RISCV_HWPROBE_KEY_ZICBOM_BLOCK_SIZE      12
+#define RISCV_HWPROBE_KEY_VENDOR_EXT_SIFIVE_0    13
 
 struct riscv_hwprobe {
     abi_llong  key;
@@ -9125,6 +9305,52 @@ static void risc_hwprobe_fill_pairs(CPURISCVState *env,
                      RISCV_HWPROBE_EXT_ZACAS : 0;
             value |= cfg->ext_zicond ?
                      RISCV_HWPROBE_EXT_ZICOND : 0;
+            value |= cfg->ext_zihintpause ?
+                     RISCV_HWPROBE_EXT_ZIHINTPAUSE : 0;
+            value |= cfg->ext_zve32x ?
+                     RISCV_HWPROBE_EXT_ZVE32X : 0;
+            value |= cfg->ext_zve32f ?
+                     RISCV_HWPROBE_EXT_ZVE32F : 0;
+            value |= cfg->ext_zve64x ?
+                     RISCV_HWPROBE_EXT_ZVE64X : 0;
+            value |= cfg->ext_zve64f ?
+                     RISCV_HWPROBE_EXT_ZVE64F : 0;
+            value |= cfg->ext_zve64d ?
+                     RISCV_HWPROBE_EXT_ZVE64D : 0;
+            value |= cfg->ext_zimop ?
+                     RISCV_HWPROBE_EXT_ZIMOP : 0;
+            value |= cfg->ext_zca ?
+                     RISCV_HWPROBE_EXT_ZCA : 0;
+            value |= cfg->ext_zcb ?
+                     RISCV_HWPROBE_EXT_ZCB : 0;
+            value |= cfg->ext_zcd ?
+                     RISCV_HWPROBE_EXT_ZCD : 0;
+            value |= cfg->ext_zcf ?
+                     RISCV_HWPROBE_EXT_ZCF : 0;
+            value |= cfg->ext_zcmop ?
+                     RISCV_HWPROBE_EXT_ZCMOP : 0;
+            value |= cfg->ext_zawrs ?
+                     RISCV_HWPROBE_EXT_ZAWRS : 0;
+            value |= cfg->ext_supm ?
+                     RISCV_HWPROBE_EXT_SUPM : 0;
+            value |= cfg->ext_zicntr ?
+                     RISCV_HWPROBE_EXT_ZICNTR : 0;
+            value |= cfg->ext_zihpm ?
+                     RISCV_HWPROBE_EXT_ZIHPM : 0;
+            value |= cfg->ext_zfbfmin ?
+                     RISCV_HWPROBE_EXT_ZFBFMIN : 0;
+            value |= cfg->ext_zvfbfmin ?
+                     RISCV_HWPROBE_EXT_ZVFBFMIN : 0;
+            value |= cfg->ext_zvfbfwma ?
+                     RISCV_HWPROBE_EXT_ZVFBFWMA : 0;
+            value |= cfg->ext_zicbom ?
+                     RISCV_HWPROBE_EXT_ZICBOM : 0;
+            value |= cfg->ext_zaamo ?
+                     RISCV_HWPROBE_EXT_ZAAMO : 0;
+            value |= cfg->ext_zalrsc ?
+                     RISCV_HWPROBE_EXT_ZALRSC : 0;
+            value |= cfg->ext_zabha ?
+                     RISCV_HWPROBE_EXT_ZABHA : 0;
             __put_user(value, &pair->value);
             break;
         case RISCV_HWPROBE_KEY_CPUPERF_0:
@@ -9132,6 +9358,10 @@ static void risc_hwprobe_fill_pairs(CPURISCVState *env,
             break;
         case RISCV_HWPROBE_KEY_ZICBOZ_BLOCK_SIZE:
             value = cfg->ext_zicboz ? cfg->cboz_blocksize : 0;
+            __put_user(value, &pair->value);
+            break;
+        case RISCV_HWPROBE_KEY_ZICBOM_BLOCK_SIZE:
+            value = cfg->ext_zicbom ? cfg->cbom_blocksize : 0;
             __put_user(value, &pair->value);
             break;
         default:
@@ -9274,6 +9504,12 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
                 do_sys_futex(g2h(cpu, ts->child_tidptr),
                              FUTEX_WAKE, INT_MAX, NULL, NULL, 0);
             }
+
+#ifdef TARGET_AARCH64
+            if (ts->gcs_base) {
+                target_munmap(ts->gcs_base, ts->gcs_size);
+            }
+#endif
 
             object_unparent(OBJECT(cpu));
             object_unref(OBJECT(cpu));
@@ -13905,11 +14141,49 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
         return do_riscv_hwprobe(cpu_env, arg1, arg2, arg3, arg4, arg5);
 #endif
 
+#ifdef TARGET_AARCH64
+    case TARGET_NR_map_shadow_stack:
+        return do_map_shadow_stack(cpu_env, arg1, arg2, arg3);
+#endif
+
     default:
         qemu_log_mask(LOG_UNIMP, "Unsupported syscall: %d\n", num);
         return -TARGET_ENOSYS;
     }
     return ret;
+}
+
+static bool sys_dispatch(CPUState *cpu, TaskState *ts)
+{
+    abi_ptr pc;
+
+    if (likely(ts->sys_dispatch_len == -1)) {
+        return false;
+    }
+
+    pc = cpu->cc->get_pc(cpu);
+    if (likely(pc - ts->sys_dispatch < ts->sys_dispatch_len)) {
+        return false;
+    }
+    if (unlikely(is_vdso_sigreturn(pc))) {
+        return false;
+    }
+    if (likely(ts->sys_dispatch_selector)) {
+        uint8_t sb;
+        if (get_user_u8(sb, ts->sys_dispatch_selector)) {
+            force_sig(TARGET_SIGSEGV);
+            return true;
+        }
+        if (likely(sb == SYSCALL_DISPATCH_FILTER_ALLOW)) {
+            return false;
+        }
+        if (unlikely(sb != SYSCALL_DISPATCH_FILTER_BLOCK)) {
+            force_sig(TARGET_SIGSYS);
+            return true;
+        }
+    }
+    force_sig_fault(TARGET_SIGSYS, TARGET_SYS_USER_DISPATCH, pc);
+    return true;
 }
 
 //// --- Begin LibAFL code ---
@@ -13974,6 +14248,7 @@ abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
                     abi_long arg8)
 {
     CPUState *cpu = env_cpu(cpu_env);
+    TaskState *ts = get_task_state(cpu);
     abi_long ret;
 
 #ifdef DEBUG_ERESTARTSYS
@@ -13989,6 +14264,10 @@ abi_long do_syscall(CPUArchState *cpu_env, int num, abi_long arg1,
         }
     }
 #endif
+
+    if (sys_dispatch(cpu, ts)) {
+        return -QEMU_ESIGRETURN;
+    }
 
     record_syscall_start(cpu, num, arg1,
                          arg2, arg3, arg4, arg5, arg6, arg7, arg8);

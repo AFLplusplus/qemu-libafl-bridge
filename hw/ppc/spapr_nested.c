@@ -1,7 +1,7 @@
 #include "qemu/osdep.h"
 #include "qemu/cutils.h"
-#include "exec/exec-all.h"
 #include "exec/cputlb.h"
+#include "exec/target_long.h"
 #include "helper_regs.h"
 #include "hw/ppc/ppc.h"
 #include "hw/ppc/spapr.h"
@@ -1735,7 +1735,6 @@ static void exit_process_output_buffer(SpaprMachineState *spapr,
     getset_state(spapr, guest, vcpuid, &gsr);
 
     address_space_unmap(CPU(cpu)->as, gsb, len, true, len);
-    return;
 }
 
 static

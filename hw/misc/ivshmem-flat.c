@@ -17,7 +17,7 @@
 #include "hw/qdev-properties-system.h"
 #include "hw/sysbus.h"
 #include "chardev/char-fe.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "trace.h"
 
 #include "hw/misc/ivshmem-flat.h"
@@ -138,6 +138,8 @@ static void ivshmem_flat_remove_peer(IvshmemFTState *s, uint16_t peer_id)
 static void ivshmem_flat_add_vector(IvshmemFTState *s, IvshmemPeer *peer,
                                     int vector_fd)
 {
+    Error *err = NULL;
+
     if (peer->vector_counter >= IVSHMEM_MAX_VECTOR_NUM) {
         trace_ivshmem_flat_add_vector_failure(peer->vector_counter,
                                               vector_fd, peer->id);
@@ -154,7 +156,10 @@ static void ivshmem_flat_add_vector(IvshmemFTState *s, IvshmemPeer *peer,
      * peer.
      */
     peer->vector[peer->vector_counter].id = peer->vector_counter;
-    g_unix_set_fd_nonblocking(vector_fd, true, NULL);
+    if (!qemu_set_blocking(vector_fd, false, &err)) {
+        /* FIXME handle the error */
+        warn_report_err(err);
+    }
     event_notifier_init_fd(&peer->vector[peer->vector_counter].event_notifier,
                            vector_fd);
 
@@ -289,8 +294,6 @@ static void ivshmem_flat_iomem_write(void *opaque, hwaddr offset,
         trace_ivshmem_flat_read_write_mmr_invalid(offset);
         break;
     }
-
-    return;
 }
 
 static const MemoryRegionOps ivshmem_flat_ops = {
@@ -364,7 +367,7 @@ static bool ivshmem_flat_connect_server(DeviceState *dev, Error **errp)
      *
      *  ivshmem_flat_recv_msg() calls return 'msg' and 'fd'.
      *
-     *  See ./docs/specs/ivshmem-spec.txt for details on the protocol.
+     *  See docs/specs/ivshmem-spec.rst for details on the protocol.
      */
 
     /* Step 0 */
@@ -433,7 +436,7 @@ static const Property ivshmem_flat_props[] = {
     DEFINE_PROP_UINT32("shmem-size", IvshmemFTState, shmem_size, 4 * MiB),
 };
 
-static void ivshmem_flat_class_init(ObjectClass *klass, void *data)
+static void ivshmem_flat_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

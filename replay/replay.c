@@ -11,7 +11,7 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "system/cpu-timers.h"
+#include "exec/icount.h"
 #include "system/replay.h"
 #include "system/runstate.h"
 #include "replay-internal.h"
@@ -263,6 +263,8 @@ bool replay_has_interrupt(void)
 
 void replay_shutdown_request(ShutdownCause cause)
 {
+    replay_save_instructions();
+
     if (replay_mode == REPLAY_MODE_RECORD) {
         g_assert(replay_mutex_locked());
         replay_put_event(EVENT_SHUTDOWN + cause);

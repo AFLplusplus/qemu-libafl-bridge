@@ -26,7 +26,6 @@
 #include "qemu/host-utils.h"
 #include "qemu/module.h"
 #include "qom/object.h"
-#include "exec/exec-all.h"
 #include "trace.h"
 
 #include "riscv-iommu.h"
@@ -52,12 +51,6 @@ struct RISCVIOMMUStateSys {
     MemoryRegion msix_pba_mmio;
     uint8_t *msix_table;
     uint8_t *msix_pba;
-};
-
-struct RISCVIOMMUSysClass {
-    /*< public >*/
-    DeviceRealize parent_realize;
-    ResettablePhases parent_phases;
 };
 
 static uint64_t msix_table_mmio_read(void *opaque, hwaddr addr,
@@ -227,7 +220,7 @@ static void riscv_iommu_sys_reset_hold(Object *obj, ResetType type)
     trace_riscv_iommu_sys_reset_hold(type);
 }
 
-static void riscv_iommu_sys_class_init(ObjectClass *klass, void *data)
+static void riscv_iommu_sys_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     ResettableClass *rc = RESETTABLE_CLASS(klass);

@@ -49,6 +49,7 @@
 #include "system/qtest.h"
 #include "system/reset.h"
 #include "system/runstate.h"
+#include "system/system.h"
 #include "qemu/error-report.h"
 
 #define PM_CNTL_MODE          0x10
@@ -370,7 +371,7 @@ static uint64_t load_kernel(CPUMIPSState *env)
     initrd_size = 0;
     initrd_offset = 0;
     if (loaderparams.initrd_filename) {
-        initrd_size = get_image_size(loaderparams.initrd_filename);
+        initrd_size = get_image_size(loaderparams.initrd_filename, NULL);
         if (initrd_size > 0) {
             initrd_offset = MAX(loader_memmap[LOADER_INITRD].base,
                                 ROUND_UP(kernel_high, INITRD_PAGE_SIZE));
@@ -382,8 +383,9 @@ static uint64_t load_kernel(CPUMIPSState *env)
             }
 
             initrd_size = load_image_targphys(loaderparams.initrd_filename,
-                                              initrd_offset,
-                                              loaderparams.ram_size - initrd_offset);
+                                        initrd_offset,
+                                        loaderparams.ram_size - initrd_offset,
+                                        NULL);
         }
 
         if (initrd_size == (target_ulong) -1) {
@@ -649,7 +651,8 @@ static void mips_loongson3_virt_init(MachineState *machine)
         if (filename) {
             bios_size = load_image_targphys(filename,
                                             virt_memmap[VIRT_BIOS_ROM].base,
-                                            virt_memmap[VIRT_BIOS_ROM].size);
+                                            virt_memmap[VIRT_BIOS_ROM].size,
+                                            NULL);
             g_free(filename);
         } else {
             bios_size = -1;
@@ -667,7 +670,7 @@ static void mips_loongson3_virt_init(MachineState *machine)
     loongson3_virt_devices_init(machine, liointc);
 }
 
-static void loongson3v_machine_class_init(ObjectClass *oc, void *data)
+static void loongson3v_machine_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 

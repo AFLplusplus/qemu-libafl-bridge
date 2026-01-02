@@ -726,7 +726,7 @@ fail:
 }
 
 static int coroutine_fn GRAPH_RDLOCK
-vpc_co_block_status(BlockDriverState *bs, bool want_zero,
+vpc_co_block_status(BlockDriverState *bs, unsigned int mode,
                     int64_t offset, int64_t bytes,
                     int64_t *pnum, int64_t *map,
                     BlockDriverState **file)
@@ -1118,7 +1118,7 @@ vpc_co_create_opts(BlockDriver *drv, const char *filename,
     }
 
     /* Create and open the file (protocol layer) */
-    ret = bdrv_co_create_file(filename, opts, errp);
+    ret = bdrv_co_create_file(filename, opts, true, errp);
     if (ret < 0) {
         goto fail;
     }

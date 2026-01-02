@@ -154,7 +154,7 @@ struct Exynos4210UartState {
     QEMUTimer *fifo_timeout_timer;
     uint64_t wordtime;        /* word time in ns */
 
-    CharBackend       chr;
+    CharFrontend       chr;
     qemu_irq          irq;
     qemu_irq          dmairq;
 
@@ -711,7 +711,7 @@ static const Property exynos4210_uart_properties[] = {
     DEFINE_PROP_UINT32("tx-size", Exynos4210UartState, tx.size, 16),
 };
 
-static void exynos4210_uart_class_init(ObjectClass *klass, void *data)
+static void exynos4210_uart_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

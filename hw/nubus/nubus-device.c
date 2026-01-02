@@ -68,7 +68,7 @@ static void nubus_device_realize(DeviceState *dev, Error **errp)
             path = g_strdup(nd->romfile);
         }
 
-        size = get_image_size(path);
+        size = get_image_size(path, NULL);
         if (size < 0) {
             error_setg(errp, "failed to find romfile \"%s\"", nd->romfile);
             g_free(path);
@@ -112,7 +112,7 @@ static const Property nubus_device_properties[] = {
     DEFINE_PROP_STRING("romfile", NubusDevice, romfile),
 };
 
-static void nubus_device_class_init(ObjectClass *oc, void *data)
+static void nubus_device_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 

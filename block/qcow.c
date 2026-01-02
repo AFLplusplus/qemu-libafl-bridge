@@ -530,7 +530,7 @@ get_cluster_offset(BlockDriverState *bs, uint64_t offset, int allocate,
 }
 
 static int coroutine_fn GRAPH_RDLOCK
-qcow_co_block_status(BlockDriverState *bs, bool want_zero,
+qcow_co_block_status(BlockDriverState *bs, unsigned int mode,
                      int64_t offset, int64_t bytes, int64_t *pnum,
                      int64_t *map, BlockDriverState **file)
 {
@@ -978,7 +978,7 @@ qcow_co_create_opts(BlockDriver *drv, const char *filename,
     }
 
     /* Create and open the file (protocol layer) */
-    ret = bdrv_co_create_file(filename, opts, errp);
+    ret = bdrv_co_create_file(filename, opts, true, errp);
     if (ret < 0) {
         goto fail;
     }
@@ -1184,11 +1184,11 @@ static const char *const qcow_strong_runtime_opts[] = {
 };
 
 static BlockDriver bdrv_qcow = {
-    .format_name	= "qcow",
-    .instance_size	= sizeof(BDRVQcowState),
-    .bdrv_probe		= qcow_probe,
-    .bdrv_open		= qcow_open,
-    .bdrv_close		= qcow_close,
+    .format_name            = "qcow",
+    .instance_size          = sizeof(BDRVQcowState),
+    .bdrv_probe             = qcow_probe,
+    .bdrv_open              = qcow_open,
+    .bdrv_close             = qcow_close,
     .bdrv_child_perm        = bdrv_default_perms,
     .bdrv_reopen_prepare    = qcow_reopen_prepare,
     .bdrv_co_create         = qcow_co_create,

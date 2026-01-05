@@ -12,7 +12,7 @@
 #if TARGET_LONG_BITS == 32
 #define SHADOW_BASE (0x20000000)
 #elif TARGET_LONG_BITS == 64
-#define SHADOW_BASE (0x7fff8000)
+#define SHADOW_BASE (0x1000000000)
 #else
 #error Unhandled TARGET_LONG_BITS value
 #endif

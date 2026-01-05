@@ -14210,7 +14210,7 @@ IntervalTreeNode * libafl_maps_next(IntervalTreeNode *pageflags_maps_node, Inter
         int flags = page_get_flags(h2g(min));
 
         max = h2g_valid(max - 1) ?
-            max : (uintptr_t) g2h_untagged(GUEST_ADDR_MAX) + 1;
+            max : (uintptr_t) g2h_untagged(guest_addr_max) + 1;
 
         // I guess this is useless? we are walking the entire pageflags_root tree, so we should always have a valid node
         if (!page_check_range(h2g(min), max - min, flags)) {

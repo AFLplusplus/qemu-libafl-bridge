@@ -1,20 +1,20 @@
 #include "qemu/osdep.h"
+#include "hw/core/sysemu-cpu-ops.h"
 
 #ifdef CONFIG_USER_ONLY
 #include "qemu.h"
 #include "user/cpu_loop.h"
+#else
+#include "system/memory.h"
 #endif
 
+#include "exec/mmap-lock.h"
 #include "exec/gdbstub.h"
+#include "exec/target_page.h"
 #include "exec/tb-flush.h"
-#include "exec/exec-all.h"
-#include "hw/core/sysemu-cpu-ops.h"
 
 #include "libafl/cpu.h"
 #include "libafl/exit.h"
-#include "libafl/hook.h"
-
-int gdb_write_register(CPUState* cpu, uint8_t* mem_buf, int reg);
 
 static __thread GByteArray* libafl_qemu_mem_buf = NULL;
 static __thread int num_regs = 0;
@@ -51,21 +51,21 @@ hwaddr libafl_qemu_current_paging_id(CPUState* cpu)
     }
 }
 
-void libafl_breakpoint_invalidate(CPUState* cpu, target_ulong pc)
+void libafl_breakpoint_invalidate(CPUState* cpu, vaddr pc)
 {
     // TODO invalidate only the virtual pages related to the TB
-    tb_flush(cpu);
+    queue_tb_flush(cpu);
 }
 #else
-void libafl_breakpoint_invalidate(CPUState* cpu, target_ulong pc)
+void libafl_breakpoint_invalidate(CPUState* cpu, vaddr pc)
 {
     mmap_lock();
-    tb_invalidate_phys_range(pc, pc + 1);
+    tb_invalidate_phys_range(cpu, pc, pc + 1);
     mmap_unlock();
 }
 #endif
 
-target_ulong libafl_page_from_addr(target_ulong addr)
+vaddr libafl_page_from_addr(vaddr addr)
 {
     return addr & TARGET_PAGE_MASK;
 }
@@ -154,7 +154,7 @@ int libafl_qemu_num_regs(CPUState* cpu)
 void libafl_flush_jit(void)
 {
     CPUState* cpu;
-    CPU_FOREACH(cpu) { tb_flush(cpu); }
+    CPU_FOREACH(cpu) { queue_tb_flush(cpu); }
 }
 
 #ifdef CONFIG_USER_ONLY

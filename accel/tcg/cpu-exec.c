@@ -1025,7 +1025,7 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
 
                 if (last_tb->jmp_reset_offset[1] != TB_JMP_OFFSET_INVALID) {
                     mmap_lock();
-                    edge = libafl_gen_edge(cpu, last_tb->pc, pc, tb_exit, cs_base, flags, cflags);
+                    edge = libafl_gen_edge(cpu, last_tb->pc, s.pc, tb_exit, s);
                     mmap_unlock();
 
                     if (edge) {

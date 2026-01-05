@@ -2,8 +2,8 @@
 
 #include "qemu/osdep.h"
 
-#include "libafl/exit.h"
-#include "libafl/hook.h"
+#include "tcg/helper-info.h"
+#include "tcg/tcg.h"
 
 #define libafl_read_hook libafl_rw_hook
 #define libafl_write_hook libafl_rw_hook
@@ -12,12 +12,12 @@
 #define LIBAFL_TABLES_HASH(p)                                                  \
     (((13 * ((size_t)(p))) ^ (((size_t)(p)) >> 15)) % LIBAFL_TABLES_SIZE)
 
-typedef uint64_t (*libafl_rw_gen_cb)(uint64_t data, target_ulong pc,
+typedef uint64_t (*libafl_rw_gen_cb)(uint64_t data, vaddr pc,
                                      TCGTemp* addr, MemOpIdx oi);
-typedef void (*libafl_rw_exec_cb)(uint64_t data, uint64_t id, target_ulong pc,
-                                  target_ulong addr);
-typedef void (*libafl_rw_execN_cb)(uint64_t data, uint64_t id, target_ulong pc,
-                                   target_ulong addr, size_t size);
+typedef void (*libafl_rw_exec_cb)(uint64_t data, uint64_t id, vaddr pc,
+                                  vaddr addr);
+typedef void (*libafl_rw_execN_cb)(uint64_t data, uint64_t id, vaddr pc,
+                                   vaddr addr, size_t size);
 
 struct libafl_rw_hook {
     // functions

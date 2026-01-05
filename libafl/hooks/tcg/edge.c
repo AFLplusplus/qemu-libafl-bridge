@@ -1,4 +1,10 @@
+#include "qemu/osdep.h"
+#include "cpu.h"
+#include "tcg/tcg-op-common.h"
+
 #include "libafl/tcg.h"
+#include "libafl/cpu.h"
+#include "libafl/hook.h"
 #include "libafl/hooks/tcg/edge.h"
 
 static struct libafl_edge_hook* libafl_edge_hooks;
@@ -16,8 +22,7 @@ GEN_REMOVE_HOOK(edge)
 size_t libafl_add_edge_hook(libafl_edge_gen_cb gen_cb,
                             libafl_edge_exec_cb exec_cb, uint64_t data)
 {
-    CPUState* cpu;
-    CPU_FOREACH(cpu) { tb_flush(cpu); }
+    libafl_flush_jit();
 
     struct libafl_edge_hook* hook = calloc(sizeof(struct libafl_edge_hook), 1);
     hook->gen_cb = gen_cb;
@@ -50,7 +55,7 @@ bool libafl_qemu_edge_hook_set_jit(size_t num, libafl_edge_jit_cb jit_cb)
     return false;
 }
 
-bool libafl_qemu_hook_edge_gen(target_ulong src_block, target_ulong dst_block)
+bool libafl_qemu_hook_edge_gen(vaddr src_block, vaddr dst_block)
 {
     struct libafl_edge_hook* hook = libafl_edge_hooks;
     bool no_exec_hook = true;
@@ -84,8 +89,6 @@ void libafl_qemu_hook_edge_run(void)
             TCGTemp* tmp2[2] = {tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1)};
             tcg_gen_callN(hook->helper_info.func, &hook->helper_info, NULL,
                           tmp2);
-            tcg_temp_free_i64(tmp0);
-            tcg_temp_free_i64(tmp1);
         }
         if (hook->cur_id != (uint64_t)-1 && hook->jit_cb) {
             hook->jit_cb(hook->data, hook->cur_id);

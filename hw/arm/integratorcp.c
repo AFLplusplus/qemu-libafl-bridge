@@ -13,10 +13,11 @@
 #include "migration/vmstate.h"
 #include "hw/boards.h"
 #include "hw/arm/boot.h"
+#include "hw/arm/machines-qom.h"
 #include "hw/misc/arm_integrator_debug.h"
 #include "hw/net/smc91c111.h"
 #include "net/net.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "system/runstate.h"
 #include "system/system.h"
 #include "qemu/log.h"
@@ -26,7 +27,7 @@
 #include "hw/irq.h"
 #include "hw/sd/sd.h"
 #include "qom/object.h"
-#include "audio/audio.h"
+#include "qemu/audio.h"
 #include "target/arm/cpu-qom.h"
 
 #define TYPE_INTEGRATOR_CM "integrator_core"
@@ -693,13 +694,13 @@ static void integratorcp_machine_init(MachineClass *mc)
     machine_add_audiodev_property(mc);
 }
 
-DEFINE_MACHINE("integratorcp", integratorcp_machine_init)
+DEFINE_MACHINE_ARM("integratorcp", integratorcp_machine_init)
 
 static const Property core_properties[] = {
     DEFINE_PROP_UINT32("memsz", IntegratorCMState, memsz, 0),
 };
 
-static void core_class_init(ObjectClass *klass, void *data)
+static void core_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -708,14 +709,14 @@ static void core_class_init(ObjectClass *klass, void *data)
     dc->vmsd = &vmstate_integratorcm;
 }
 
-static void icp_pic_class_init(ObjectClass *klass, void *data)
+static void icp_pic_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->vmsd = &vmstate_icp_pic;
 }
 
-static void icp_control_class_init(ObjectClass *klass, void *data)
+static void icp_control_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

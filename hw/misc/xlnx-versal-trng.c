@@ -627,7 +627,6 @@ static void trng_finalize(Object *obj)
 {
     XlnxVersalTRng *s = XLNX_VERSAL_TRNG(obj);
 
-    register_finalize_block(s->reg_array);
     g_rand_free(s->prng);
     s->prng = NULL;
 }
@@ -682,7 +681,7 @@ static const VMStateDescription vmstate_trng = {
     }
 };
 
-static void trng_class_init(ObjectClass *klass, void *data)
+static void trng_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     ResettableClass *rc = RESETTABLE_CLASS(klass);

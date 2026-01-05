@@ -1,14 +1,17 @@
 #include "qemu/osdep.h"
+#include "cpu.h"
 #include "qemu/log.h"
-
 #include "exec/cpu-common.h"
-
+#include "exec/tb-flush.h"
 #include "accel/tcg/internal-common.h"
-#include "accel/tcg/internal-target.h"
 #include "accel/tcg/trace.h"
+#include "accel/tcg/cpu-ops.h"
+#include "accel/tcg/tb-internal.h"
 
 #include "tcg/insn-start-words.h"
 #include "tcg/perf.h"
+#include "tcg/tcg-op-common.h"
+#include "tcg/tcg-op.h"
 
 #include "libafl/tcg.h"
 #include "libafl/hooks/tcg/edge.h"
@@ -50,7 +53,7 @@ static int libafl_setjmp_gen_code(CPUArchState* env, TranslationBlock* tb,
     const int num_insns =
         1; // do "as-if" we were translating a single target instruction
 
-#ifndef TARGET_INSN_START_EXTRA_WORDS
+#if TARGET_INSN_START_EXTRA_WORDS == 0
     tcg_gen_insn_start(pc);
 #elif TARGET_INSN_START_EXTRA_WORDS == 1
     tcg_gen_insn_start(pc, 0);
@@ -83,10 +86,9 @@ static int libafl_setjmp_gen_code(CPUArchState* env, TranslationBlock* tb,
 }
 
 /* Called with mmap_lock held for user mode emulation.  */
-TranslationBlock* libafl_gen_edge(CPUState* cpu, target_ulong src_block,
-                                  target_ulong dst_block, int exit_n,
-                                  target_ulong cs_base, uint32_t flags,
-                                  int cflags)
+TranslationBlock* libafl_gen_edge(CPUState* cpu, vaddr src_block,
+                                  vaddr dst_block, int exit_n,
+                                  TCGTBCPUState s)
 {
     CPUArchState* env = cpu_env(cpu);
     TranslationBlock* tb;
@@ -104,7 +106,7 @@ TranslationBlock* libafl_gen_edge(CPUState* cpu, target_ulong src_block,
         return NULL;
     }
 
-    target_ulong pc = src_block ^ reverse_bits((target_ulong)exit_n);
+    vaddr pc = src_block ^ reverse_bits((target_ulong)exit_n);
 
     assert_memory_lock();
     qemu_thread_jit_write();
@@ -119,11 +121,7 @@ TranslationBlock* libafl_gen_edge(CPUState* cpu, target_ulong src_block,
     //     cflags = (cflags & ~CF_COUNT_MASK) | 1;
     // }
 
-    /* Generate a one-shot TB with max 16 insn in it */
-    cflags = (cflags & ~CF_COUNT_MASK) | LIBAFL_MAX_INSNS;
-    QEMU_BUILD_BUG_ON(LIBAFL_MAX_INSNS > TCG_MAX_INSNS);
-
-    max_insns = cflags & CF_COUNT_MASK;
+    max_insns = s.cflags & CF_COUNT_MASK;
     if (max_insns == 0) {
         max_insns = TCG_MAX_INSNS;
     }
@@ -134,7 +132,12 @@ buffer_overflow:
     tb = tcg_tb_alloc(tcg_ctx);
     if (unlikely(!tb)) {
         /* flush must be done */
-        tb_flush(cpu);
+        if (cpu_in_serial_context(cpu)) {
+            trace_tb_gen_code_buffer_overflow("libafl_edge_tcg_tb_alloc");
+            tb_flush__exclusive_or_serial();
+            goto buffer_overflow;
+        }
+        queue_tb_flush(cpu);
         mmap_unlock();
         /* Make the execution loop process the flush as soon as possible.  */
         cpu->exception_index = EXCP_INTERRUPT;
@@ -144,13 +147,13 @@ buffer_overflow:
     gen_code_buf = tcg_ctx->code_gen_ptr;
     tb->tc.ptr = tcg_splitwx_to_rx(gen_code_buf);
 
-    if (!(cflags & CF_PCREL)) {
+    if (!(s.cflags & CF_PCREL)) {
         tb->pc = pc;
     }
 
-    tb->cs_base = cs_base;
-    tb->flags = flags;
-    tb->cflags = cflags | CF_IS_EDGE;
+    tb->cs_base = s.cs_base;
+    tb->flags = s.flags;
+    tb->cflags = s.cflags | CF_IS_EDGE;
     tb_set_page_addr0(tb, phys_pc);
     tb_set_page_addr1(tb, -1);
     // if (phys_pc != -1) {
@@ -159,17 +162,7 @@ buffer_overflow:
 
     tcg_ctx->gen_tb = tb;
     tcg_ctx->addr_type = TARGET_LONG_BITS == 32 ? TCG_TYPE_I32 : TCG_TYPE_I64;
-#ifdef CONFIG_SOFTMMU
-    tcg_ctx->page_bits = TARGET_PAGE_BITS;
-    tcg_ctx->page_mask = TARGET_PAGE_MASK;
-    tcg_ctx->tlb_dyn_max_bits = CPU_TLB_DYN_MAX_BITS;
-#endif
-    tcg_ctx->insn_start_words = TARGET_INSN_START_WORDS;
-#ifdef TCG_GUEST_DEFAULT_MO
-    tcg_ctx->guest_mo = TCG_GUEST_DEFAULT_MO;
-#else
-    tcg_ctx->guest_mo = TCG_MO_ALL;
-#endif
+    tcg_ctx->guest_mo = cpu->cc->tcg_ops->guest_default_memory_order;
 
 restart_translate:
     trace_translate_block(tb, pc, tb->tc.ptr);
@@ -257,10 +250,9 @@ restart_translate:
      */
     perf_report_code(pc, tb, tcg_splitwx_to_rx(gen_code_buf));
 
-    qatomic_set(
-        &tcg_ctx->code_gen_ptr,
-        (void*)ROUND_UP((uintptr_t)gen_code_buf + gen_code_size + search_size,
-                        CODE_GEN_ALIGN));
+    qatomic_set(&tcg_ctx->code_gen_ptr, (void *)
+        ROUND_UP((uintptr_t)gen_code_buf + gen_code_size + search_size,
+                 CODE_GEN_ALIGN));
 
     /* init jump list */
     qemu_spin_init(&tb->jmp_lock);
@@ -278,10 +270,18 @@ restart_translate:
         tb_reset_jump(tb, 1);
     }
 
+    /*
+     * Insert TB into the corresponding region tree before publishing it
+     * through QHT. Otherwise rewinding happened in the TB might fail to
+     * lookup itself using host PC.
+     */
+    tcg_tb_insert(tb);
+
     assert_no_pages_locked();
 
 #ifndef CONFIG_USER_ONLY
     tb->page_addr[0] = tb->page_addr[1] = -1;
 #endif
+
     return tb;
 }

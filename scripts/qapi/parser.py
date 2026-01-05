@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-#
 # QAPI schema parser
 #
 # Copyright IBM, Corp. 2011
@@ -109,6 +107,11 @@ class QAPISchemaParser:
         # Parser output:
         self.exprs: List[QAPIExpression] = []
         self.docs: List[QAPIDoc] = []
+
+        # State for tracking qmp-example blocks and simple
+        # :: literal blocks.
+        self._literal_mode = False
+        self._literal_mode_indent = 0
 
         # Showtime!
         self._parse()
@@ -425,12 +428,55 @@ class QAPISchemaParser:
             if self.val != '##':
                 raise QAPIParseError(
                     self, "junk after '##' at end of documentation comment")
+            self._literal_mode = False
             return None
         if self.val == '#':
             return ''
         if self.val[1] != ' ':
             raise QAPIParseError(self, "missing space after #")
-        return self.val[2:].rstrip()
+
+        line = self.val[2:].rstrip()
+
+        if re.match(r'(\.\. +qmp-example)? *::$', line):
+            self._literal_mode = True
+            self._literal_mode_indent = 0
+        elif self._literal_mode and line:
+            indent = must_match(r'\s*', line).end()
+            if self._literal_mode_indent == 0:
+                self._literal_mode_indent = indent
+            elif indent < self._literal_mode_indent:
+                # ReST directives stop at decreasing indentation
+                self._literal_mode = False
+
+        if not self._literal_mode:
+            self._validate_doc_line_format(line)
+
+        return line
+
+    def _validate_doc_line_format(self, line: str) -> None:
+        """
+        Validate documentation format rules for a single line:
+        1. Lines should not exceed 70 characters
+        2. Sentences should be separated by two spaces
+        """
+        full_line_length = len(line) + 2  # "# " = 2 characters
+        if full_line_length > 70:
+            # Skip URL lines - they can't be broken
+            if re.match(r' *(https?|ftp)://[^ ]*$', line):
+                pass
+            else:
+                raise QAPIParseError(
+                    self, "documentation line longer than 70 characters")
+
+        single_space_pattern = r'(\be\.g\.|^ *\d\.|([.!?])) [A-Z0-9(]'
+        for m in list(re.finditer(single_space_pattern, line)):
+            if not m.group(2):
+                continue
+            # HACK so the error message points to the offending spot
+            self.pos = self.line_pos + 2 + m.start(2) + 1
+            raise QAPIParseError(
+                self, "Use two spaces between sentences\n"
+                "If this not the end of a sentence, please report a bug.")
 
     @staticmethod
     def _match_at_name_colon(string: str) -> Optional[Match[str]]:
@@ -584,10 +630,6 @@ class QAPISchemaParser:
                         doc.append_line(text)
                     line = self.get_doc_indented(doc)
                     no_more_args = True
-                elif line.startswith('='):
-                    raise QAPIParseError(
-                        self,
-                        "unexpected '=' markup in definition documentation")
                 else:
                     # plain paragraph
                     doc.ensure_untagged_section(self.info)
@@ -597,22 +639,15 @@ class QAPISchemaParser:
             # Free-form documentation
             doc = QAPIDoc(info)
             doc.ensure_untagged_section(self.info)
-            first = True
             while line is not None:
                 if match := self._match_at_name_colon(line):
                     raise QAPIParseError(
                         self,
                         "'@%s:' not allowed in free-form documentation"
                         % match.group(1))
-                if line.startswith('='):
-                    if not first:
-                        raise QAPIParseError(
-                            self,
-                            "'=' heading must come first in a comment block")
                 doc.append_line(line)
                 self.accept(False)
                 line = self.get_doc_line()
-                first = False
 
         self.accept()
         doc.end()
@@ -814,6 +849,43 @@ class QAPIDoc:
                                "feature '%s' lacks documentation"
                                % feature.name)
         self.features[feature.name].connect(feature)
+
+    def ensure_returns(self, info: QAPISourceInfo) -> None:
+
+        def _insert_near_kind(
+            kind: QAPIDoc.Kind,
+            new_sect: QAPIDoc.Section,
+            after: bool = False,
+        ) -> bool:
+            for idx, sect in enumerate(reversed(self.all_sections)):
+                if sect.kind == kind:
+                    pos = len(self.all_sections) - idx - 1
+                    if after:
+                        pos += 1
+                    self.all_sections.insert(pos, new_sect)
+                    return True
+            return False
+
+        if any(s.kind == QAPIDoc.Kind.RETURNS for s in self.all_sections):
+            return
+
+        # Stub "Returns" section for undocumented returns value
+        stub = QAPIDoc.Section(info, QAPIDoc.Kind.RETURNS)
+
+        if any(_insert_near_kind(kind, stub, after) for kind, after in (
+                # 1. If arguments, right after those.
+                (QAPIDoc.Kind.MEMBER, True),
+                # 2. Elif errors, right *before* those.
+                (QAPIDoc.Kind.ERRORS, False),
+                # 3. Elif features, right *before* those.
+                (QAPIDoc.Kind.FEATURE, False),
+        )):
+            return
+
+        # Otherwise, it should go right after the intro. The intro
+        # is always the first section and is always present (even
+        # when empty), so we can insert directly at index=1 blindly.
+        self.all_sections.insert(1, stub)
 
     def check_expr(self, expr: QAPIExpression) -> None:
         if 'command' in expr:

@@ -996,7 +996,6 @@ static void operation_sequencer(PnvSpi *s)
     } /* end of while */
     /* Update sequencer index field in status.*/
     s->status = SETFIELD(SPI_STS_SEQ_INDEX, s->status, seq_index);
-    return;
 } /* end of operation_sequencer() */
 
 /*
@@ -1142,7 +1141,6 @@ static void pnv_spi_xscom_write(void *opaque, hwaddr addr,
         qemu_log_mask(LOG_GUEST_ERROR, "pnv_spi_regs: Invalid xscom "
                  "write at 0x%" PRIx32 "\n", reg);
     }
-    return;
 }
 
 static const MemoryRegionOps pnv_spi_xscom_ops = {
@@ -1201,7 +1199,7 @@ static int pnv_spi_dt_xscom(PnvXScomInterface *dev, void *fdt,
     return 0;
 }
 
-static void pnv_spi_class_init(ObjectClass *klass, void *data)
+static void pnv_spi_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PnvXScomInterfaceClass *xscomc = PNV_XSCOM_INTERFACE_CLASS(klass);
@@ -1219,7 +1217,7 @@ static const TypeInfo pnv_spi_info = {
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(PnvSpi),
     .class_init    = pnv_spi_class_init,
-    .interfaces    = (InterfaceInfo[]) {
+    .interfaces    = (const InterfaceInfo[]) {
         { TYPE_PNV_XSCOM_INTERFACE },
         { }
     }

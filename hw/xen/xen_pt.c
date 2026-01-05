@@ -54,6 +54,7 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
+#include "qemu/error-report.h"
 #include <sys/ioctl.h>
 
 #include "hw/pci/pci.h"
@@ -1047,7 +1048,7 @@ static void xen_igd_clear_slot(DeviceState *qdev, Error **errp)
     xpdc->pci_qdev_realize(qdev, errp);
 }
 
-static void xen_pci_passthrough_class_init(ObjectClass *klass, void *data)
+static void xen_pci_passthrough_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -1079,7 +1080,7 @@ static const TypeInfo xen_pci_passthrough_info = {
     .class_init = xen_pci_passthrough_class_init,
     .class_size = sizeof(XenPTDeviceClass),
     .instance_init = xen_pci_passthrough_instance_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { INTERFACE_PCIE_DEVICE },
         { },

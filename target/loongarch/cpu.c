@@ -15,9 +15,9 @@
 #include "system/kvm.h"
 #include "kvm/kvm_loongarch.h"
 #include "hw/qdev-properties.h"
-#include "exec/exec-all.h"
 #include "exec/translation-block.h"
 #include "cpu.h"
+#include "cpu-mmu.h"
 #include "internals.h"
 #include "fpu/softfloat-helpers.h"
 #include "csr.h"
@@ -28,10 +28,7 @@
 #ifdef CONFIG_KVM
 #include <linux/kvm.h>
 #endif
-#ifdef CONFIG_TCG
-#include "exec/cpu_ldst.h"
-#include "tcg/tcg.h"
-#endif
+#include "tcg/tcg_loongarch.h"
 
 const char * const regnames[32] = {
     "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
@@ -46,62 +43,6 @@ const char * const fregnames[32] = {
     "f16", "f17", "f18", "f19", "f20", "f21", "f22", "f23",
     "f24", "f25", "f26", "f27", "f28", "f29", "f30", "f31",
 };
-
-struct TypeExcp {
-    int32_t exccode;
-    const char * const name;
-};
-
-static const struct TypeExcp excp_names[] = {
-    {EXCCODE_INT, "Interrupt"},
-    {EXCCODE_PIL, "Page invalid exception for load"},
-    {EXCCODE_PIS, "Page invalid exception for store"},
-    {EXCCODE_PIF, "Page invalid exception for fetch"},
-    {EXCCODE_PME, "Page modified exception"},
-    {EXCCODE_PNR, "Page Not Readable exception"},
-    {EXCCODE_PNX, "Page Not Executable exception"},
-    {EXCCODE_PPI, "Page Privilege error"},
-    {EXCCODE_ADEF, "Address error for instruction fetch"},
-    {EXCCODE_ADEM, "Address error for Memory access"},
-    {EXCCODE_SYS, "Syscall"},
-    {EXCCODE_BRK, "Break"},
-    {EXCCODE_INE, "Instruction Non-Existent"},
-    {EXCCODE_IPE, "Instruction privilege error"},
-    {EXCCODE_FPD, "Floating Point Disabled"},
-    {EXCCODE_FPE, "Floating Point Exception"},
-    {EXCCODE_DBP, "Debug breakpoint"},
-    {EXCCODE_BCE, "Bound Check Exception"},
-    {EXCCODE_SXD, "128 bit vector instructions Disable exception"},
-    {EXCCODE_ASXD, "256 bit vector instructions Disable exception"},
-    {EXCP_HLT, "EXCP_HLT"},
-};
-
-const char *loongarch_exception_name(int32_t exception)
-{
-    int i;
-
-    for (i = 0; i < ARRAY_SIZE(excp_names); i++) {
-        if (excp_names[i].exccode == exception) {
-            return excp_names[i].name;
-        }
-    }
-    return "Unknown";
-}
-
-void G_NORETURN do_raise_exception(CPULoongArchState *env,
-                                   uint32_t exception,
-                                   uintptr_t pc)
-{
-    CPUState *cs = env_cpu(env);
-
-    qemu_log_mask(CPU_LOG_INT, "%s: exception: %d (%s)\n",
-                  __func__,
-                  exception,
-                  loongarch_exception_name(exception));
-    cs->exception_index = exception;
-
-    cpu_loop_exit_restore(cs, pc);
-}
 
 static void loongarch_cpu_set_pc(CPUState *cs, vaddr value)
 {
@@ -138,18 +79,8 @@ void loongarch_cpu_set_irq(void *opaque, int irq, int level)
     }
 }
 
-static inline bool cpu_loongarch_hw_interrupts_enabled(CPULoongArchState *env)
-{
-    bool ret = 0;
-
-    ret = (FIELD_EX64(env->CSR_CRMD, CSR_CRMD, IE) &&
-          !(FIELD_EX64(env->CSR_DBG, CSR_DBG, DST)));
-
-    return ret;
-}
-
 /* Check if there is pending and not masked out interrupt */
-static inline bool cpu_loongarch_hw_interrupts_pending(CPULoongArchState *env)
+bool cpu_loongarch_hw_interrupts_pending(CPULoongArchState *env)
 {
     uint32_t pending;
     uint32_t status;
@@ -161,201 +92,12 @@ static inline bool cpu_loongarch_hw_interrupts_pending(CPULoongArchState *env)
 }
 #endif
 
-#ifdef CONFIG_TCG
 #ifndef CONFIG_USER_ONLY
-static void loongarch_cpu_do_interrupt(CPUState *cs)
-{
-    CPULoongArchState *env = cpu_env(cs);
-    bool update_badinstr = 1;
-    int cause = -1;
-    bool tlbfill = FIELD_EX64(env->CSR_TLBRERA, CSR_TLBRERA, ISTLBR);
-    uint32_t vec_size = FIELD_EX64(env->CSR_ECFG, CSR_ECFG, VS);
-
-    if (cs->exception_index != EXCCODE_INT) {
-        qemu_log_mask(CPU_LOG_INT,
-                     "%s enter: pc " TARGET_FMT_lx " ERA " TARGET_FMT_lx
-                     " TLBRERA " TARGET_FMT_lx " exception: %d (%s)\n",
-                     __func__, env->pc, env->CSR_ERA, env->CSR_TLBRERA,
-                     cs->exception_index,
-                     loongarch_exception_name(cs->exception_index));
-    }
-
-    switch (cs->exception_index) {
-    case EXCCODE_DBP:
-        env->CSR_DBG = FIELD_DP64(env->CSR_DBG, CSR_DBG, DCL, 1);
-        env->CSR_DBG = FIELD_DP64(env->CSR_DBG, CSR_DBG, ECODE, 0xC);
-        goto set_DERA;
-    set_DERA:
-        env->CSR_DERA = env->pc;
-        env->CSR_DBG = FIELD_DP64(env->CSR_DBG, CSR_DBG, DST, 1);
-        set_pc(env, env->CSR_EENTRY + 0x480);
-        break;
-    case EXCCODE_INT:
-        if (FIELD_EX64(env->CSR_DBG, CSR_DBG, DST)) {
-            env->CSR_DBG = FIELD_DP64(env->CSR_DBG, CSR_DBG, DEI, 1);
-            goto set_DERA;
-        }
-        QEMU_FALLTHROUGH;
-    case EXCCODE_PIF:
-    case EXCCODE_ADEF:
-        cause = cs->exception_index;
-        update_badinstr = 0;
-        break;
-    case EXCCODE_SYS:
-    case EXCCODE_BRK:
-    case EXCCODE_INE:
-    case EXCCODE_IPE:
-    case EXCCODE_FPD:
-    case EXCCODE_FPE:
-    case EXCCODE_SXD:
-    case EXCCODE_ASXD:
-        env->CSR_BADV = env->pc;
-        QEMU_FALLTHROUGH;
-    case EXCCODE_BCE:
-    case EXCCODE_ADEM:
-    case EXCCODE_PIL:
-    case EXCCODE_PIS:
-    case EXCCODE_PME:
-    case EXCCODE_PNR:
-    case EXCCODE_PNX:
-    case EXCCODE_PPI:
-        cause = cs->exception_index;
-        break;
-    default:
-        qemu_log("Error: exception(%d) has not been supported\n",
-                 cs->exception_index);
-        abort();
-    }
-
-    if (update_badinstr) {
-        env->CSR_BADI = cpu_ldl_code(env, env->pc);
-    }
-
-    /* Save PLV and IE */
-    if (tlbfill) {
-        env->CSR_TLBRPRMD = FIELD_DP64(env->CSR_TLBRPRMD, CSR_TLBRPRMD, PPLV,
-                                       FIELD_EX64(env->CSR_CRMD,
-                                       CSR_CRMD, PLV));
-        env->CSR_TLBRPRMD = FIELD_DP64(env->CSR_TLBRPRMD, CSR_TLBRPRMD, PIE,
-                                       FIELD_EX64(env->CSR_CRMD, CSR_CRMD, IE));
-        /* set the DA mode */
-        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, DA, 1);
-        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, PG, 0);
-        env->CSR_TLBRERA = FIELD_DP64(env->CSR_TLBRERA, CSR_TLBRERA,
-                                      PC, (env->pc >> 2));
-    } else {
-        env->CSR_ESTAT = FIELD_DP64(env->CSR_ESTAT, CSR_ESTAT, ECODE,
-                                    EXCODE_MCODE(cause));
-        env->CSR_ESTAT = FIELD_DP64(env->CSR_ESTAT, CSR_ESTAT, ESUBCODE,
-                                    EXCODE_SUBCODE(cause));
-        env->CSR_PRMD = FIELD_DP64(env->CSR_PRMD, CSR_PRMD, PPLV,
-                                   FIELD_EX64(env->CSR_CRMD, CSR_CRMD, PLV));
-        env->CSR_PRMD = FIELD_DP64(env->CSR_PRMD, CSR_PRMD, PIE,
-                                   FIELD_EX64(env->CSR_CRMD, CSR_CRMD, IE));
-        env->CSR_ERA = env->pc;
-    }
-
-    env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, PLV, 0);
-    env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, IE, 0);
-
-    if (vec_size) {
-        vec_size = (1 << vec_size) * 4;
-    }
-
-    if  (cs->exception_index == EXCCODE_INT) {
-        /* Interrupt */
-        uint32_t vector = 0;
-        uint32_t pending = FIELD_EX64(env->CSR_ESTAT, CSR_ESTAT, IS);
-        pending &= FIELD_EX64(env->CSR_ECFG, CSR_ECFG, LIE);
-
-        /* Find the highest-priority interrupt. */
-        vector = 31 - clz32(pending);
-        set_pc(env, env->CSR_EENTRY + \
-               (EXCCODE_EXTERNAL_INT + vector) * vec_size);
-        qemu_log_mask(CPU_LOG_INT,
-                      "%s: PC " TARGET_FMT_lx " ERA " TARGET_FMT_lx
-                      " cause %d\n" "    A " TARGET_FMT_lx " D "
-                      TARGET_FMT_lx " vector = %d ExC " TARGET_FMT_lx "ExS"
-                      TARGET_FMT_lx "\n",
-                      __func__, env->pc, env->CSR_ERA,
-                      cause, env->CSR_BADV, env->CSR_DERA, vector,
-                      env->CSR_ECFG, env->CSR_ESTAT);
-    } else {
-        if (tlbfill) {
-            set_pc(env, env->CSR_TLBRENTRY);
-        } else {
-            set_pc(env, env->CSR_EENTRY + EXCODE_MCODE(cause) * vec_size);
-        }
-        qemu_log_mask(CPU_LOG_INT,
-                      "%s: PC " TARGET_FMT_lx " ERA " TARGET_FMT_lx
-                      " cause %d%s\n, ESTAT " TARGET_FMT_lx
-                      " EXCFG " TARGET_FMT_lx " BADVA " TARGET_FMT_lx
-                      "BADI " TARGET_FMT_lx " SYS_NUM " TARGET_FMT_lu
-                      " cpu %d asid " TARGET_FMT_lx "\n", __func__, env->pc,
-                      tlbfill ? env->CSR_TLBRERA : env->CSR_ERA,
-                      cause, tlbfill ? "(refill)" : "", env->CSR_ESTAT,
-                      env->CSR_ECFG,
-                      tlbfill ? env->CSR_TLBRBADV : env->CSR_BADV,
-                      env->CSR_BADI, env->gpr[11], cs->cpu_index,
-                      env->CSR_ASID);
-    }
-    cs->exception_index = -1;
-}
-
-static void loongarch_cpu_do_transaction_failed(CPUState *cs, hwaddr physaddr,
-                                                vaddr addr, unsigned size,
-                                                MMUAccessType access_type,
-                                                int mmu_idx, MemTxAttrs attrs,
-                                                MemTxResult response,
-                                                uintptr_t retaddr)
-{
-    CPULoongArchState *env = cpu_env(cs);
-
-    if (access_type == MMU_INST_FETCH) {
-        do_raise_exception(env, EXCCODE_ADEF, retaddr);
-    } else {
-        do_raise_exception(env, EXCCODE_ADEM, retaddr);
-    }
-}
-
-static bool loongarch_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
-{
-    if (interrupt_request & CPU_INTERRUPT_HARD) {
-        CPULoongArchState *env = cpu_env(cs);
-
-        if (cpu_loongarch_hw_interrupts_enabled(env) &&
-            cpu_loongarch_hw_interrupts_pending(env)) {
-            /* Raise it */
-            cs->exception_index = EXCCODE_INT;
-            loongarch_cpu_do_interrupt(cs);
-            return true;
-        }
-    }
-    return false;
-}
-#endif
-
-static void loongarch_cpu_synchronize_from_tb(CPUState *cs,
-                                              const TranslationBlock *tb)
-{
-    tcg_debug_assert(!tcg_cflags_has(cs, CF_PCREL));
-    set_pc(cpu_env(cs), tb->pc);
-}
-
-static void loongarch_restore_state_to_opc(CPUState *cs,
-                                           const TranslationBlock *tb,
-                                           const uint64_t *data)
-{
-    set_pc(cpu_env(cs), data[0]);
-}
-#endif /* CONFIG_TCG */
-
-#ifndef CONFIG_USER_ONLY
-static bool loongarch_cpu_has_work(CPUState *cs)
+bool loongarch_cpu_has_work(CPUState *cs)
 {
     bool has_work = false;
 
-    if ((cs->interrupt_request & CPU_INTERRUPT_HARD) &&
+    if (cpu_test_interrupt(cs, CPU_INTERRUPT_HARD) &&
         cpu_loongarch_hw_interrupts_pending(cpu_env(cs))) {
         has_work = true;
     }
@@ -363,16 +105,6 @@ static bool loongarch_cpu_has_work(CPUState *cs)
     return has_work;
 }
 #endif /* !CONFIG_USER_ONLY */
-
-static int loongarch_cpu_mmu_index(CPUState *cs, bool ifetch)
-{
-    CPULoongArchState *env = cpu_env(cs);
-
-    if (FIELD_EX64(env->CSR_CRMD, CSR_CRMD, PG)) {
-        return FIELD_EX64(env->CSR_CRMD, CSR_CRMD, PLV);
-    }
-    return MMU_DA_IDX;
-}
 
 static void loongarch_la464_init_csr(Object *obj)
 {
@@ -399,6 +131,139 @@ static void loongarch_la464_init_csr(Object *obj)
         set_csr_flag(LOONGARCH_CSR_CTAG, CSRFL_UNUSED);
     }
 #endif
+}
+
+static bool loongarch_get_lsx(Object *obj, Error **errp)
+{
+    return LOONGARCH_CPU(obj)->lsx != ON_OFF_AUTO_OFF;
+}
+
+static void loongarch_set_lsx(Object *obj, bool value, Error **errp)
+{
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+    uint32_t val;
+
+    cpu->lsx = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
+    if (cpu->lsx == ON_OFF_AUTO_OFF) {
+        cpu->lasx = ON_OFF_AUTO_OFF;
+        if (cpu->lasx == ON_OFF_AUTO_ON) {
+            error_setg(errp, "Failed to disable LSX since LASX is enabled");
+            return;
+        }
+    }
+
+    if (kvm_enabled()) {
+        /* kvm feature detection in function kvm_arch_init_vcpu */
+        return;
+    }
+
+    /* LSX feature detection in TCG mode */
+    val = cpu->env.cpucfg[2];
+    if (cpu->lsx == ON_OFF_AUTO_ON) {
+        if (FIELD_EX32(val, CPUCFG2, LSX) == 0) {
+            error_setg(errp, "Failed to enable LSX in TCG mode");
+            return;
+        }
+    } else {
+        cpu->env.cpucfg[2] = FIELD_DP32(val, CPUCFG2, LASX, 0);
+        val = cpu->env.cpucfg[2];
+    }
+
+    cpu->env.cpucfg[2] = FIELD_DP32(val, CPUCFG2, LSX, value);
+}
+
+static bool loongarch_get_lasx(Object *obj, Error **errp)
+{
+    return LOONGARCH_CPU(obj)->lasx != ON_OFF_AUTO_OFF;
+}
+
+static void loongarch_set_lasx(Object *obj, bool value, Error **errp)
+{
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+    uint32_t val;
+
+    cpu->lasx = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
+    if ((cpu->lsx == ON_OFF_AUTO_OFF) && (cpu->lasx == ON_OFF_AUTO_ON)) {
+        error_setg(errp, "Failed to enable LASX since lSX is disabled");
+        return;
+    }
+
+    if (kvm_enabled()) {
+        /* kvm feature detection in function kvm_arch_init_vcpu */
+        return;
+    }
+
+    /* LASX feature detection in TCG mode */
+    val = cpu->env.cpucfg[2];
+    if (cpu->lasx == ON_OFF_AUTO_ON) {
+        if (FIELD_EX32(val, CPUCFG2, LASX) == 0) {
+            error_setg(errp, "Failed to enable LASX in TCG mode");
+            return;
+        }
+    }
+
+    cpu->env.cpucfg[2] = FIELD_DP32(val, CPUCFG2, LASX, value);
+}
+
+static bool loongarch_get_msgint(Object *obj, Error **errp)
+{
+    return LOONGARCH_CPU(obj)->msgint != ON_OFF_AUTO_OFF;
+}
+
+static void loongarch_set_msgint(Object *obj, bool value, Error **errp)
+{
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+
+    cpu->msgint = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
+
+    if (kvm_enabled()) {
+        /* kvm feature detection in function kvm_arch_init_vcpu */
+        return;
+    }
+
+     cpu->env.cpucfg[1] = FIELD_DP32(cpu->env.cpucfg[1], CPUCFG1, MSG_INT, value);
+}
+
+static bool loongarch_get_ptw(Object *obj, Error **errp)
+{
+    return LOONGARCH_CPU(obj)->ptw != ON_OFF_AUTO_OFF;
+}
+
+static void loongarch_set_ptw(Object *obj, bool value, Error **errp)
+{
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+
+    cpu->ptw = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
+
+    if (kvm_enabled()) {
+        /* kvm feature detection in function kvm_arch_init_vcpu */
+        return;
+    }
+
+    cpu->env.cpucfg[2] = FIELD_DP32(cpu->env.cpucfg[2], CPUCFG2, HPTW, value);
+}
+
+static void loongarch_cpu_post_init(Object *obj)
+{
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+
+    cpu->lbt = ON_OFF_AUTO_OFF;
+    cpu->pmu = ON_OFF_AUTO_OFF;
+    cpu->lsx = ON_OFF_AUTO_AUTO;
+    cpu->lasx = ON_OFF_AUTO_AUTO;
+    object_property_add_bool(obj, "lsx", loongarch_get_lsx,
+                             loongarch_set_lsx);
+    object_property_add_bool(obj, "lasx", loongarch_get_lasx,
+                             loongarch_set_lasx);
+    object_property_add_bool(obj, "msgint", loongarch_get_msgint,
+                             loongarch_set_msgint);
+    object_property_add_bool(obj, "ptw", loongarch_get_ptw,
+                             loongarch_set_ptw);
+    /* lbt is enabled only in kvm mode, not supported in tcg mode */
+
+    if (kvm_enabled()) {
+        kvm_loongarch_cpu_post_init(cpu);
+    }
 }
 
 static void loongarch_la464_initfn(Object *obj)
@@ -431,7 +296,7 @@ static void loongarch_la464_initfn(Object *obj)
     data = FIELD_DP32(data, CPUCFG1, EP, 1);
     data = FIELD_DP32(data, CPUCFG1, RPLV, 1);
     data = FIELD_DP32(data, CPUCFG1, HP, 1);
-    data = FIELD_DP32(data, CPUCFG1, IOCSR_BRD, 1);
+    data = FIELD_DP32(data, CPUCFG1, CRC, 1);
     env->cpucfg[1] = data;
 
     data = 0;
@@ -502,6 +367,8 @@ static void loongarch_la464_initfn(Object *obj)
     env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, STLB_WAYS, 7);
     env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, STLB_SETS, 8);
 
+    cpu->msgint = ON_OFF_AUTO_OFF;
+    cpu->ptw = ON_OFF_AUTO_OFF;
     loongarch_la464_init_csr(obj);
     loongarch_cpu_post_init(obj);
 }
@@ -530,14 +397,24 @@ static void loongarch_la132_initfn(Object *obj)
     data = FIELD_DP32(data, CPUCFG1, EP, 0);
     data = FIELD_DP32(data, CPUCFG1, RPLV, 0);
     data = FIELD_DP32(data, CPUCFG1, HP, 1);
-    data = FIELD_DP32(data, CPUCFG1, IOCSR_BRD, 1);
+    data = FIELD_DP32(data, CPUCFG1, CRC, 1);
     env->cpucfg[1] = data;
+    cpu->msgint = ON_OFF_AUTO_OFF;
+    cpu->ptw = ON_OFF_AUTO_OFF;
 }
 
 static void loongarch_max_initfn(Object *obj)
 {
-    /* '-cpu max' for TCG: we use cpu la464. */
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+    /* '-cpu max': use it for max supported CPU features */
     loongarch_la464_initfn(obj);
+
+    cpu->ptw = ON_OFF_AUTO_AUTO;
+    if (tcg_enabled()) {
+        cpu->env.cpucfg[1] = FIELD_DP32(cpu->env.cpucfg[1], CPUCFG1, MSG_INT, 1);
+        cpu->msgint = ON_OFF_AUTO_AUTO;
+        cpu->env.cpucfg[2] = FIELD_DP32(cpu->env.cpucfg[2], CPUCFG2, HPTW, 1);
+    }
 }
 
 static void loongarch_cpu_reset_hold(Object *obj, ResetType type)
@@ -662,96 +539,6 @@ static void loongarch_cpu_unrealizefn(DeviceState *dev)
     lacc->parent_unrealize(dev);
 }
 
-static bool loongarch_get_lsx(Object *obj, Error **errp)
-{
-    return LOONGARCH_CPU(obj)->lsx != ON_OFF_AUTO_OFF;
-}
-
-static void loongarch_set_lsx(Object *obj, bool value, Error **errp)
-{
-    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
-    uint32_t val;
-
-    cpu->lsx = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
-    if (cpu->lsx == ON_OFF_AUTO_OFF) {
-        cpu->lasx = ON_OFF_AUTO_OFF;
-        if (cpu->lasx == ON_OFF_AUTO_ON) {
-            error_setg(errp, "Failed to disable LSX since LASX is enabled");
-            return;
-        }
-    }
-
-    if (kvm_enabled()) {
-        /* kvm feature detection in function kvm_arch_init_vcpu */
-        return;
-    }
-
-    /* LSX feature detection in TCG mode */
-    val = cpu->env.cpucfg[2];
-    if (cpu->lsx == ON_OFF_AUTO_ON) {
-        if (FIELD_EX32(val, CPUCFG2, LSX) == 0) {
-            error_setg(errp, "Failed to enable LSX in TCG mode");
-            return;
-        }
-    } else {
-        cpu->env.cpucfg[2] = FIELD_DP32(val, CPUCFG2, LASX, 0);
-        val = cpu->env.cpucfg[2];
-    }
-
-    cpu->env.cpucfg[2] = FIELD_DP32(val, CPUCFG2, LSX, value);
-}
-
-static bool loongarch_get_lasx(Object *obj, Error **errp)
-{
-    return LOONGARCH_CPU(obj)->lasx != ON_OFF_AUTO_OFF;
-}
-
-static void loongarch_set_lasx(Object *obj, bool value, Error **errp)
-{
-    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
-    uint32_t val;
-
-    cpu->lasx = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
-    if ((cpu->lsx == ON_OFF_AUTO_OFF) && (cpu->lasx == ON_OFF_AUTO_ON)) {
-        error_setg(errp, "Failed to enable LASX since lSX is disabled");
-        return;
-    }
-
-    if (kvm_enabled()) {
-        /* kvm feature detection in function kvm_arch_init_vcpu */
-        return;
-    }
-
-    /* LASX feature detection in TCG mode */
-    val = cpu->env.cpucfg[2];
-    if (cpu->lasx == ON_OFF_AUTO_ON) {
-        if (FIELD_EX32(val, CPUCFG2, LASX) == 0) {
-            error_setg(errp, "Failed to enable LASX in TCG mode");
-            return;
-        }
-    }
-
-    cpu->env.cpucfg[2] = FIELD_DP32(val, CPUCFG2, LASX, value);
-}
-
-void loongarch_cpu_post_init(Object *obj)
-{
-    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
-
-    cpu->lbt = ON_OFF_AUTO_OFF;
-    cpu->pmu = ON_OFF_AUTO_OFF;
-    cpu->lsx = ON_OFF_AUTO_AUTO;
-    cpu->lasx = ON_OFF_AUTO_AUTO;
-    object_property_add_bool(obj, "lsx", loongarch_get_lsx,
-                             loongarch_set_lsx);
-    object_property_add_bool(obj, "lasx", loongarch_get_lasx,
-                             loongarch_set_lasx);
-    /* lbt is enabled only in kvm mode, not supported in tcg mode */
-    if (kvm_enabled()) {
-        kvm_loongarch_cpu_post_init(cpu);
-    }
-}
-
 static void loongarch_cpu_init(Object *obj)
 {
 #ifndef CONFIG_USER_ONLY
@@ -860,25 +647,6 @@ static void loongarch_cpu_dump_state(CPUState *cs, FILE *f, int flags)
     }
 }
 
-#ifdef CONFIG_TCG
-#include "accel/tcg/cpu-ops.h"
-
-static const TCGCPUOps loongarch_tcg_ops = {
-    .initialize = loongarch_translate_init,
-    .translate_code = loongarch_translate_code,
-    .synchronize_from_tb = loongarch_cpu_synchronize_from_tb,
-    .restore_state_to_opc = loongarch_restore_state_to_opc,
-
-#ifndef CONFIG_USER_ONLY
-    .tlb_fill = loongarch_cpu_tlb_fill,
-    .cpu_exec_interrupt = loongarch_cpu_exec_interrupt,
-    .cpu_exec_halt = loongarch_cpu_has_work,
-    .do_interrupt = loongarch_cpu_do_interrupt,
-    .do_transaction_failed = loongarch_cpu_do_transaction_failed,
-#endif
-};
-#endif /* CONFIG_TCG */
-
 #ifndef CONFIG_USER_ONLY
 #include "hw/core/sysemu-cpu-ops.h"
 
@@ -903,7 +671,7 @@ static const Property loongarch_cpu_properties[] = {
     DEFINE_PROP_INT32("node-id", LoongArchCPU, node_id, CPU_UNSET_NUMA_NODE_ID),
 };
 
-static void loongarch_cpu_class_init(ObjectClass *c, void *data)
+static void loongarch_cpu_class_init(ObjectClass *c, const void *data)
 {
     LoongArchCPUClass *lacc = LOONGARCH_CPU_CLASS(c);
     CPUClass *cc = CPU_CLASS(c);
@@ -919,7 +687,6 @@ static void loongarch_cpu_class_init(ObjectClass *c, void *data)
                                        &lacc->parent_phases);
 
     cc->class_by_name = loongarch_cpu_class_by_name;
-    cc->mmu_index = loongarch_cpu_mmu_index;
     cc->dump_state = loongarch_cpu_dump_state;
     cc->set_pc = loongarch_cpu_set_pc;
     cc->get_pc = loongarch_cpu_get_pc;
@@ -944,7 +711,7 @@ static const gchar *loongarch32_gdb_arch_name(CPUState *cs)
     return "loongarch32";
 }
 
-static void loongarch32_cpu_class_init(ObjectClass *c, void *data)
+static void loongarch32_cpu_class_init(ObjectClass *c, const void *data)
 {
     CPUClass *cc = CPU_CLASS(c);
 
@@ -957,7 +724,7 @@ static const gchar *loongarch64_gdb_arch_name(CPUState *cs)
     return "loongarch64";
 }
 
-static void loongarch64_cpu_class_init(ObjectClass *c, void *data)
+static void loongarch64_cpu_class_init(ObjectClass *c, const void *data)
 {
     CPUClass *cc = CPU_CLASS(c);
 

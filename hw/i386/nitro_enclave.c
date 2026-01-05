@@ -203,7 +203,6 @@ static void x86_load_eif(X86MachineState *x86ms, FWCfgState *fw_cfg,
 
     unlink(machine->kernel_filename);
     unlink(machine->initrd_filename);
-    return;
 }
 
 static bool create_memfd_backend(MachineState *ms, const char *path,
@@ -294,7 +293,7 @@ static void nitro_enclave_set_parent_id(Object *obj, const char *value,
     nems->parent_id = g_strdup(value);
 }
 
-static void nitro_enclave_class_init(ObjectClass *oc, void *data)
+static void nitro_enclave_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     MicrovmMachineClass *mmc = MICROVM_MACHINE_CLASS(oc);

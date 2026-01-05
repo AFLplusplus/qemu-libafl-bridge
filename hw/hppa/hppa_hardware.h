@@ -5,7 +5,7 @@
 #define HW_HPPA_HPPA_HARDWARE_H
 
 #define FIRMWARE_START  0xf0000000
-#define FIRMWARE_END    0xf0800000
+#define FIRMWARE_END    0xf0100000
 #define FIRMWARE_HIGH   0xfffffff0  /* upper 32-bits of 64-bit firmware address */
 
 #define RAM_MAP_HIGH  0x0100000000  /* memory above 3.75 GB is mapped here */
@@ -19,15 +19,8 @@
 #define DINO_UART_HPA   0xfff83000
 #define  DINO_UART_BASE 0xfff83800
 #define DINO_SCSI_HPA   0xfff8c000
+#define LASI_HPA_715    0xf0100000
 #define LASI_HPA        0xffd00000
-#define LASI_UART_HPA   0xffd05000
-#define LASI_SCSI_HPA   0xffd06000
-#define LASI_LAN_HPA    0xffd07000
-#define LASI_RTC_HPA    0xffd09000
-#define LASI_LPT_HPA    0xffd02000
-#define LASI_AUDIO_HPA  0xffd04000
-#define LASI_PS2KBD_HPA 0xffd08000
-#define LASI_PS2MOU_HPA 0xffd08100
 #define LASI_GFX_HPA    0xf8000000
 #define ARTIST_FB_ADDR  0xf9000000
 #define CPU_HPA         0xfffb0000
@@ -42,6 +35,8 @@
 #define ASTRO_MEMORY_HPA 0xfed10200
 
 #define SCSI_HPA        0xf1040000      /* emulated SCSI, needs to be in f region */
+
+#define HPA_DISABLED_DEVICE     1       /* add to HPA to disable */
 
 /* offsets to DINO HPA: */
 #define DINO_PCI_ADDR           0x064

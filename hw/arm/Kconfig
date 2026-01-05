@@ -5,9 +5,6 @@ config ARM_VIRT
     depends on TCG || KVM || HVF
     imply PCI_DEVICES
     imply TEST_DEVICES
-    imply VFIO_AMD_XGBE
-    imply VFIO_PLATFORM
-    imply VFIO_XGMAC
     imply TPM_TIS_SYSBUS
     imply TPM_TIS_I2C
     imply NVDIMM
@@ -34,6 +31,8 @@ config ARM_VIRT
     select ACPI_HW_REDUCED
     select ACPI_APEI
     select ACPI_VIOT
+    select ACPI_PCIHP
+    select ACPI_PCI_BRIDGE
     select VIRTIO_MEM_SUPPORTED
     select ACPI_CXL
     select ACPI_HMAT
@@ -95,6 +94,12 @@ config INTEGRATOR
     select PL181 # display
     select SMC91C111
 
+config MAX78000FTHR
+    bool
+    default y
+    depends on TCG && ARM
+    select MAX78000_SOC
+
 config MPS3R
     bool
     default y
@@ -147,7 +152,6 @@ config OMAP
     bool
     select FRAMEBUFFER
     select I2C
-    select NAND
     select PFLASH_CFI01
     select SD
     select SERIAL_MM
@@ -358,6 +362,15 @@ config ALLWINNER_R40
     select USB_EHCI_SYSBUS
     select SD
 
+config MAX78000_SOC
+    bool
+    select ARM_V7M
+    select MAX78000_ICC
+    select MAX78000_UART
+    select MAX78000_GCR
+    select MAX78000_TRNG
+    select MAX78000_AES
+
 config RASPI
     bool
     default y
@@ -528,11 +541,13 @@ config ASPEED_SOC
     bool
     default y
     depends on TCG && ARM
+    imply PCI_DEVICES
     select DS1338
     select FTGMAC100
     select I2C
     select DPS310
     select PCA9552
+    select PCA9554
     select SERIAL_MM
     select SMBUS_EEPROM
     select PCA954X
@@ -547,6 +562,8 @@ config ASPEED_SOC
     select MAX31785
     select FSI_APB2OPB_ASPEED
     select AT24C
+    select PCI_EXPRESS
+    select PCI_EXPRESS_ASPEED
 
 config MPS2
     bool
@@ -605,7 +622,8 @@ config FSL_IMX8MP
 config FSL_IMX8MP_EVK
     bool
     default y
-    depends on TCG && AARCH64
+    depends on AARCH64
+    depends on TCG
     select FSL_IMX8MP
 
 config ARM_SMMUV3

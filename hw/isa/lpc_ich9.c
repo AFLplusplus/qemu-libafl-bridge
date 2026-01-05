@@ -132,6 +132,11 @@ static void ich9_cc_init(ICH9LPCState *lpc)
 static void ich9_cc_reset(ICH9LPCState *lpc)
 {
     uint8_t *c = lpc->chip_config;
+    uint32_t gcs = ICH9_CC_GCS_DEFAULT;
+
+    if (lpc->pin_strap.spkr_hi) {
+        gcs |= ICH9_CC_GCS_NO_REBOOT;
+    }
 
     memset(lpc->chip_config, 0, sizeof(lpc->chip_config));
 
@@ -142,7 +147,7 @@ static void ich9_cc_reset(ICH9LPCState *lpc)
     pci_set_long(c + ICH9_CC_D27IR, ICH9_CC_DIR_DEFAULT);
     pci_set_long(c + ICH9_CC_D26IR, ICH9_CC_DIR_DEFAULT);
     pci_set_long(c + ICH9_CC_D25IR, ICH9_CC_DIR_DEFAULT);
-    pci_set_long(c + ICH9_CC_GCS, ICH9_CC_GCS_DEFAULT);
+    pci_set_long(c + ICH9_CC_GCS, gcs);
 
     ich9_cc_update(lpc);
 }
@@ -182,7 +187,6 @@ static uint64_t ich9_cc_read(void *opaque, hwaddr addr,
 }
 
 /* IRQ routing */
-/* */
 static void ich9_lpc_rout(uint8_t pirq_rout, int *pic_irq, int *pic_dis)
 {
     *pic_irq = pirq_rout & ICH9_LPC_PIRQ_ROUT_MASK;
@@ -878,7 +882,7 @@ static void build_ich9_isa_aml(AcpiDevAmlIf *adev, Aml *scope)
     qbus_build_aml(bus, scope);
 }
 
-static void ich9_lpc_class_init(ObjectClass *klass, void *data)
+static void ich9_lpc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -918,7 +922,7 @@ static const TypeInfo ich9_lpc_info = {
     .instance_size = sizeof(ICH9LPCState),
     .instance_init = ich9_lpc_initfn,
     .class_init  = ich9_lpc_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_HOTPLUG_HANDLER },
         { TYPE_ACPI_DEVICE_IF },
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },

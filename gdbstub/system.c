@@ -18,12 +18,11 @@
 #include "gdbstub/syscalls.h"
 #include "gdbstub/commands.h"
 #include "exec/hwaddr.h"
-#include "exec/tb-flush.h"
-#include "system/accel-ops.h"
+#include "accel/accel-ops.h"
+#include "accel/accel-cpu-ops.h"
 #include "system/cpus.h"
 #include "system/runstate.h"
 #include "system/replay.h"
-#include "system/tcg.h"
 #include "hw/core/cpu.h"
 #include "hw/cpu/cluster.h"
 #include "hw/boards.h"
@@ -40,7 +39,7 @@
 
 /* System emulation specific state */
 typedef struct {
-    CharBackend chr;
+    CharFrontend chr;
     Chardev *mon_chr;
 } GDBSystemState;
 
@@ -178,9 +177,6 @@ static void gdb_vm_state_change(void *opaque, bool running, RunState state)
         } else {
             trace_gdbstub_hit_break();
         }
-        if (tcg_enabled()) {
-            tb_flush(cpu);
-        }
         ret = GDB_SIGNAL_TRAP;
         break;
     case RUN_STATE_PAUSED:
@@ -248,7 +244,7 @@ static void gdb_monitor_open(Chardev *chr, ChardevBackend *backend,
     *be_opened = false;
 }
 
-static void char_gdb_class_init(ObjectClass *oc, void *data)
+static void char_gdb_class_init(ObjectClass *oc, const void *data)
 {
     ChardevClass *cc = CHARDEV_CLASS(oc);
 

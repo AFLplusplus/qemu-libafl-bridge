@@ -151,9 +151,8 @@ static void whpx_apic_put(CPUState *cs, run_on_cpu_data data)
     }
 }
 
-void whpx_apic_get(DeviceState *dev)
+void whpx_apic_get(APICCommonState *s)
 {
-    APICCommonState *s = APIC_COMMON(dev);
     CPUState *cpu = CPU(s->cpu);
     struct whpx_lapic_state kapic;
 
@@ -252,7 +251,7 @@ static void whpx_apic_realize(DeviceState *dev, Error **errp)
     msi_nonbroken = true;
 }
 
-static void whpx_apic_class_init(ObjectClass *klass, void *data)
+static void whpx_apic_class_init(ObjectClass *klass, const void *data)
 {
     APICCommonClass *k = APIC_COMMON_CLASS(klass);
 

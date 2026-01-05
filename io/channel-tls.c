@@ -26,7 +26,7 @@
 #include "qemu/atomic.h"
 
 
-static ssize_t qio_channel_tls_write_handler(const char *buf,
+static ssize_t qio_channel_tls_write_handler(const void *buf,
                                              size_t len,
                                              void *opaque,
                                              Error **errp)
@@ -43,7 +43,7 @@ static ssize_t qio_channel_tls_write_handler(const char *buf,
     return ret;
 }
 
-static ssize_t qio_channel_tls_read_handler(char *buf,
+static ssize_t qio_channel_tls_read_handler(void *buf,
                                             size_t len,
                                             void *opaque,
                                             Error **errp)
@@ -241,6 +241,11 @@ void qio_channel_tls_handshake(QIOChannelTLS *ioc,
 {
     QIOTask *task;
 
+    if (qio_channel_has_feature(QIO_CHANNEL(ioc),
+                                QIO_CHANNEL_FEATURE_CONCURRENT_IO)) {
+        qcrypto_tls_session_require_thread_safety(ioc->session);
+    }
+
     task = qio_task_new(OBJECT(ioc),
                         func, opaque, destroy);
 
@@ -337,10 +342,33 @@ static void qio_channel_tls_finalize(Object *obj)
 {
     QIOChannelTLS *ioc = QIO_CHANNEL_TLS(obj);
 
+    if (ioc->hs_ioc_tag) {
+        trace_qio_channel_tls_handshake_cancel(ioc);
+        g_clear_handle_id(&ioc->hs_ioc_tag, g_source_remove);
+    }
+
+    if (ioc->bye_ioc_tag) {
+        trace_qio_channel_tls_bye_cancel(ioc);
+        g_clear_handle_id(&ioc->bye_ioc_tag, g_source_remove);
+    }
+
     object_unref(OBJECT(ioc->master));
     qcrypto_tls_session_free(ioc->session);
 }
 
+static bool
+qio_channel_tls_allow_premature_termination(QIOChannelTLS *tioc, int flags)
+{
+    if (flags & QIO_CHANNEL_READ_FLAG_RELAXED_EOF) {
+        return true;
+    }
+
+    if (qatomic_read(&tioc->shutdown) & QIO_CHANNEL_SHUTDOWN_READ) {
+        return true;
+    }
+
+    return false;
+}
 
 static ssize_t qio_channel_tls_readv(QIOChannel *ioc,
                                      const struct iovec *iov,
@@ -350,6 +378,7 @@ static ssize_t qio_channel_tls_readv(QIOChannel *ioc,
                                      int flags,
                                      Error **errp)
 {
+    ERRP_GUARD();
     QIOChannelTLS *tioc = QIO_CHANNEL_TLS(ioc);
     size_t i;
     ssize_t got = 0;
@@ -359,8 +388,6 @@ static ssize_t qio_channel_tls_readv(QIOChannel *ioc,
             tioc->session,
             iov[i].iov_base,
             iov[i].iov_len,
-            flags & QIO_CHANNEL_READ_FLAG_RELAXED_EOF ||
-            qatomic_load_acquire(&tioc->shutdown) & QIO_CHANNEL_SHUTDOWN_READ,
             errp);
         if (ret == QCRYPTO_TLS_SESSION_ERR_BLOCK) {
             if (got) {
@@ -369,6 +396,12 @@ static ssize_t qio_channel_tls_readv(QIOChannel *ioc,
                 return QIO_CHANNEL_ERR_BLOCK;
             }
         } else if (ret < 0) {
+            if (ret == QCRYPTO_TLS_SESSION_PREMATURE_TERMINATION &&
+                qio_channel_tls_allow_premature_termination(tioc, flags)) {
+                error_free(*errp);
+                *errp = NULL;
+                return got;
+            }
             return -1;
         }
         got += ret;
@@ -420,7 +453,7 @@ static int qio_channel_tls_set_blocking(QIOChannel *ioc,
 {
     QIOChannelTLS *tioc = QIO_CHANNEL_TLS(ioc);
 
-    return qio_channel_set_blocking(tioc->master, enabled, errp);
+    return qio_channel_set_blocking(tioc->master, enabled, errp) ? 0 : -1;
 }
 
 static void qio_channel_tls_set_delay(QIOChannel *ioc,
@@ -561,7 +594,7 @@ qio_channel_tls_get_session(QIOChannelTLS *ioc)
 }
 
 static void qio_channel_tls_class_init(ObjectClass *klass,
-                                       void *class_data G_GNUC_UNUSED)
+                                       const void *class_data G_GNUC_UNUSED)
 {
     QIOChannelClass *ioc_klass = QIO_CHANNEL_CLASS(klass);
 

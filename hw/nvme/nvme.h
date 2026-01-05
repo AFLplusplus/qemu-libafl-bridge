@@ -218,10 +218,20 @@ typedef struct NvmeNamespaceParams {
     struct {
         char *ruhs;
     } fdp;
+
+    struct {
+        uint16_t nawun;
+        uint16_t nawupf;
+        uint16_t nabsn;
+        uint16_t nabspf;
+        uint16_t nabo;
+    } atomic;
 } NvmeNamespaceParams;
 
 typedef struct NvmeAtomic {
     uint32_t    atomic_max_write_size;
+    uint64_t    atomic_boundary;
+    uint64_t    atomic_nabo;
     bool        atomic_writes;
 } NvmeAtomic;
 
@@ -280,6 +290,8 @@ typedef struct NvmeNamespace {
         /* reclaim unit handle identifiers indexed by placement handle */
         uint16_t *phs;
     } fdp;
+
+    NvmeAtomic  atomic;
 } NvmeNamespace;
 
 static inline uint32_t nvme_nsid(NvmeNamespace *ns)
@@ -461,6 +473,8 @@ static inline const char *nvme_adm_opc_str(uint8_t opc)
     case NVME_ADM_CMD_DIRECTIVE_RECV:   return "NVME_ADM_CMD_DIRECTIVE_RECV";
     case NVME_ADM_CMD_DBBUF_CONFIG:     return "NVME_ADM_CMD_DBBUF_CONFIG";
     case NVME_ADM_CMD_FORMAT_NVM:       return "NVME_ADM_CMD_FORMAT_NVM";
+    case NVME_ADM_CMD_SECURITY_SEND:    return "NVME_ADM_CMD_SECURITY_SEND";
+    case NVME_ADM_CMD_SECURITY_RECV:    return "NVME_ADM_CMD_SECURITY_RECV";
     default:                            return "NVME_ADM_CMD_UNKNOWN";
     }
 }
@@ -648,6 +662,9 @@ typedef struct NvmeCtrl {
     } next_pri_ctrl_cap;    /* These override pri_ctrl_cap after reset */
     uint32_t    dn; /* Disable Normal */
     NvmeAtomic  atomic;
+
+    /* Socket mapping to SPDM over NVMe Security In/Out commands */
+    int spdm_socket;
 } NvmeCtrl;
 
 typedef enum NvmeResetType {
@@ -722,5 +739,10 @@ uint16_t nvme_bounce_mdata(NvmeCtrl *n, void *ptr, uint32_t len,
 void nvme_rw_complete_cb(void *opaque, int ret);
 uint16_t nvme_map_dptr(NvmeCtrl *n, NvmeSg *sg, size_t len,
                        NvmeCmd *cmd);
+
+void nvme_atomic_configure_max_write_size(bool dn, uint16_t awun,
+                                          uint16_t awupf, NvmeAtomic *atomic);
+void nvme_ns_atomic_configure_boundary(bool dn, uint16_t nabsn,
+                                       uint16_t nabspf, NvmeAtomic *atomic);
 
 #endif /* HW_NVME_NVME_H */

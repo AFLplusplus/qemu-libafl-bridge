@@ -1,17 +1,12 @@
 #pragma once
 
 #include "qemu/osdep.h"
-
-#include "qapi/error.h"
-
-#include "exec/exec-all.h"
-#include "exec/tb-flush.h"
+#include "tcg/helper-info.h"
 
 #include "libafl/exit.h"
-#include "libafl/hook.h"
 
 typedef void (*libafl_backdoor_exec_cb)(uint64_t data, CPUArchState* cpu,
-                                        target_ulong pc);
+                                        vaddr pc);
 
 struct libafl_backdoor_hook {
     // data

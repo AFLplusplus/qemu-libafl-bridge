@@ -41,7 +41,6 @@ extern const TargetPageBits target_page;
 # endif
 # define TARGET_PAGE_SIZE    (-(int)TARGET_PAGE_MASK)
 #else
-# define TARGET_PAGE_BITS_MIN TARGET_PAGE_BITS
 # define TARGET_PAGE_SIZE    (1 << TARGET_PAGE_BITS)
 # define TARGET_PAGE_MASK    ((TARGET_PAGE_TYPE)-1 << TARGET_PAGE_BITS)
 #endif
@@ -63,7 +62,15 @@ static inline int qemu_target_page_bits(void)
     return TARGET_PAGE_BITS;
 }
 
-int qemu_target_page_bits_min(void);
-size_t qemu_target_pages_to_MiB(size_t pages);
+/* Convert target pages to MiB (2**20). */
+static inline size_t qemu_target_pages_to_MiB(size_t pages)
+{
+    int page_bits = TARGET_PAGE_BITS;
+
+    /* So far, the largest (non-huge) page size is 64k, i.e. 16 bits. */
+    g_assert(page_bits < 20);
+
+    return pages >> (20 - page_bits);
+}
 
 #endif

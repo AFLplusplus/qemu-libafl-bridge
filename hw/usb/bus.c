@@ -26,7 +26,7 @@ static const Property usb_props[] = {
     DEFINE_PROP_STRING("pcap", USBDevice, pcap_filename),
 };
 
-static void usb_bus_class_init(ObjectClass *klass, void *data)
+static void usb_bus_class_init(ObjectClass *klass, const void *data)
 {
     BusClass *k = BUS_CLASS(klass);
     HotplugHandlerClass *hc = HOTPLUG_HANDLER_CLASS(klass);
@@ -42,7 +42,7 @@ static const TypeInfo usb_bus_info = {
     .parent = TYPE_BUS,
     .instance_size = sizeof(USBBus),
     .class_init = usb_bus_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_HOTPLUG_HANDLER },
         { }
     }
@@ -259,10 +259,9 @@ static void usb_qdev_realize(DeviceState *qdev, Error **errp)
     }
 
     if (dev->pcap_filename) {
-        int fd = qemu_open_old(dev->pcap_filename,
-                               O_CREAT | O_WRONLY | O_TRUNC | O_BINARY, 0666);
+        int fd = qemu_create(dev->pcap_filename,
+                             O_WRONLY | O_TRUNC | O_BINARY, 0666, errp);
         if (fd < 0) {
-            error_setg(errp, "open %s failed", dev->pcap_filename);
             usb_qdev_unrealize(qdev);
             return;
         }
@@ -713,7 +712,7 @@ static void usb_device_instance_init(Object *obj)
     }
 }
 
-static void usb_device_class_init(ObjectClass *klass, void *data)
+static void usb_device_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *k = DEVICE_CLASS(klass);
     k->bus_type = TYPE_USB_BUS;

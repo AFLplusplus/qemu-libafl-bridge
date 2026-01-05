@@ -24,9 +24,9 @@
 #include "qemu/qemu-print.h"
 #include "cpu.h"
 #include "migration/vmstate.h"
-#include "exec/exec-all.h"
 #include "exec/translation-block.h"
 #include "fpu/softfloat-helpers.h"
+#include "accel/tcg/cpu-ops.h"
 #include "tcg/tcg.h"
 
 static void superh_cpu_set_pc(CPUState *cs, vaddr value)
@@ -41,6 +41,29 @@ static vaddr superh_cpu_get_pc(CPUState *cs)
     SuperHCPU *cpu = SUPERH_CPU(cs);
 
     return cpu->env.pc;
+}
+
+static TCGTBCPUState superh_get_tb_cpu_state(CPUState *cs)
+{
+    CPUSH4State *env = cpu_env(cs);
+    uint32_t flags;
+
+    flags = env->flags
+            | (env->fpscr & TB_FLAG_FPSCR_MASK)
+            | (env->sr & TB_FLAG_SR_MASK)
+            | (env->movcal_backup ? TB_FLAG_PENDING_MOVCA : 0); /* Bit 3 */
+#ifdef CONFIG_USER_ONLY
+    flags |= TB_FLAG_UNALIGN * !cs->prctl_unalign_sigbus;
+#endif
+
+    return (TCGTBCPUState){
+        .pc = env->pc,
+        .flags = flags,
+#ifdef CONFIG_USER_ONLY
+        /* For a gUSA region, notice the end of the region.  */
+        .cs_base = flags & TB_FLAG_GUSA_MASK ? env->gregs[0] : 0,
+#endif
+    };
 }
 
 static void superh_cpu_synchronize_from_tb(CPUState *cs,
@@ -85,7 +108,7 @@ static bool superh_io_recompile_replay_branch(CPUState *cs,
 
 static bool superh_cpu_has_work(CPUState *cs)
 {
-    return cs->interrupt_request & CPU_INTERRUPT_HARD;
+    return cpu_test_interrupt(cs, CPU_INTERRUPT_HARD);
 }
 #endif /* !CONFIG_USER_ONLY */
 
@@ -177,7 +200,7 @@ static void sh7750r_cpu_initfn(Object *obj)
     env->features = SH_FEATURE_BCR3_AND_BCR4;
 }
 
-static void sh7750r_class_init(ObjectClass *oc, void *data)
+static void sh7750r_class_init(ObjectClass *oc, const void *data)
 {
     SuperHCPUClass *scc = SUPERH_CPU_CLASS(oc);
 
@@ -194,7 +217,7 @@ static void sh7751r_cpu_initfn(Object *obj)
     env->features = SH_FEATURE_BCR3_AND_BCR4;
 }
 
-static void sh7751r_class_init(ObjectClass *oc, void *data)
+static void sh7751r_class_init(ObjectClass *oc, const void *data)
 {
     SuperHCPUClass *scc = SUPERH_CPU_CLASS(oc);
 
@@ -211,7 +234,7 @@ static void sh7785_cpu_initfn(Object *obj)
     env->features = SH_FEATURE_SH4A;
 }
 
-static void sh7785_class_init(ObjectClass *oc, void *data)
+static void sh7785_class_init(ObjectClass *oc, const void *data)
 {
     SuperHCPUClass *scc = SUPERH_CPU_CLASS(oc);
 
@@ -259,25 +282,31 @@ static const struct SysemuCPUOps sh4_sysemu_ops = {
 };
 #endif
 
-#include "accel/tcg/cpu-ops.h"
-
 static const TCGCPUOps superh_tcg_ops = {
+    /* MTTCG not yet supported: require strict ordering */
+    .guest_default_memory_order = TCG_MO_ALL,
+    .mttcg_supported = false,
+
     .initialize = sh4_translate_init,
     .translate_code = sh4_translate_code,
+    .get_tb_cpu_state = superh_get_tb_cpu_state,
     .synchronize_from_tb = superh_cpu_synchronize_from_tb,
     .restore_state_to_opc = superh_restore_state_to_opc,
+    .mmu_index = sh4_cpu_mmu_index,
 
 #ifndef CONFIG_USER_ONLY
     .tlb_fill = superh_cpu_tlb_fill,
+    .pointer_wrap = cpu_pointer_wrap_notreached,
     .cpu_exec_interrupt = superh_cpu_exec_interrupt,
     .cpu_exec_halt = superh_cpu_has_work,
+    .cpu_exec_reset = cpu_reset,
     .do_interrupt = superh_cpu_do_interrupt,
     .do_unaligned_access = superh_cpu_do_unaligned_access,
     .io_recompile_replay_branch = superh_io_recompile_replay_branch,
 #endif /* !CONFIG_USER_ONLY */
 };
 
-static void superh_cpu_class_init(ObjectClass *oc, void *data)
+static void superh_cpu_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     CPUClass *cc = CPU_CLASS(oc);
@@ -291,7 +320,6 @@ static void superh_cpu_class_init(ObjectClass *oc, void *data)
                                        &scc->parent_phases);
 
     cc->class_by_name = superh_cpu_class_by_name;
-    cc->mmu_index = sh4_cpu_mmu_index;
     cc->dump_state = superh_cpu_dump_state;
     cc->set_pc = superh_cpu_set_pc;
     cc->get_pc = superh_cpu_get_pc;

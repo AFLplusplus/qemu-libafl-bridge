@@ -242,6 +242,7 @@ static uint32_t calc_image_hostmem(pixman_format_code_t pformat,
 static void virtio_gpu_resource_create_2d(VirtIOGPU *g,
                                           struct virtio_gpu_ctrl_command *cmd)
 {
+    Error *err = NULL;
     pixman_format_code_t pformat;
     struct virtio_gpu_simple_resource *res;
     struct virtio_gpu_resource_create_2d c2d;
@@ -293,7 +294,8 @@ static void virtio_gpu_resource_create_2d(VirtIOGPU *g,
                 c2d.width,
                 c2d.height,
                 c2d.height ? res->hostmem / c2d.height : 0,
-                &error_warn)) {
+                &err)) {
+            warn_report_err(err);
             goto end;
         }
     }
@@ -1223,7 +1225,8 @@ static int virtio_gpu_save(QEMUFile *f, void *opaque, size_t size,
 {
     VirtIOGPU *g = opaque;
     struct virtio_gpu_simple_resource *res;
-    int i;
+    Error *err = NULL;
+    int i, ret;
 
     /* in 2d mode we should never find unprocessed commands here */
     assert(QTAILQ_EMPTY(&g->cmdq));
@@ -1246,7 +1249,12 @@ static int virtio_gpu_save(QEMUFile *f, void *opaque, size_t size,
     }
     qemu_put_be32(f, 0); /* end of list */
 
-    return vmstate_save_state(f, &vmstate_virtio_gpu_scanouts, g, NULL);
+    ret = vmstate_save_state(f, &vmstate_virtio_gpu_scanouts, g, NULL,
+                             &err);
+    if (ret < 0) {
+        error_report_err(err);
+    }
+    return ret;
 }
 
 static bool virtio_gpu_load_restore_mapping(VirtIOGPU *g,
@@ -1282,9 +1290,10 @@ static int virtio_gpu_load(QEMUFile *f, void *opaque, size_t size,
                            const VMStateField *field)
 {
     VirtIOGPU *g = opaque;
+    Error *err = NULL;
     struct virtio_gpu_simple_resource *res;
     uint32_t resource_id, pformat;
-    int i;
+    int i, ret;
 
     g->hostmem = 0;
 
@@ -1317,7 +1326,8 @@ static int virtio_gpu_load(QEMUFile *f, void *opaque, size_t size,
                                              res->width,
                                              res->height,
                                              res->height ? res->hostmem / res->height : 0,
-                                             &error_warn)) {
+                                             &err)) {
+            warn_report_err(err);
             g_free(res);
             return -EINVAL;
         }
@@ -1343,9 +1353,11 @@ static int virtio_gpu_load(QEMUFile *f, void *opaque, size_t size,
     }
 
     /* load & apply scanout state */
-    vmstate_load_state(f, &vmstate_virtio_gpu_scanouts, g, 1);
-
-    return 0;
+    ret = vmstate_load_state(f, &vmstate_virtio_gpu_scanouts, g, 1, &err);
+    if (ret < 0) {
+        error_report_err(err);
+    }
+    return ret;
 }
 
 static int virtio_gpu_blob_save(QEMUFile *f, void *opaque, size_t size,
@@ -1684,7 +1696,7 @@ static const Property virtio_gpu_properties[] = {
     DEFINE_PROP_UINT8("x-scanout-vmstate-version", VirtIOGPU, scanout_vmstate_version, 2),
 };
 
-static void virtio_gpu_class_init(ObjectClass *klass, void *data)
+static void virtio_gpu_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     VirtioDeviceClass *vdc = VIRTIO_DEVICE_CLASS(klass);

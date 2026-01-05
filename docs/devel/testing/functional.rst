@@ -6,9 +6,6 @@ Functional testing with Python
 The ``tests/functional`` directory hosts functional tests written in
 Python. They are usually higher level tests, and may interact with
 external resources and with various guest operating systems.
-The functional tests have initially evolved from the Avocado tests, so there
-is a lot of similarity to those tests here (see :ref:`checkavocado-ref` for
-details about the Avocado tests).
 
 The tests should be written in the style of the Python `unittest`_ framework,
 using stdio for the TAP protocol. The folder ``tests/functional/qemu_test``
@@ -68,7 +65,7 @@ directory should be your build folder. For example::
 
 The test framework will automatically purge any scratch files created during
 the tests. If needing to debug a failed test, it is possible to keep these
-files around on disk by setting ```QEMU_TEST_KEEP_SCRATCH=1``` as an env
+files around on disk by setting ``QEMU_TEST_KEEP_SCRATCH=1`` as an env
 variable.  Any preserved files will be deleted the next time the test is run
 without this variable set.
 
@@ -277,7 +274,7 @@ speed mode in the meson.build file, while the "quick" speed mode is
 fine for functional tests that can be run without downloading files.
 ``make check`` then only runs the quick functional tests along with
 the other quick tests from the other test suites. If you choose to
-run only run ``make check-functional``, the "thorough" tests will be
+run only ``make check-functional``, the "thorough" tests will be
 executed, too. And to run all functional tests along with the others,
 you can use something like::
 
@@ -314,6 +311,9 @@ the assets without running the tests, you can do so by running::
 The cache is populated in the ``~/.cache/qemu/download`` directory by
 default, but the location can be changed by setting the
 ``QEMU_TEST_CACHE_DIR`` environment variable.
+
+To force the test suite to re-download the cache, even if still valid,
+set the ``QEMU_TEST_REFRESH_CACHE`` environment variable.
 
 Skipping tests
 --------------

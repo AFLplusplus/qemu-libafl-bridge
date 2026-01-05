@@ -411,6 +411,35 @@ char *qdev_get_dev_path(DeviceState *dev)
     return NULL;
 }
 
+const char *qdev_get_printable_name(DeviceState *vdev)
+{
+    /*
+     * Return device ID if explicity set
+     * (e.g. -device virtio-blk-pci,id=foo)
+     * This allows users to correlate errors with their custom device
+     * names.
+     */
+    if (vdev->id) {
+        return vdev->id;
+    }
+    /*
+     * Fall back to the canonical QOM device path (eg. ID for PCI
+     * devices).
+     * This ensures the device is still uniquely and meaningfully
+     * identified.
+     */
+    const char *path = qdev_get_dev_path(vdev);
+    if (path) {
+        return path;
+    }
+
+    /*
+     * Final fallback: if all else fails, return a placeholder string.
+     * This ensures the error message always contains a valid string.
+     */
+    return "<unknown device>";
+}
+
 void qdev_add_unplug_blocker(DeviceState *dev, Error *reason)
 {
     dev->unplug_blockers = g_slist_prepend(dev->unplug_blockers, reason);
@@ -693,7 +722,7 @@ static void device_finalize(Object *obj)
     g_free(dev->id);
 }
 
-static void device_class_base_init(ObjectClass *class, void *data)
+static void device_class_base_init(ObjectClass *class, const void *data)
 {
     DeviceClass *klass = DEVICE_CLASS(class);
 
@@ -731,7 +760,7 @@ device_vmstate_if_get_id(VMStateIf *obj)
     return qdev_get_dev_path(dev);
 }
 
-static void device_class_init(ObjectClass *class, void *data)
+static void device_class_init(ObjectClass *class, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(class);
     VMStateIfClass *vc = VMSTATE_IF_CLASS(class);
@@ -870,7 +899,7 @@ static const TypeInfo device_type_info = {
     .class_init = device_class_init,
     .abstract = true,
     .class_size = sizeof(DeviceClass),
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_VMSTATE_IF },
         { TYPE_RESETTABLE_INTERFACE },
         { }

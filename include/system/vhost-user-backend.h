@@ -13,7 +13,7 @@
 #define QEMU_VHOST_USER_BACKEND_H
 
 #include "qom/object.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "qemu/option.h"
 #include "qemu/bitmap.h"
 #include "hw/virtio/vhost.h"
@@ -32,7 +32,7 @@ struct VhostUserBackend {
     Object parent;
 
     char *chr_name;
-    CharBackend chr;
+    CharFrontend chr;
     VhostUserState vhost_user;
     struct vhost_dev dev;
     VirtIODevice *vdev;
@@ -43,6 +43,6 @@ struct VhostUserBackend {
 int vhost_user_backend_dev_init(VhostUserBackend *b, VirtIODevice *vdev,
                                 unsigned nvqs, Error **errp);
 void vhost_user_backend_start(VhostUserBackend *b);
-void vhost_user_backend_stop(VhostUserBackend *b);
+int vhost_user_backend_stop(VhostUserBackend *b);
 
 #endif

@@ -233,7 +233,7 @@ static void allwinner_sdhost_send_command(AwSdHostState *s)
 {
     SDRequest request;
     uint8_t resp[16];
-    int rlen;
+    size_t rlen;
 
     /* Auto clear load flag */
     s->command &= ~SD_CMDR_LOAD;
@@ -246,10 +246,7 @@ static void allwinner_sdhost_send_command(AwSdHostState *s)
         request.arg = s->command_arg;
 
         /* Send request to SD bus */
-        rlen = sdbus_do_command(&s->sdbus, &request, resp);
-        if (rlen < 0) {
-            goto error;
-        }
+        rlen = sdbus_do_command(&s->sdbus, &request, resp, sizeof(resp));
 
         /* If the command has a response, store it in the response registers */
         if ((s->command & SD_CMDR_RESPONSE)) {
@@ -888,14 +885,15 @@ static void allwinner_sdhost_reset(DeviceState *dev)
     }
 }
 
-static void allwinner_sdhost_bus_class_init(ObjectClass *klass, void *data)
+static void allwinner_sdhost_bus_class_init(ObjectClass *klass,
+                                            const void *data)
 {
     SDBusClass *sbc = SD_BUS_CLASS(klass);
 
     sbc->set_inserted = allwinner_sdhost_set_inserted;
 }
 
-static void allwinner_sdhost_class_init(ObjectClass *klass, void *data)
+static void allwinner_sdhost_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -905,7 +903,8 @@ static void allwinner_sdhost_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, allwinner_sdhost_properties);
 }
 
-static void allwinner_sdhost_sun4i_class_init(ObjectClass *klass, void *data)
+static void allwinner_sdhost_sun4i_class_init(ObjectClass *klass,
+                                              const void *data)
 {
     AwSdHostClass *sc = AW_SDHOST_CLASS(klass);
     sc->max_desc_size = 8 * KiB;
@@ -913,7 +912,8 @@ static void allwinner_sdhost_sun4i_class_init(ObjectClass *klass, void *data)
     sc->can_calibrate = false;
 }
 
-static void allwinner_sdhost_sun5i_class_init(ObjectClass *klass, void *data)
+static void allwinner_sdhost_sun5i_class_init(ObjectClass *klass,
+                                              const void *data)
 {
     AwSdHostClass *sc = AW_SDHOST_CLASS(klass);
     sc->max_desc_size = 64 * KiB;
@@ -922,7 +922,7 @@ static void allwinner_sdhost_sun5i_class_init(ObjectClass *klass, void *data)
 }
 
 static void allwinner_sdhost_sun50i_a64_class_init(ObjectClass *klass,
-                                                   void *data)
+                                                   const void *data)
 {
     AwSdHostClass *sc = AW_SDHOST_CLASS(klass);
     sc->max_desc_size = 64 * KiB;
@@ -931,7 +931,7 @@ static void allwinner_sdhost_sun50i_a64_class_init(ObjectClass *klass,
 }
 
 static void allwinner_sdhost_sun50i_a64_emmc_class_init(ObjectClass *klass,
-                                                        void *data)
+                                                        const void *data)
 {
     AwSdHostClass *sc = AW_SDHOST_CLASS(klass);
     sc->max_desc_size = 8 * KiB;

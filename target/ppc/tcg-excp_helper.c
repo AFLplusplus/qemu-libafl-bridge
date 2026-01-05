@@ -19,8 +19,8 @@
 #include "qemu/osdep.h"
 #include "qemu/main-loop.h"
 #include "qemu/log.h"
-#include "exec/cpu_ldst.h"
-#include "exec/exec-all.h"
+#include "target/ppc/cpu.h"
+#include "accel/tcg/cpu-ldst.h"
 #include "exec/helper-proto.h"
 #include "system/runstate.h"
 
@@ -228,6 +228,18 @@ void ppc_cpu_do_unaligned_access(CPUState *cs, vaddr vaddr,
     case POWERPC_MMU_BOOKE:
     case POWERPC_MMU_BOOKE206:
         env->spr[SPR_BOOKE_DEAR] = vaddr;
+        break;
+    case POWERPC_MMU_REAL:
+        if (env->flags & POWERPC_FLAG_PPE42) {
+            env->spr[SPR_PPE42_EDR] = vaddr;
+            if (access_type == MMU_DATA_STORE) {
+                env->spr[SPR_PPE42_ISR] |= PPE42_ISR_ST;
+            } else {
+                env->spr[SPR_PPE42_ISR] &= ~PPE42_ISR_ST;
+            }
+        } else {
+            env->spr[SPR_DAR] = vaddr;
+        }
         break;
     default:
         env->spr[SPR_DAR] = vaddr;

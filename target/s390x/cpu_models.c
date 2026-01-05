@@ -373,7 +373,7 @@ static void s390_print_cpu_model_list_entry(gpointer data, gpointer user_data)
     g_free(name);
 }
 
-static gint s390_cpu_list_compare(gconstpointer a, gconstpointer b)
+static gint s390_cpu_list_compare(gconstpointer a, gconstpointer b, gpointer d)
 {
     const S390CPUClass *cc_a = S390_CPU_CLASS((ObjectClass *)a);
     const S390CPUClass *cc_b = S390_CPU_CLASS((ObjectClass *)b);
@@ -415,7 +415,7 @@ void s390_cpu_list(void)
 
     qemu_printf("Available CPUs:\n");
     list = object_class_get_list(TYPE_S390_CPU, false);
-    list = g_slist_sort(list, s390_cpu_list_compare);
+    list = g_slist_sort_with_data(list, s390_cpu_list_compare, NULL);
     g_slist_foreach(list, s390_print_cpu_model_list_entry, NULL);
     g_slist_free(list);
 
@@ -578,7 +578,6 @@ static void check_compat_model_failed(Error **errp,
     error_setg(errp, "%s. Maximum supported model in the current configuration: \'%s\'",
                msg, max_model->def->name);
     error_append_hint(errp, "Consider a different accelerator, try \"-accel help\"\n");
-    return;
 }
 
 static bool check_compatibility(const S390CPUModel *max_model,
@@ -920,7 +919,7 @@ void s390_cpu_model_class_register_props(ObjectClass *oc)
 }
 
 #ifdef CONFIG_KVM
-static void s390_host_cpu_model_class_init(ObjectClass *oc, void *data)
+static void s390_host_cpu_model_class_init(ObjectClass *oc, const void *data)
 {
     S390CPUClass *xcc = S390_CPU_CLASS(oc);
 
@@ -929,7 +928,7 @@ static void s390_host_cpu_model_class_init(ObjectClass *oc, void *data)
 }
 #endif
 
-static void s390_base_cpu_model_class_init(ObjectClass *oc, void *data)
+static void s390_base_cpu_model_class_init(ObjectClass *oc, const void *data)
 {
     S390CPUClass *xcc = S390_CPU_CLASS(oc);
 
@@ -940,7 +939,7 @@ static void s390_base_cpu_model_class_init(ObjectClass *oc, void *data)
     xcc->desc = xcc->cpu_def->desc;
 }
 
-static void s390_cpu_model_class_init(ObjectClass *oc, void *data)
+static void s390_cpu_model_class_init(ObjectClass *oc, const void *data)
 {
     S390CPUClass *xcc = S390_CPU_CLASS(oc);
 
@@ -950,7 +949,7 @@ static void s390_cpu_model_class_init(ObjectClass *oc, void *data)
     xcc->desc = xcc->cpu_def->desc;
 }
 
-static void s390_qemu_cpu_model_class_init(ObjectClass *oc, void *data)
+static void s390_qemu_cpu_model_class_init(ObjectClass *oc, const void *data)
 {
     S390CPUClass *xcc = S390_CPU_CLASS(oc);
 
@@ -959,7 +958,7 @@ static void s390_qemu_cpu_model_class_init(ObjectClass *oc, void *data)
                                 qemu_hw_version());
 }
 
-static void s390_max_cpu_model_class_init(ObjectClass *oc, void *data)
+static void s390_max_cpu_model_class_init(ObjectClass *oc, const void *data)
 {
     S390CPUClass *xcc = S390_CPU_CLASS(oc);
 
@@ -1073,7 +1072,7 @@ static void register_types(void)
             .instance_init = s390_cpu_model_initfn,
             .instance_finalize = s390_cpu_model_finalize,
             .class_init = s390_base_cpu_model_class_init,
-            .class_data = (void *) &s390_cpu_defs[i],
+            .class_data = &s390_cpu_defs[i],
         };
         char *name = s390_cpu_type_name(s390_cpu_defs[i].name);
         TypeInfo ti = {
@@ -1082,7 +1081,7 @@ static void register_types(void)
             .instance_init = s390_cpu_model_initfn,
             .instance_finalize = s390_cpu_model_finalize,
             .class_init = s390_cpu_model_class_init,
-            .class_data = (void *) &s390_cpu_defs[i],
+            .class_data = &s390_cpu_defs[i],
         };
 
         type_register_static(&ti_base);

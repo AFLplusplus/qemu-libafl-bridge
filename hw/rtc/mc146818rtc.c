@@ -43,15 +43,9 @@
 #include "qapi/error.h"
 #include "qapi/qapi-events-misc.h"
 #include "qapi/visitor.h"
+#include "trace.h"
 
-//#define DEBUG_CMOS
 //#define DEBUG_COALESCED
-
-#ifdef DEBUG_CMOS
-# define CMOS_DPRINTF(format, ...)      printf(format, ## __VA_ARGS__)
-#else
-# define CMOS_DPRINTF(format, ...)      do { } while (0)
-#endif
 
 #ifdef DEBUG_COALESCED
 # define DPRINTF_C(format, ...)      printf(format, ## __VA_ARGS__)
@@ -439,8 +433,7 @@ static void cmos_ioport_write(void *opaque, hwaddr addr,
     if ((addr & 1) == 0) {
         s->cmos_index = data & 0x7f;
     } else {
-        CMOS_DPRINTF("cmos: write index=0x%02x val=0x%02" PRIx64 "\n",
-                     s->cmos_index, data);
+        trace_mc146818_rtc_ioport_write(s->cmos_index, data);
         switch(s->cmos_index) {
         case RTC_SECONDS_ALARM:
         case RTC_MINUTES_ALARM:
@@ -726,21 +719,20 @@ static uint64_t cmos_ioport_read(void *opaque, hwaddr addr,
             ret = s->cmos_data[s->cmos_index];
             break;
         }
-        CMOS_DPRINTF("cmos: read index=0x%02x val=0x%02x\n",
-                     s->cmos_index, ret);
+        trace_mc146818_rtc_ioport_read(s->cmos_index, ret);
         return ret;
     }
 }
 
 void mc146818rtc_set_cmos_data(MC146818RtcState *s, int addr, int val)
 {
-    if (addr >= 0 && addr <= 127)
-        s->cmos_data[addr] = val;
+    assert(addr >= 0 && addr < ARRAY_SIZE(s->cmos_data));
+    s->cmos_data[addr] = val;
 }
 
 int mc146818rtc_get_cmos_data(MC146818RtcState *s, int addr)
 {
-    assert(addr >= 0 && addr <= 127);
+    assert(addr >= 0 && addr < ARRAY_SIZE(s->cmos_data));
     return s->cmos_data[addr];
 }
 
@@ -819,7 +811,7 @@ static const VMStateDescription vmstate_rtc_irq_reinject_on_ack_count = {
 static const VMStateDescription vmstate_rtc = {
     .name = "mc146818rtc",
     .version_id = 3,
-    .minimum_version_id = 1,
+    .minimum_version_id = 3,
     .pre_save = rtc_pre_save,
     .post_load = rtc_post_load,
     .fields = (const VMStateField[]) {
@@ -829,13 +821,13 @@ static const VMStateDescription vmstate_rtc = {
         VMSTATE_TIMER_PTR(periodic_timer, MC146818RtcState),
         VMSTATE_INT64(next_periodic_time, MC146818RtcState),
         VMSTATE_UNUSED(3*8),
-        VMSTATE_UINT32_V(irq_coalesced, MC146818RtcState, 2),
-        VMSTATE_UINT32_V(period, MC146818RtcState, 2),
-        VMSTATE_UINT64_V(base_rtc, MC146818RtcState, 3),
-        VMSTATE_UINT64_V(last_update, MC146818RtcState, 3),
-        VMSTATE_INT64_V(offset, MC146818RtcState, 3),
-        VMSTATE_TIMER_PTR_V(update_timer, MC146818RtcState, 3),
-        VMSTATE_UINT64_V(next_alarm_time, MC146818RtcState, 3),
+        VMSTATE_UINT32(irq_coalesced, MC146818RtcState),
+        VMSTATE_UINT32(period, MC146818RtcState),
+        VMSTATE_UINT64(base_rtc, MC146818RtcState),
+        VMSTATE_UINT64(last_update, MC146818RtcState),
+        VMSTATE_INT64(offset, MC146818RtcState),
+        VMSTATE_TIMER_PTR(update_timer, MC146818RtcState),
+        VMSTATE_UINT64(next_alarm_time, MC146818RtcState),
         VMSTATE_END_OF_LIST()
     },
     .subsections = (const VMStateDescription * const []) {
@@ -929,8 +921,6 @@ static void rtc_realizefn(DeviceState *dev, Error **errp)
     memory_region_add_subregion(&s->io, 0, &s->coalesced_io);
     memory_region_add_coalescing(&s->coalesced_io, 0, 1);
 
-    qdev_set_legacy_instance_id(dev, s->io_base, 3);
-
     object_property_add_tm(OBJECT(s), "date", rtc_get_date);
 
     qdev_init_gpio_out(dev, &s->irq, 1);
@@ -1018,7 +1008,7 @@ static void rtc_build_aml(AcpiDevAmlIf *adev, Aml *scope)
     aml_append(scope, dev);
 }
 
-static void rtc_class_initfn(ObjectClass *klass, void *data)
+static void rtc_class_initfn(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     ResettableClass *rc = RESETTABLE_CLASS(klass);
@@ -1038,7 +1028,7 @@ static const TypeInfo mc146818rtc_info = {
     .parent        = TYPE_ISA_DEVICE,
     .instance_size = sizeof(MC146818RtcState),
     .class_init    = rtc_class_initfn,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { TYPE_ACPI_DEV_AML_IF },
         { },
     },

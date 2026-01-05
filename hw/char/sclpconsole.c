@@ -35,7 +35,7 @@ typedef struct ASCIIConsoleData {
 
 struct SCLPConsole {
     SCLPEvent event;
-    CharBackend chr;
+    CharFrontend chr;
     uint8_t iov[SIZE_BUFFER_VT220];
     uint32_t iov_sclp;      /* offset in buf for SCLP read operation       */
     uint32_t iov_bs;        /* offset in buf for char layer read operation */
@@ -255,7 +255,7 @@ static const Property console_properties[] = {
     DEFINE_PROP_CHR("chardev", SCLPConsole, chr),
 };
 
-static void console_class_init(ObjectClass *klass, void *data)
+static void console_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     SCLPEventClass *ec = SCLP_EVENT_CLASS(klass);

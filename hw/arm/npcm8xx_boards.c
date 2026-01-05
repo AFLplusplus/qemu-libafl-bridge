@@ -19,6 +19,7 @@
 #include "chardev/char.h"
 #include "hw/boards.h"
 #include "hw/arm/npcm8xx.h"
+#include "hw/arm/machines-qom.h"
 #include "hw/core/cpu.h"
 #include "hw/loader.h"
 #include "hw/qdev-core.h"
@@ -209,7 +210,7 @@ static void npcm8xx_set_soc_type(NPCM8xxMachineClass *nmc, const char *type)
     mc->default_cpus = mc->min_cpus = mc->max_cpus = sc->num_cpus;
 }
 
-static void npcm8xx_machine_class_init(ObjectClass *oc, void *data)
+static void npcm8xx_machine_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     static const char * const valid_cpu_types[] = {
@@ -224,7 +225,7 @@ static void npcm8xx_machine_class_init(ObjectClass *oc, void *data)
     mc->valid_cpu_types = valid_cpu_types;
 }
 
-static void npcm845_evb_machine_class_init(ObjectClass *oc, void *data)
+static void npcm845_evb_machine_class_init(ObjectClass *oc, const void *data)
 {
     NPCM8xxMachineClass *nmc = NPCM8XX_MACHINE_CLASS(oc);
     MachineClass *mc = MACHINE_CLASS(oc);
@@ -248,6 +249,7 @@ static const TypeInfo npcm8xx_machine_types[] = {
         .name           = MACHINE_TYPE_NAME("npcm845-evb"),
         .parent         = TYPE_NPCM8XX_MACHINE,
         .class_init     = npcm845_evb_machine_class_init,
+        .interfaces     = aarch64_machine_interfaces,
     },
 };
 

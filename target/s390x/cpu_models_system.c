@@ -19,7 +19,7 @@
 #include "qapi/visitor.h"
 #include "qapi/qobject-input-visitor.h"
 #include "qobject/qdict.h"
-#include "qapi/qapi-commands-machine-target.h"
+#include "qapi/qapi-commands-machine.h"
 
 static void list_add_feat(const char *name, void *opaque);
 
@@ -252,6 +252,9 @@ CpuModelExpansionInfo *qmp_query_cpu_model_expansion(CpuModelExpansionType type,
 
     s390_feat_bitmap_to_ascii(deprecated_feats,
                               &expansion_info->deprecated_props, list_add_feat);
+
+    expansion_info->has_deprecated_props = !!expansion_info->deprecated_props;
+
     return expansion_info;
 }
 

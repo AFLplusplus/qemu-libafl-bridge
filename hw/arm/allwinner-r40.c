@@ -20,7 +20,6 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
-#include "qemu/bswap.h"
 #include "qemu/module.h"
 #include "qemu/units.h"
 #include "hw/boards.h"
@@ -539,7 +538,7 @@ static void allwinner_r40_realize(DeviceState *dev, Error **errp)
     }
 }
 
-static void allwinner_r40_class_init(ObjectClass *oc, void *data)
+static void allwinner_r40_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 

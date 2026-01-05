@@ -16,7 +16,7 @@
 #include "qemu/rcu.h"
 #include "exec/target_page.h"
 #include "system/system.h"
-#include "exec/ramblock.h"
+#include "system/ramblock.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "file.h"
@@ -35,11 +35,6 @@
 #include "io/channel-file.h"
 #include "io/channel-socket.h"
 #include "yank_functions.h"
-
-/* Multiple fd's */
-
-#define MULTIFD_MAGIC 0x11223344U
-#define MULTIFD_VERSION 1
 
 typedef struct {
     uint32_t magic;
@@ -444,6 +439,39 @@ static void multifd_send_set_error(Error *err)
     }
 }
 
+/*
+ * Gracefully shutdown IOChannels. Only needed for successful migrations on
+ * top of TLS channels.  Otherwise it is same to qio_channel_shutdown().
+ *
+ * A successful migration also guarantees multifd sender threads are
+ * properly flushed and halted.  It is only safe to send BYE in the
+ * migration thread here when we know there's no other thread writting to
+ * the channel, because GnuTLS doesn't support concurrent writers.
+ */
+static void migration_ioc_shutdown_gracefully(QIOChannel *ioc)
+{
+    Error *local_err = NULL;
+
+    if (!migration_has_failed(migrate_get_current()) &&
+        object_dynamic_cast((Object *)ioc, TYPE_QIO_CHANNEL_TLS)) {
+
+        /*
+         * The destination expects the TLS session to always be properly
+         * terminated. This helps to detect a premature termination in the
+         * middle of the stream.  Note that older QEMUs always break the
+         * connection on the source and the destination always sees
+         * GNUTLS_E_PREMATURE_TERMINATION.
+         */
+        migration_tls_channel_end(ioc, &local_err);
+        if (local_err) {
+            warn_reportf_err(local_err,
+                        "Failed to gracefully terminate TLS connection: ");
+        }
+    }
+
+    qio_channel_shutdown(ioc, QIO_CHANNEL_SHUTDOWN_BOTH, NULL);
+}
+
 static void multifd_send_terminate_threads(void)
 {
     int i;
@@ -465,7 +493,7 @@ static void multifd_send_terminate_threads(void)
 
         qemu_sem_post(&p->sem);
         if (p->c) {
-            qio_channel_shutdown(p->c, QIO_CHANNEL_SHUTDOWN_BOTH, NULL);
+            migration_ioc_shutdown_gracefully(p->c);
         }
     }
 
@@ -550,36 +578,6 @@ void multifd_send_shutdown(void)
 
     if (!migrate_multifd()) {
         return;
-    }
-
-    for (i = 0; i < migrate_multifd_channels(); i++) {
-        MultiFDSendParams *p = &multifd_send_state->params[i];
-
-        /* thread_created implies the TLS handshake has succeeded */
-        if (p->tls_thread_created && p->thread_created) {
-            Error *local_err = NULL;
-            /*
-             * The destination expects the TLS session to always be
-             * properly terminated. This helps to detect a premature
-             * termination in the middle of the stream.  Note that
-             * older QEMUs always break the connection on the source
-             * and the destination always sees
-             * GNUTLS_E_PREMATURE_TERMINATION.
-             */
-            migration_tls_channel_end(p->c, &local_err);
-
-            /*
-             * The above can return an error in case the migration has
-             * already failed. If the migration succeeded, errors are
-             * not expected but there's no need to kill the source.
-             */
-            if (local_err && !migration_has_failed(migrate_get_current())) {
-                warn_report(
-                    "multifd_send_%d: Failed to terminate TLS connection: %s",
-                    p->id, error_get_pretty(local_err));
-                break;
-            }
-        }
     }
 
     multifd_send_terminate_threads();
@@ -966,6 +964,7 @@ bool multifd_send_setup(void)
 
         if (!multifd_new_send_channel_create(p, &local_err)) {
             migrate_set_error(s, local_err);
+            error_free(local_err);
             ret = -1;
         }
     }
@@ -990,6 +989,7 @@ bool multifd_send_setup(void)
         ret = multifd_send_state->ops->send_setup(p, &local_err);
         if (ret) {
             migrate_set_error(s, local_err);
+            error_free(local_err);
             goto err;
         }
         assert(p->iov);
@@ -1389,6 +1389,13 @@ static void *multifd_recv_thread(void *opaque)
         }
 
         if (has_data) {
+            /*
+             * multifd thread should not be active and receive data
+             * when migration is in the Postcopy phase. Two threads
+             * writing the same memory area could easily corrupt
+             * the guest state.
+             */
+            assert(!migration_in_postcopy());
             if (is_device_state) {
                 assert(use_packets);
                 ret = multifd_device_state_recv(p, &local_err);

@@ -1,24 +1,21 @@
 #pragma once
 
 #include "qemu/osdep.h"
-#include "qapi/error.h"
+#include "tcg/tcg.h"
 
-#include "tcg/tcg-op.h"
-#include "tcg/tcg-internal.h"
-#include "tcg/tcg-temp-internal.h"
+#include "libafl/cpu.h"
 
 #define LIBAFL_MAX_INSNS 16
 
 #define GEN_REMOVE_HOOK(name)                                                  \
     int libafl_qemu_remove_##name##_hook(size_t num, int invalidate)           \
     {                                                                          \
-        CPUState* cpu;                                                         \
         struct libafl_##name##_hook** hk = &libafl_##name##_hooks;             \
                                                                                \
         while (*hk) {                                                          \
             if ((*hk)->num == num) {                                           \
                 if (invalidate) {                                              \
-                    CPU_FOREACH(cpu) { tb_flush(cpu); }                        \
+                    libafl_flush_jit();                                        \
                 }                                                              \
                                                                                \
                 void* tmp = *hk;                                               \
@@ -53,6 +50,6 @@
     }
 
 // TODO: cleanup this
-extern tcg_target_ulong libafl_gen_cur_pc;
+extern vaddr libafl_gen_cur_pc;
 
 void libafl_tcg_gen_asan(TCGTemp* addr, size_t size);

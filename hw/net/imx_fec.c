@@ -668,7 +668,6 @@ static void imx_default_write(IMXFECState *s, uint32_t index, uint32_t value)
 {
     qemu_log_mask(LOG_GUEST_ERROR, "[%s]%s: Bad address at offset 0x%"
                   PRIx32 "\n", TYPE_IMX_FEC, __func__, index * 4);
-    return;
 }
 
 static void imx_fec_write(IMXFECState *s, uint32_t index, uint32_t value)
@@ -1231,7 +1230,7 @@ static const Property imx_eth_properties[] = {
                      IMXFECState *),
 };
 
-static void imx_eth_class_init(ObjectClass *klass, void *data)
+static void imx_eth_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

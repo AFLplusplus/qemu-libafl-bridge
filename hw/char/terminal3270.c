@@ -30,7 +30,7 @@
 
 struct Terminal3270 {
     EmulatedCcw3270Device cdev;
-    CharBackend chr;
+    CharFrontend chr;
     uint8_t inv[INPUT_BUFFER_SIZE];
     uint8_t outv[OUTPUT_BUFFER_SIZE];
     int in_len;
@@ -292,7 +292,7 @@ static const VMStateDescription terminal3270_vmstate = {
     .unmigratable = 1,
 };
 
-static void terminal_class_init(ObjectClass *klass, void *data)
+static void terminal_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     EmulatedCcw3270Class *ck = EMULATED_CCW_3270_CLASS(klass);

@@ -12,7 +12,7 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "system/kvm.h"
 #include "net/net.h"
 #include "hw/virtio/virtio.h"
@@ -1130,13 +1130,26 @@ static int virtio_ccw_load_queue(DeviceState *d, int n, QEMUFile *f)
 static void virtio_ccw_save_config(DeviceState *d, QEMUFile *f)
 {
     VirtioCcwDevice *dev = VIRTIO_CCW_DEVICE(d);
-    vmstate_save_state(f, &vmstate_virtio_ccw_dev, dev, NULL);
+    Error *local_err = NULL;
+    int ret;
+
+    ret = vmstate_save_state(f, &vmstate_virtio_ccw_dev, dev, NULL, &local_err);
+    if (ret < 0) {
+        error_report_err(local_err);
+    }
 }
 
 static int virtio_ccw_load_config(DeviceState *d, QEMUFile *f)
 {
     VirtioCcwDevice *dev = VIRTIO_CCW_DEVICE(d);
-    return vmstate_load_state(f, &vmstate_virtio_ccw_dev, dev, 1);
+    Error *local_err = NULL;
+    int ret;
+
+    ret = vmstate_load_state(f, &vmstate_virtio_ccw_dev, dev, 1, &local_err);
+    if (ret < 0) {
+        error_report_err(local_err);
+    }
+    return ret;
 }
 
 static void virtio_ccw_pre_plugged(DeviceState *d, Error **errp)
@@ -1228,7 +1241,7 @@ static void virtio_ccw_busdev_unplug(HotplugHandler *hotplug_dev,
     virtio_ccw_stop_ioeventfd(_dev);
 }
 
-static void virtio_ccw_device_class_init(ObjectClass *klass, void *data)
+static void virtio_ccw_device_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     CCWDeviceClass *k = CCW_DEVICE_CLASS(dc);
@@ -1262,7 +1275,7 @@ static void virtio_ccw_bus_new(VirtioBusState *bus, size_t bus_size,
     qbus_init(bus, bus_size, TYPE_VIRTIO_CCW_BUS, qdev, virtio_bus_name);
 }
 
-static void virtio_ccw_bus_class_init(ObjectClass *klass, void *data)
+static void virtio_ccw_bus_class_init(ObjectClass *klass, const void *data)
 {
     VirtioBusClass *k = VIRTIO_BUS_CLASS(klass);
     BusClass *bus_class = BUS_CLASS(klass);

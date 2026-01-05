@@ -43,9 +43,9 @@ IntervalTreeNode* libafl_maps_next(IntervalTreeNode* pageflags_maps_node,
 uint64_t libafl_load_addr(void);
 struct image_info* libafl_get_image_info(void);
 
-uint64_t libafl_get_initial_brk(void);
-uint64_t libafl_get_brk(void);
-uint64_t libafl_set_brk(uint64_t new_brk);
+abi_ulong libafl_get_initial_brk(void);
+abi_ulong libafl_get_brk(void);
+abi_ulong libafl_set_brk(abi_ulong new_brk);
 
 int _libafl_qemu_user_init(int argc, char** argv, char** envp);
 

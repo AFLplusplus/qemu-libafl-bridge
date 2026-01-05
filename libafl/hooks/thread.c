@@ -1,7 +1,6 @@
 #include "libafl/hooks/thread.h"
 #include "libafl/cpu.h"
-
-#include <linux/unistd.h>
+#include "libafl/hook.h"
 
 struct libafl_new_thread_hook* libafl_new_thread_hooks;
 size_t libafl_new_thread_hooks_num = 0;

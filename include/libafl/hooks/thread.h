@@ -2,14 +2,6 @@
 
 #include "qemu/osdep.h"
 
-#include "qapi/error.h"
-
-#include "exec/exec-all.h"
-#include "exec/tb-flush.h"
-
-#include "libafl/exit.h"
-#include "libafl/hook.h"
-
 struct libafl_new_thread_hook {
     // functions
     bool (*callback)(uint64_t data, CPUArchState* cpu, uint32_t tid);

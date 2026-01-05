@@ -1,13 +1,9 @@
 #pragma once
 
 #include "qemu/osdep.h"
+#include "exec/target_long.h"
+#include "user/abitypes.h"
 
-#include "qapi/error.h"
-
-#include "exec/exec-all.h"
-#include "exec/tb-flush.h"
-
-#include "libafl/exit.h"
 #include "libafl/hook.h"
 
 enum libafl_syshook_ret_tag {

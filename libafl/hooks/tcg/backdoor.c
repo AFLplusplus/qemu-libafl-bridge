@@ -1,4 +1,10 @@
+#include "qemu/osdep.h"
+#include "cpu.h"
+#include "tcg/tcg-op-common.h"
+#include "tcg/tcg-op.h"
+
 #include "libafl/tcg.h"
+#include "libafl/hook.h"
 #include "libafl/hooks/tcg/backdoor.h"
 
 static struct libafl_backdoor_hook* libafl_backdoor_hooks;
@@ -9,7 +15,8 @@ static TCGHelperInfo libafl_exec_backdoor_hook_info = {
     .name = "libafl_exec_backdoor_hook",
     .flags = dh_callflag(void),
     .typemask = dh_typemask(void, 0) | dh_typemask(env, 1) |
-                dh_typemask(i64, 2) | dh_typemask(tl, 3)};
+                dh_typemask(i64, 2) | dh_typemask(tl, 3)
+};
 
 GEN_REMOVE_HOOK(backdoor)
 

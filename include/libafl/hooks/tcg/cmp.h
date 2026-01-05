@@ -1,16 +1,10 @@
 #pragma once
 
 #include "qemu/osdep.h"
+#include "cpu.h"
+#include "tcg/tcg-op.h"
 
-#include "qapi/error.h"
-
-#include "exec/exec-all.h"
-#include "exec/tb-flush.h"
-
-#include "libafl/exit.h"
-#include "libafl/hook.h"
-
-typedef uint64_t (*libafl_cmp_gen_cb)(uint64_t data, target_ulong pc,
+typedef uint64_t (*libafl_cmp_gen_cb)(uint64_t data, vaddr pc,
                                       size_t size);
 typedef void (*libafl_cmp_exec1_cb)(uint64_t data, uint64_t id, uint8_t v0,
                                     uint8_t v1);
@@ -39,7 +33,7 @@ struct libafl_cmp_hook {
     struct libafl_cmp_hook* next;
 };
 
-void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot);
+void libafl_gen_cmp(vaddr pc, TCGv op0, TCGv op1, MemOp ot);
 size_t libafl_add_cmp_hook(libafl_cmp_gen_cb gen_cb,
                            libafl_cmp_exec1_cb exec1_cb,
                            libafl_cmp_exec2_cb exec2_cb,

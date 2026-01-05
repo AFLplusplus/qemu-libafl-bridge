@@ -35,7 +35,7 @@
 #include "tcg-target-mo.h"
 
 //// --- Begin LibAFL code ---
-extern tcg_target_ulong libafl_gen_cur_pc;
+extern vaddr libafl_gen_cur_pc;
 
 void libafl_gen_read(TCGTemp* pc, TCGTemp* addr, MemOpIdx oi);
 void libafl_gen_write(TCGTemp* pc, TCGTemp* addr, MemOpIdx oi);

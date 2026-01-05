@@ -29,6 +29,7 @@
 
 //// --- Begin LibAFL code ---
 
+#include "libafl/exit.h"
 #include "libafl/hooks/thread.h"
 
 //// --- End LibAFL code ---

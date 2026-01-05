@@ -420,7 +420,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
 
 //// --- Begin LibAFL code ---
 
-    libafl_qemu_hook_block_post_run(tb, pc);
+    libafl_qemu_hook_block_post_run(tb, s.pc);
 
 //// --- End LibAFL code ---
 

@@ -47,14 +47,14 @@ uint64_t libafl_load_addr(void) { return libafl_image_info.load_addr; }
 
 struct image_info* libafl_get_image_info(void) { return &libafl_image_info; }
 
-uint64_t libafl_get_brk(void) { return (uint64_t)target_brk; }
+abi_ulong libafl_get_brk(void) { return target_brk; }
 
-uint64_t libafl_get_initial_brk(void) { return (uint64_t)initial_target_brk; }
+abi_ulong libafl_get_initial_brk(void) { return initial_target_brk; }
 
-uint64_t libafl_set_brk(uint64_t new_brk)
+abi_ulong libafl_set_brk(abi_ulong new_brk)
 {
-    uint64_t old_brk = (uint64_t)target_brk;
-    target_brk = (abi_ulong)new_brk;
+    abi_ulong old_brk = target_brk;
+    target_brk = new_brk;
     return old_brk;
 }
 

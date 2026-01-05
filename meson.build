@@ -4638,7 +4638,7 @@ subdir('docs')
 # Tests are disabled on emscripten because they rely on host features that aren't
 # supported by emscripten (e.g. fork and unix socket).
 #### --- Begin LibAFL code ---
-if get_options('tests') and host_os != 'emscripten'
+if get_option('tests') and host_os != 'emscripten'
 #### --- End LibAFL code ---
   subdir('tests')
 endif

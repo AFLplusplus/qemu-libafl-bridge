@@ -263,7 +263,7 @@ qio_channel_buffer_writeback_create_watch(QIOChannel* ioc,
 
 static void
 qio_channel_buffer_writeback_class_init(ObjectClass* klass,
-                                        void* class_data G_GNUC_UNUSED)
+                                        G_GNUC_UNUSED const void* class_data)
 {
     QIOChannelClass* ioc_klass = QIO_CHANNEL_CLASS(klass);
 

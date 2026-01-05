@@ -1,12 +1,9 @@
 #include "qemu/osdep.h"
-
-#include "qapi/error.h"
-
-#include "exec/exec-all.h"
-#include "exec/tb-flush.h"
+#include "cpu.h"
+#include "tcg/tcg.h"
+#include "tcg/tcg-op.h"
 
 #include "libafl/hook.h"
-#include "libafl/exit.h"
 
 #ifndef TARGET_LONG_BITS
 #error "TARGET_LONG_BITS not defined"

@@ -1,10 +1,11 @@
 #include "qemu/osdep.h"
-
 #include "qemu/main-loop.h"
+
 #include "cpu.h"
 
+#include "system/ramblock.h"
 #include "exec/ramlist.h"
-#include "exec/ram_addr.h"
+#include "exec/target_page.h"
 
 #include "libafl/syx-snapshot/syx-snapshot.h"
 #include "libafl/syx-snapshot/device-save.h"

@@ -14,6 +14,13 @@
 #ifndef MIGRATION_SAVEVM_H
 #define MIGRATION_SAVEVM_H
 
+//// --- Begin LibAFL code ---
+#include "migration/register.h"
+#include "migration/vmstate.h"
+#include "qemu/uuid.h"
+#include "qapi-types-migration.h"
+//// --- End LibAFL code ---
+
 #define QEMU_VM_FILE_MAGIC           0x5145564d
 #define QEMU_VM_FILE_VERSION_COMPAT  0x00000002
 #define QEMU_VM_FILE_VERSION         0x00000003
@@ -30,6 +37,47 @@
 #define QEMU_VM_SECTION_FOOTER       0x7e
 
 #define QEMU_VM_PING_PACKAGED_LOADED 0x42
+
+//// --- Begin LibAFL code ---
+
+// moved from savevm.c
+
+typedef struct CompatEntry {
+    char idstr[256];
+    int instance_id;
+} CompatEntry;
+
+typedef struct SaveStateEntry {
+    QTAILQ_ENTRY(SaveStateEntry) entry;
+    char idstr[256];
+    uint32_t instance_id;
+    int alias_id;
+    int version_id;
+    /* version id read from the stream */
+    int load_version_id;
+    int section_id;
+    /* section id read from the stream */
+    int load_section_id;
+    const SaveVMHandlers *ops;
+    const VMStateDescription *vmsd;
+    void *opaque;
+    CompatEntry *compat;
+    int is_ram;
+} SaveStateEntry;
+
+typedef struct SaveState {
+    QTAILQ_HEAD(, SaveStateEntry) handlers;
+    SaveStateEntry *handler_pri_head[MIG_PRI_MAX + 1];
+    int global_section_id;
+    uint32_t len;
+    const char *name;
+    uint32_t target_page_bits;
+    uint32_t caps_count;
+    MigrationCapability *capabilities;
+    QemuUUID uuid;
+} SaveState;
+
+//// --- End LibAFL code ---
 
 bool qemu_savevm_state_blocked(Error **errp);
 void qemu_savevm_non_migratable_list(strList **reasons);

@@ -233,9 +233,9 @@ const VMStateInfo vmstate_info_timer = {
 
 // definitions of CompatEntry SaveStateEntry and SaveState were here
 
+/* static */
 //// --- End LibAFL code ---
-
-/* static */ SaveState savevm_state = {
+SaveState savevm_state = {
     .handlers = QTAILQ_HEAD_INITIALIZER(savevm_state.handlers),
     .handler_pri_head = { [0 ... MIG_PRI_MAX] = NULL },
     .global_section_id = 0,

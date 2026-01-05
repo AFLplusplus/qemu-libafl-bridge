@@ -41,6 +41,7 @@
 
 //// --- Begin LibAFL code ---
 
+#include "libafl/exit.h"
 #include "libafl/hooks/tcg/cmp.h"
 
 //// --- End LibAFL code ---

@@ -29,10 +29,6 @@
 #include "libafl/hooks/tcg/instruction.h"
 #include "libafl/hooks/tcg/backdoor.h"
 
-#ifndef TARGET_LONG_BITS
-#error "TARGET_LONG_BITS not defined"
-#endif
-
 //// --- End LibAFL code ---
 
 
@@ -206,9 +202,8 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
                         // First update pc_next to restart at next instruction
                         db->pc_next += 4;
 
-                        TCGv_i64 tmp0 = tcg_constant_i64((uint64_t)db->pc_next);
+                        TCGv_i64 tmp0 = tcg_constant_i64(db->pc_next);
                         gen_helper_libafl_qemu_handle_custom_insn(tcg_env, tmp0, tcg_constant_i32(LIBAFL_CUSTOM_INSN_LIBAFL));
-                        tcg_temp_free_i64(tmp0);
                     }
                 }
             }

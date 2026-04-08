@@ -66,6 +66,18 @@ int libafl_qemu_set_breakpoint(vaddr pc);
 int libafl_qemu_remove_breakpoint(vaddr pc);
 void libafl_qemu_trigger_breakpoint(CPUState* cpu);
 void libafl_qemu_breakpoint_run(vaddr pc_next);
+int libafl_qemu_run_single_cpu(int cpu_index);
+
+void libafl_thread_info_list_init(void);
+void libafl_thread_info_list_add(void);
+void libafl_thread_info_list_remove(void);
+
+typedef struct LibAFLThreadInformation {
+    int id;
+    struct libafl_exit_reason *exit_reason;
+    bool *expected_exit;
+    QTAILQ_ENTRY(LibAFLThreadInformation) next;
+} LibAFLThreadInformation;
 
 // Only makes sense to call if an exit was expected
 // Will return NULL if there was no exit expected.

@@ -61,6 +61,7 @@
 //// --- End LibAFL code ---
 #include "libafl/cpu.h"
 #include "libafl/user.h"
+#include "libafl/exit.h"
 //// --- Begin LibAFL code ---
 
 #ifdef CONFIG_SEMIHOSTING
@@ -1070,6 +1071,7 @@ int main(int argc, char **argv, char **envp)
     //// --- Begin LibAFL code ---
 
     libafl_set_qemu_env(env);
+    libafl_thread_info_list_init();
 
 #ifndef AS_LIB
     return libafl_qemu_main();

@@ -151,6 +151,7 @@
 
 #include "libafl/hooks/syscall.h"
 #include "libafl/hooks/thread.h"
+#include "libafl/exit.h"
 
 //// --- End LibAFL code ---
 
@@ -6719,6 +6720,7 @@ static void *clone_func(void *arg)
 
     //// --- Begin LibAFL code ---
 
+    libafl_thread_info_list_add();
     if (libafl_hook_new_thread_run(env, info->tid)) {
         cpu_loop(env);
     }
@@ -6877,6 +6879,10 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         fork_start();
         ret = fork();
         if (ret == 0) {
+            //// --- Begin LibAFL code ---
+            libafl_thread_info_list_add();
+            //// --- End LibAFL code ---
+
             /* Child Process.  */
             cpu_clone_regs_child(env, newsp, flags);
             fork_end(ret);

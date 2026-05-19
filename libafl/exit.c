@@ -56,8 +56,15 @@ int libafl_qemu_remove_breakpoint(vaddr pc)
 static THREAD_MODIFIER struct libafl_exit_reason last_exit_reason;
 static THREAD_MODIFIER bool expected_exit = false;
 
+typedef struct LibAFLThreadInformation {
+    int id;
+    struct libafl_exit_reason *exit_reason;
+    bool *expected_exit;
+    QTAILQ_ENTRY(LibAFLThreadInformation) next;
+} LibAFLThreadInformation;
+
 QTAILQ_HEAD(LibAflThreadInformationList, LibAFLThreadInformation);
-static struct LibAflThreadInformationList libafl_thread_info_list_head;
+static union LibAflThreadInformationList libafl_thread_info_list_head;
 
 #if defined(TARGET_ARM)
 #define THUMB_MASK(cpu, value) (value | cpu_env(cpu)->thumb)
@@ -217,7 +224,20 @@ void libafl_thread_info_list_add(void) {
 }
 
 void libafl_thread_info_list_remove(void) {
-    // TODO
+    LibAFLThreadInformation *thread_info;
+
+    int current_id = thread_cpu->cpu_index;
+
+    QTAILQ_FOREACH(thread_info, &libafl_thread_info_list_head, next) {
+        if (thread_info->id == current_id) {
+            QTAILQ_REMOVE(&libafl_thread_info_list_head, thread_info, next);
+
+            // avoid memory leak
+            g_free(thread_info);
+
+            break;
+        }
+    }
 }
 
 void libafl_qemu_breakpoint_run(vaddr pc_next)

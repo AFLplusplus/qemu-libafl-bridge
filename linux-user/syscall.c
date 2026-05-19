@@ -9496,6 +9496,9 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
            and _exit_group is used for application termination.
            Do thread termination if we have more then one thread.  */
 
+        //// --- Begin LibAFL code ---
+        libafl_thread_info_list_remove();
+        //// --- End LibAFL code ---
         if (block_signals()) {
             return -QEMU_ERESTARTSYS;
         }

@@ -20,5 +20,7 @@ jobs:
     container: registry.gitlab.com/qemu-project/qemu/qemu/ubuntu2204:latest
     steps:
       - uses: actions/checkout@v4
+      - name: check submodules
+        run: git submodule status
       - name: Build QEMU
         run: mkdir -p build && cd build && ../configure --enable-werror --disable-docs --enable-fdt=system && make -j $(expr $(nproc) + 1)

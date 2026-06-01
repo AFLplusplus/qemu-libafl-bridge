@@ -14,6 +14,7 @@ uint8_t* libafl_paddr2host(CPUState* cpu, hwaddr addr, bool is_write);
 hwaddr libafl_qemu_current_paging_id(CPUState* cpu);
 #endif
 
+G_NORETURN void libafl_qemu_set_pc(CPUState* cpu, vaddr pc);
 vaddr libafl_page_from_addr(vaddr addr);
 CPUState* libafl_qemu_get_cpu(int cpu_index);
 int libafl_qemu_num_cpus(void);

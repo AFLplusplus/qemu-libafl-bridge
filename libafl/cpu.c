@@ -57,6 +57,12 @@ void libafl_breakpoint_invalidate(CPUState* cpu, vaddr pc)
     queue_tb_flush(cpu);
 }
 #else
+
+G_NORETURN void libafl_qemu_set_pc(CPUState* cpu, vaddr pc) {
+    cpu_set_pc(cpu, pc);
+    cpu_loop_exit_noexc(cpu);
+}
+
 void libafl_breakpoint_invalidate(CPUState* cpu, vaddr pc)
 {
     mmap_lock();

@@ -21,7 +21,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: check submodules
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git submodule status
       - name: Build QEMU
         run: mkdir -p build && cd build && ../configure --enable-werror --disable-docs --enable-fdt=system && make -j $(expr $(nproc) + 1)

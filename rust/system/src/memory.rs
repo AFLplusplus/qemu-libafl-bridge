@@ -79,12 +79,6 @@ impl<T> MemoryRegionOpsBuilder<T> {
     }
 
     #[must_use]
-    pub const fn native_endian(mut self) -> Self {
-        self.0.endianness = device_endian::DEVICE_NATIVE_ENDIAN;
-        self
-    }
-
-    #[must_use]
     pub const fn valid_sizes(mut self, min: u32, max: u32) -> Self {
         self.0.valid.min_access_size = min;
         self.0.valid.max_access_size = max;
@@ -138,7 +132,7 @@ unsafe impl Sync for MemoryRegion {}
 impl MemoryRegion {
     unsafe fn do_init_io(
         slot: *mut bindings::MemoryRegion,
-        owner: *mut bindings::Object,
+        owner: *mut qom::bindings::Object,
         ops: &'static bindings::MemoryRegionOps,
         name: &'static str,
         size: u64,

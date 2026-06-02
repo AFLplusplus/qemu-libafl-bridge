@@ -26,7 +26,7 @@
 #include "cpu.h"
 #include "disas/dis-asm.h"
 #include "tcg/debug-assert.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "accel/tcg/cpu-ops.h"
 
 static void avr_cpu_set_pc(CPUState *cs, vaddr value)
@@ -116,7 +116,7 @@ static void avr_cpu_reset_hold(Object *obj, ResetType type)
     memset(env->r, 0, sizeof(env->r));
 }
 
-static void avr_cpu_disas_set_info(CPUState *cpu, disassemble_info *info)
+static void avr_cpu_disas_set_info(const CPUState *cpu, disassemble_info *info)
 {
     info->endian = BFD_ENDIAN_LITTLE;
     info->mach = bfd_arch_avr;

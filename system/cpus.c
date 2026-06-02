@@ -39,13 +39,13 @@
 #include "qemu/plugin.h"
 #include "system/cpus.h"
 #include "qemu/guest-random.h"
-#include "hw/nmi.h"
+#include "hw/core/nmi.h"
 #include "system/replay.h"
 #include "system/runstate.h"
 #include "system/cpu-timers.h"
 #include "system/whpx.h"
-#include "hw/boards.h"
-#include "hw/hw.h"
+#include "hw/core/boards.h"
+#include "hw/core/hw-error.h"
 #include "trace.h"
 
 #ifdef CONFIG_LINUX
@@ -724,7 +724,6 @@ void qemu_init_vcpu(CPUState *cpu)
         /* If the target cpu hasn't set up any address spaces itself,
          * give it the default one.
          */
-        cpu->num_ases = 1;
         cpu_address_space_init(cpu, 0, "cpu-memory", cpu->memory);
     }
 

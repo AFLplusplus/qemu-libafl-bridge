@@ -22,7 +22,7 @@
 
 #include "kvm-consts.h"
 #include "qemu/cpu-float.h"
-#include "hw/registerfields.h"
+#include "hw/core/registerfields.h"
 #include "cpu-qom.h"
 #include "exec/cpu-common.h"
 #include "exec/cpu-defs.h"
@@ -31,6 +31,7 @@
 #include "exec/page-protection.h"
 #include "qapi/qapi-types-common.h"
 #include "target/arm/multiprocessing.h"
+#include "hw/arm/arm-security.h"
 #include "target/arm/gtimer.h"
 #include "target/arm/cpu-sysregs.h"
 #include "target/arm/mmuidx.h"
@@ -759,6 +760,13 @@ typedef struct CPUArchState {
     /* Optional fault info across tlb lookup. */
     ARMMMUFaultInfo *tlb_fi;
 
+    /*
+     * The event register is shared by all ARM profiles (A/R/M),
+     * so it is stored in the top-level CPU state.
+     * WFE/SEV handling is currently implemented only for M-profile.
+     */
+    bool event_register;
+
     /* Fields up to this point are cleared by a CPU reset */
     struct {} end_reset_fields;
 
@@ -1111,8 +1119,6 @@ struct ArchCPU {
     bool prop_pauth_qarma5;
     bool prop_lpa2;
 
-    /* DCZ blocksize, in log_2(words), ie low 4 bits of DCZID_EL0 */
-    uint8_t dcz_blocksize;
     /* GM blocksize, in log_2(words), ie low 4 bits of GMID_EL0 */
     uint8_t gm_blocksize;
 
@@ -1178,6 +1184,18 @@ struct ARMCPUClass {
     ResettablePhases parent_phases;
 };
 
+static inline uint8_t get_dczid_bs(ARMCPU *cpu)
+{
+    return extract64(cpu->isar.idregs[DCZID_EL0_IDX], 0, 4);
+}
+
+static inline void set_dczid_bs(ARMCPU *cpu, uint8_t bs)
+{
+    /* keep dzp unchanged */
+    cpu->isar.idregs[DCZID_EL0_IDX] =
+        deposit64(cpu->isar.idregs[DCZID_EL0_IDX], 0, 4, bs);
+}
+
 /* Callback functions for the generic timer's timers. */
 void arm_gt_ptimer_cb(void *opaque);
 void arm_gt_vtimer_cb(void *opaque);
@@ -1215,6 +1233,40 @@ void arm_v7m_cpu_do_interrupt(CPUState *cpu);
 
 hwaddr arm_cpu_get_phys_page_attrs_debug(CPUState *cpu, vaddr addr,
                                          MemTxAttrs *attrs);
+
+typedef struct ARMGranuleProtectionConfig {
+    /* GPCCR_EL3 */
+    uint64_t gpccr;
+    /* GPTBR_EL3 */
+    uint64_t gptbr;
+    /* ID_AA64MMFR0_EL1.PARange */
+    uint8_t parange;
+    /* FEAT_SEL2 */
+    bool support_sel2;
+    /* Address space to access Granule Protection Table */
+    AddressSpace *gpt_as;
+} ARMGranuleProtectionConfig;
+
+/**
+ * arm_granule_protection_check
+ * @config: granule protection configuration
+ * @paddress: address accessed
+ * @pspace: physical address space accessed
+ * @ss: security state for access
+ * @fi: fault information in case a fault is detected
+ *
+ * Checks if @paddress can be accessed in physical adress space @pspace
+ * for @ss secure state, following granule protection setup with @config.
+ * If a fault is detected, @fi is set accordingly.
+ * See GranuleProtectionCheck() in A-profile manual.
+ *
+ * Returns: true if access is authorized, else false.
+ */
+bool arm_granule_protection_check(ARMGranuleProtectionConfig config,
+                                  uint64_t paddress,
+                                  ARMSecuritySpace pspace,
+                                  ARMSecuritySpace ss,
+                                  ARMMMUFaultInfo *fi);
 #endif /* !CONFIG_USER_ONLY */
 
 int arm_cpu_gdb_read_register(CPUState *cpu, GByteArray *buf, int reg);
@@ -1300,7 +1352,7 @@ uint32_t sve_vqm1_for_el_sm(CPUARMState *env, int el, bool sm);
 /* Likewise, but using @sm = PSTATE.SM. */
 uint32_t sve_vqm1_for_el(CPUARMState *env, int el);
 
-static inline bool is_a64(CPUARMState *env)
+static inline bool is_a64(const CPUARMState *env)
 {
     return env->aarch64;
 }
@@ -2095,37 +2147,13 @@ enum arm_features {
     ARM_FEATURE_BACKCOMPAT_CNTFRQ, /* 62.5MHz timer default */
 };
 
-static inline int arm_feature(CPUARMState *env, int feature)
+static inline int arm_feature(const CPUARMState *env, int feature)
 {
     return (env->features & (1ULL << feature)) != 0;
 }
 
 void arm_cpu_finalize_features(ARMCPU *cpu, Error **errp);
 
-/*
- * ARM v9 security states.
- * The ordering of the enumeration corresponds to the low 2 bits
- * of the GPI value, and (except for Root) the concat of NSE:NS.
- */
-
-typedef enum ARMSecuritySpace {
-    ARMSS_Secure     = 0,
-    ARMSS_NonSecure  = 1,
-    ARMSS_Root       = 2,
-    ARMSS_Realm      = 3,
-} ARMSecuritySpace;
-
-/* Return true if @space is secure, in the pre-v9 sense. */
-static inline bool arm_space_is_secure(ARMSecuritySpace space)
-{
-    return space == ARMSS_Secure || space == ARMSS_Root;
-}
-
-/* Return the ARMSecuritySpace for @secure, assuming !RME or EL[0-2]. */
-static inline ARMSecuritySpace arm_secure_to_space(bool secure)
-{
-    return secure ? ARMSS_Secure : ARMSS_NonSecure;
-}
 
 #if !defined(CONFIG_USER_ONLY)
 /**
@@ -2336,6 +2364,7 @@ typedef enum ARMASIdx {
     ARMASIdx_S = 1,
     ARMASIdx_TagNS = 2,
     ARMASIdx_TagS = 3,
+    ARMASIdx_MAX = ARMASIdx_TagS
 } ARMASIdx;
 
 static inline ARMMMUIdx arm_space_to_phys(ARMSecuritySpace space)
@@ -2363,7 +2392,7 @@ static inline bool arm_v7m_csselr_razwi(ARMCPU *cpu)
     return (GET_IDREG(&cpu->isar, CLIDR) & R_V7M_CLIDR_CTYPE_ALL_MASK) != 0;
 }
 
-static inline bool arm_sctlr_b(CPUARMState *env)
+static inline bool arm_sctlr_b(const CPUARMState *env)
 {
     return
         /* We need not implement SCTLR.ITD in user-mode emulation, so

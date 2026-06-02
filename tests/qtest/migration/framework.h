@@ -39,6 +39,7 @@ typedef enum {
 
 typedef struct MigrationTestEnv {
     bool has_kvm;
+    bool has_hvf;
     bool has_tcg;
     bool has_uffd;
     bool uffd_feature_thread_id;
@@ -207,8 +208,6 @@ typedef struct {
         MIG_TEST_SUCCEED = 0,
         /* This test should fail, dest qemu should keep alive */
         MIG_TEST_FAIL,
-        /* This test should fail, dest qemu should fail with abnormal status */
-        MIG_TEST_FAIL_DEST_QUIT_ERR,
         /* The QMP command for this migration should fail with an error */
         MIG_TEST_QMP_ERROR,
     } result;
@@ -228,10 +227,6 @@ typedef struct {
      * refer to existing ones with live=true), or use live=off by default.
      */
     bool live;
-
-    /* Postcopy specific fields */
-    void *postcopy_data;
-    PostcopyRecoveryFailStage postcopy_recovery_fail_stage;
 } MigrateCommon;
 
 void wait_for_serial(const char *side);
@@ -244,7 +239,8 @@ int migrate_start(QTestState **from, QTestState **to, const char *uri,
 void migrate_end(QTestState *from, QTestState *to, bool test_dest);
 
 void test_postcopy_common(MigrateCommon *args);
-void test_postcopy_recovery_common(MigrateCommon *args);
+void test_postcopy_recovery_common(MigrateCommon *args,
+                                   PostcopyRecoveryFailStage fail_stage);
 int test_precopy_common(MigrateCommon *args);
 void test_file_common(MigrateCommon *args, bool stop_src);
 void *migrate_hook_start_precopy_tcp_multifd_common(QTestState *from,
@@ -266,5 +262,10 @@ void migration_test_add_file(MigrationTestEnv *env);
 void migration_test_add_precopy(MigrationTestEnv *env);
 void migration_test_add_cpr(MigrationTestEnv *env);
 void migration_test_add_misc(MigrationTestEnv *env);
+#ifdef CONFIG_REPLICATION
+void migration_test_add_colo(MigrationTestEnv *env);
+#else
+static inline void migration_test_add_colo(MigrationTestEnv *env) {};
+#endif
 
 #endif /* TEST_FRAMEWORK_H */

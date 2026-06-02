@@ -4,14 +4,15 @@
 #include "qemu/error-report.h"
 #include "qemu/target-info.h"
 #include "qapi/error.h"
+#include "qapi/qapi-events-misc.h"
 #include "exec/target_page.h"
 #include "trace.h"
 
-#include "hw/hw.h"
+#include "hw/core/hw-error.h"
 #include "hw/pci/pci_host.h"
 #include "hw/xen/xen-hvm-common.h"
 #include "hw/xen/xen-bus.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "hw/xen/arch_hvm.h"
 #include "system/memory.h"
 #include "system/runstate.h"
@@ -22,19 +23,19 @@
 MemoryRegion xen_memory, xen_grants;
 
 /* Check for any kind of xen memory, foreign mappings or grants.  */
-bool xen_mr_is_memory(MemoryRegion *mr)
+bool xen_mr_is_memory(const MemoryRegion *mr)
 {
     return mr == &xen_memory || mr == &xen_grants;
 }
 
 /* Check specifically for grants.  */
-bool xen_mr_is_grants(MemoryRegion *mr)
+bool xen_mr_is_grants(const MemoryRegion *mr)
 {
     return mr == &xen_grants;
 }
 
-void xen_ram_alloc(ram_addr_t ram_addr, ram_addr_t size, MemoryRegion *mr,
-                   Error **errp)
+void xen_ram_alloc(ram_addr_t ram_addr, ram_addr_t size,
+                   const MemoryRegion *mr, Error **errp)
 {
     unsigned target_page_bits = qemu_target_page_bits();
     unsigned long nr_pfn;
@@ -471,9 +472,12 @@ static void handle_ioreq(XenIOState *state, ioreq_t *req)
             cpu_ioreq_move(req);
             break;
         case IOREQ_TYPE_TIMEOFFSET:
+            qapi_event_send_rtc_change((int64_t)req->data, "");
             break;
         case IOREQ_TYPE_INVALIDATE:
-            xen_invalidate_map_cache();
+            if (xen_map_cache_enabled()) {
+                xen_invalidate_map_cache();
+            }
             break;
         case IOREQ_TYPE_PCI_CONFIG:
             cpu_ioreq_config(state, req);
@@ -823,7 +827,8 @@ void xen_shutdown_fatal_error(const char *fmt, ...)
 
 static void xen_do_ioreq_register(XenIOState *state,
                                   unsigned int max_cpus,
-                                  const MemoryListener *xen_memory_listener)
+                                  const MemoryListener *xen_memory_listener,
+                                  bool mapcache)
 {
     int i, rc;
 
@@ -874,11 +879,13 @@ static void xen_do_ioreq_register(XenIOState *state,
         state->bufioreq_local_port = rc;
     }
     /* Init RAM management */
+    if (mapcache) {
 #ifdef XEN_COMPAT_PHYSMAP
-    xen_map_cache_init(xen_phys_offset_to_gaddr, state);
+        xen_map_cache_init(xen_phys_offset_to_gaddr, state);
 #else
-    xen_map_cache_init(NULL, state);
+        xen_map_cache_init(NULL, state);
 #endif
+    }
 
     qemu_add_vm_change_state_handler(xen_hvm_change_state_handler, state);
 
@@ -901,7 +908,8 @@ err:
 
 void xen_register_ioreq(XenIOState *state, unsigned int max_cpus,
                         uint8_t handle_bufioreq,
-                        const MemoryListener *xen_memory_listener)
+                        const MemoryListener *xen_memory_listener,
+                        bool mapcache)
 {
     int rc;
 
@@ -922,7 +930,7 @@ void xen_register_ioreq(XenIOState *state, unsigned int max_cpus,
     state->has_bufioreq = handle_bufioreq != HVM_IOREQSRV_BUFIOREQ_OFF;
     rc = xen_create_ioreq_server(xen_domid, handle_bufioreq, &state->ioservid);
     if (!rc) {
-        xen_do_ioreq_register(state, max_cpus, xen_memory_listener);
+        xen_do_ioreq_register(state, max_cpus, xen_memory_listener, mapcache);
     } else {
         warn_report("xen: failed to create ioreq server");
     }

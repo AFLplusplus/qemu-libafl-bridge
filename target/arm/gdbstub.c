@@ -44,11 +44,9 @@ int arm_cpu_gdb_read_register(CPUState *cs, GByteArray *mem_buf, int n)
     ARMCPU *cpu = ARM_CPU(cs);
     CPUARMState *env = &cpu->env;
 
-#ifdef TARGET_AARCH64
     if (arm_gdbstub_is_aarch64(cpu)) {
         return aarch64_cpu_gdb_read_register(cs, mem_buf, n);
     }
-#endif
 
     if (n < 16) {
         /* Core integer register.  */
@@ -72,11 +70,9 @@ int arm_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
     CPUARMState *env = &cpu->env;
     uint32_t tmp;
 
-#ifdef TARGET_AARCH64
     if (arm_gdbstub_is_aarch64(cpu)) {
         return aarch64_cpu_gdb_write_register(cs, mem_buf, n);
     }
-#endif
 
     tmp = ldl_p(mem_buf);
 
@@ -504,10 +500,8 @@ void arm_cpu_register_gdb_commands(ARMCPU *cpu)
     g_autoptr(GString) qsupported_features = g_string_new(NULL);
 
     if (arm_feature(&cpu->env, ARM_FEATURE_AARCH64)) {
-    #ifdef TARGET_AARCH64
         aarch64_cpu_register_gdb_commands(cpu, qsupported_features, query_table,
                                           set_table);
-    #endif
     }
 
     /* Set arch-specific handlers for 'q' commands. */
@@ -536,72 +530,17 @@ void arm_cpu_register_gdb_regs_for_features(ARMCPU *cpu)
          * The lower part of each SVE register aliases to the FPU
          * registers so we don't need to include both.
          */
-#ifdef TARGET_AARCH64
-        if (isar_feature_aa64_sve(&cpu->isar) ||
-            isar_feature_aa64_sme(&cpu->isar)) {
-            GDBFeature *feature = arm_gen_dynamic_svereg_feature(cs, cs->gdb_num_regs);
-            gdb_register_coprocessor(cs, aarch64_gdb_get_sve_reg,
-                                     aarch64_gdb_set_sve_reg, feature, 0);
-        } else {
-            gdb_register_coprocessor(cs, aarch64_gdb_get_fpu_reg,
-                                     aarch64_gdb_set_fpu_reg,
-                                     gdb_find_static_feature("aarch64-fpu.xml"),
-                                     0);
-        }
-
-        if (isar_feature_aa64_sme(&cpu->isar)) {
-            GDBFeature *sme_feature =
-                arm_gen_dynamic_smereg_feature(cs, cs->gdb_num_regs);
-            gdb_register_coprocessor(cs, aarch64_gdb_get_sme_reg,
-                                     aarch64_gdb_set_sme_reg, sme_feature, 0);
-            if (isar_feature_aa64_sme2(&cpu->isar)) {
-                gdb_register_coprocessor(cs, aarch64_gdb_get_sme2_reg,
-                                         aarch64_gdb_set_sme2_reg,
-                                         gdb_find_static_feature("aarch64-sme2.xml"),
-                                         0);
-            }
-        }
-        /*
-         * Note that we report pauth information via the feature name
-         * org.gnu.gdb.aarch64.pauth_v2, not org.gnu.gdb.aarch64.pauth.
-         * GDB versions 9 through 12 have a bug where they will crash
-         * if they see the latter XML from QEMU.
-         */
-        if (isar_feature_aa64_pauth(&cpu->isar)) {
-            gdb_register_coprocessor(cs, aarch64_gdb_get_pauth_reg,
-                                     aarch64_gdb_set_pauth_reg,
-                                     gdb_find_static_feature("aarch64-pauth.xml"),
-                                     0);
-        }
-
-#ifdef CONFIG_USER_ONLY
-        /* Memory Tagging Extension (MTE) 'tag_ctl' pseudo-register. */
-        if (cpu_isar_feature(aa64_mte, cpu)) {
-            gdb_register_coprocessor(cs, aarch64_gdb_get_tag_ctl_reg,
-                                     aarch64_gdb_set_tag_ctl_reg,
-                                     gdb_find_static_feature("aarch64-mte.xml"),
-                                     0);
-        }
-#endif
-
-        /* All AArch64 CPUs have at least TPIDR */
-        gdb_register_coprocessor(cs, aarch64_gdb_get_tls_reg,
-                                 aarch64_gdb_set_tls_reg,
-                                 arm_gen_dynamic_tls_feature(cs, cs->gdb_num_regs),
-                                 0);
-#endif
+        aarch64_cpu_register_gdb_regs_for_features(cpu);
     } else {
         if (arm_feature(env, ARM_FEATURE_NEON)) {
             gdb_register_coprocessor(cs, vfp_gdb_get_reg, vfp_gdb_set_reg,
-                                     gdb_find_static_feature("arm-neon.xml"),
-                                     0);
+                                     gdb_find_static_feature("arm-neon.xml"));
         } else if (cpu_isar_feature(aa32_simd_r32, cpu)) {
             gdb_register_coprocessor(cs, vfp_gdb_get_reg, vfp_gdb_set_reg,
-                                     gdb_find_static_feature("arm-vfp3.xml"),
-                                     0);
+                                     gdb_find_static_feature("arm-vfp3.xml"));
         } else if (cpu_isar_feature(aa32_vfp_simd, cpu)) {
             gdb_register_coprocessor(cs, vfp_gdb_get_reg, vfp_gdb_set_reg,
-                                     gdb_find_static_feature("arm-vfp.xml"), 0);
+                                     gdb_find_static_feature("arm-vfp.xml"));
         }
         if (!arm_feature(env, ARM_FEATURE_M)) {
             /*
@@ -609,29 +548,26 @@ void arm_cpu_register_gdb_regs_for_features(ARMCPU *cpu)
              * expose to gdb.
              */
             gdb_register_coprocessor(cs, vfp_gdb_get_sysreg, vfp_gdb_set_sysreg,
-                                     gdb_find_static_feature("arm-vfp-sysregs.xml"),
-                                     0);
+                                     gdb_find_static_feature("arm-vfp-sysregs.xml"));
         }
     }
     if (cpu_isar_feature(aa32_mve, cpu) && tcg_enabled()) {
         gdb_register_coprocessor(cs, mve_gdb_get_reg, mve_gdb_set_reg,
-                                 gdb_find_static_feature("arm-m-profile-mve.xml"),
-                                 0);
+                                 gdb_find_static_feature("arm-m-profile-mve.xml"));
     }
     gdb_register_coprocessor(cs, arm_gdb_get_sysreg, arm_gdb_set_sysreg,
-                             arm_gen_dynamic_sysreg_feature(cs, cs->gdb_num_regs),
-                             0);
+                             arm_gen_dynamic_sysreg_feature(cs, cs->gdb_num_regs));
 
 #ifdef CONFIG_TCG
     if (arm_feature(env, ARM_FEATURE_M) && tcg_enabled()) {
         gdb_register_coprocessor(cs,
             arm_gdb_get_m_systemreg, arm_gdb_set_m_systemreg,
-            arm_gen_dynamic_m_systemreg_feature(cs, cs->gdb_num_regs), 0);
+            arm_gen_dynamic_m_systemreg_feature(cs, cs->gdb_num_regs));
 #ifndef CONFIG_USER_ONLY
         if (arm_feature(env, ARM_FEATURE_M_SECURITY)) {
             gdb_register_coprocessor(cs,
                 arm_gdb_get_m_secextreg, arm_gdb_set_m_secextreg,
-                arm_gen_dynamic_m_secextreg_feature(cs, cs->gdb_num_regs), 0);
+                arm_gen_dynamic_m_secextreg_feature(cs, cs->gdb_num_regs));
         }
 #endif
     }

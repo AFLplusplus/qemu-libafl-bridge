@@ -20,7 +20,7 @@
 #ifndef TARGET_ARM_FEATURES_H
 #define TARGET_ARM_FEATURES_H
 
-#include "hw/registerfields.h"
+#include "hw/core/registerfields.h"
 #include "qemu/host-utils.h"
 #include "cpu.h"
 #include "cpu-sysregs.h"
@@ -346,6 +346,9 @@ FIELD(ID_AA64MMFR3, SDERR, 52, 4)
 FIELD(ID_AA64MMFR3, ADERR, 56, 4)
 FIELD(ID_AA64MMFR3, SPEC_FPACC, 60, 4)
 
+FIELD(ID_AA64MMFR4, ASID2, 8, 4)
+FIELD(ID_AA64MMFR4, E2H0, 24, 4)
+
 FIELD(ID_AA64DFR0, DEBUGVER, 0, 4)
 FIELD(ID_AA64DFR0, TRACEVER, 4, 4)
 FIELD(ID_AA64DFR0, PMUVER, 8, 4)
@@ -365,12 +368,14 @@ FIELD(ID_AA64DFR0, HPMN0, 60, 4)
 
 FIELD(ID_AA64ZFR0, SVEVER, 0, 4)
 FIELD(ID_AA64ZFR0, AES, 4, 4)
+FIELD(ID_AA64ZFR0, ELTPERM, 12, 4)
 FIELD(ID_AA64ZFR0, BITPERM, 16, 4)
 FIELD(ID_AA64ZFR0, BFLOAT16, 20, 4)
 FIELD(ID_AA64ZFR0, B16B16, 24, 4)
 FIELD(ID_AA64ZFR0, SHA3, 32, 4)
 FIELD(ID_AA64ZFR0, SM4, 40, 4)
 FIELD(ID_AA64ZFR0, I8MM, 44, 4)
+FIELD(ID_AA64ZFR0, F16MM, 48, 4)
 FIELD(ID_AA64ZFR0, F32MM, 52, 4)
 FIELD(ID_AA64ZFR0, F64MM, 56, 4)
 
@@ -1369,6 +1374,25 @@ static inline bool isar_feature_aa64_aie(const ARMISARegisters *id)
     return FIELD_EX64_IDREG(id, ID_AA64MMFR3, AIE) != 0;
 }
 
+static inline bool isar_feature_aa64_asid2(const ARMISARegisters *id)
+{
+    return FIELD_EX64_IDREG(id, ID_AA64MMFR4, ASID2) != 0;
+}
+
+/*
+ * Note the E2H0 ID fields is signed, increasingly negative as more
+ * isn't implemented.
+ */
+static inline bool isar_feature_aa64_e2h0(const ARMISARegisters *id)
+{
+    return FIELD_SEX64_IDREG(id, ID_AA64MMFR4, E2H0) >= 0;
+}
+
+static inline bool isar_feature_aa64_nv1_res0(const ARMISARegisters *id)
+{
+    return FIELD_SEX64_IDREG(id, ID_AA64MMFR4, E2H0) <= -2;
+}
+
 static inline bool isar_feature_aa64_mec(const ARMISARegisters *id)
 {
     return FIELD_EX64_IDREG(id, ID_AA64MMFR3, MEC) != 0;
@@ -1427,7 +1451,7 @@ static inline bool isar_feature_aa64_sve2_bitperm(const ARMISARegisters *id)
     return FIELD_EX64_IDREG(id, ID_AA64ZFR0, BITPERM) != 0;
 }
 
-static inline bool isar_feature_aa64_sve_bf16(const ARMISARegisters *id)
+static inline bool isar_feature_aa64_sme_sve_bf16(const ARMISARegisters *id)
 {
     return FIELD_EX64_IDREG(id, ID_AA64ZFR0, BFLOAT16) != 0;
 }
@@ -1442,7 +1466,8 @@ static inline bool isar_feature_aa64_sve2_sm4(const ARMISARegisters *id)
     return FIELD_EX64_IDREG(id, ID_AA64ZFR0, SM4) != 0;
 }
 
-static inline bool isar_feature_aa64_sve_i8mm(const ARMISARegisters *id)
+/* Note that this is true if either SVE or SME are implemented with I8MM */
+static inline bool isar_feature_aa64_sme_sve_i8mm(const ARMISARegisters *id)
 {
     return FIELD_EX64_IDREG(id, ID_AA64ZFR0, I8MM) != 0;
 }
@@ -1500,6 +1525,16 @@ static inline bool isar_feature_aa64_sme2p1(const ARMISARegisters *id)
 /*
  * Combinations of feature tests, for ease of use with TRANS_FEAT.
  */
+static inline bool isar_feature_aa64_sme_or_sve(const ARMISARegisters *id)
+{
+    return isar_feature_aa64_sme(id) || isar_feature_aa64_sve(id);
+}
+
+static inline bool isar_feature_aa64_sme_or_sve2(const ARMISARegisters *id)
+{
+    return isar_feature_aa64_sme(id) || isar_feature_aa64_sve2(id);
+}
+
 static inline bool isar_feature_aa64_sme_or_sve2p1(const ARMISARegisters *id)
 {
     return isar_feature_aa64_sme(id) || isar_feature_aa64_sve2p1(id);
@@ -1523,6 +1558,16 @@ static inline bool isar_feature_aa64_sme2_i16i64(const ARMISARegisters *id)
 static inline bool isar_feature_aa64_sme2_f64f64(const ARMISARegisters *id)
 {
     return isar_feature_aa64_sme2(id) && isar_feature_aa64_sme_f64f64(id);
+}
+
+static inline bool isar_feature_aa64_sve_i8mm(const ARMISARegisters *id)
+{
+    return isar_feature_aa64_sve(id) && isar_feature_aa64_sme_sve_i8mm(id);
+}
+
+static inline bool isar_feature_aa64_sve_bf16(const ARMISARegisters *id)
+{
+    return isar_feature_aa64_sve(id) && isar_feature_aa64_sme_sve_bf16(id);
 }
 
 /*
@@ -1636,6 +1681,6 @@ static inline uint64_t make_ccsidr(CCSIDRFormat format, unsigned assoc,
  * Forward to the above feature tests given an ARMCPU pointer.
  */
 #define cpu_isar_feature(name, cpu) \
-    ({ ARMCPU *cpu_ = (cpu); isar_feature_##name(&cpu_->isar); })
+    ({ const ARMCPU *cpu_ = (cpu); isar_feature_##name(&cpu_->isar); })
 
 #endif

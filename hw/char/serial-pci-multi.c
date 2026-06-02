@@ -30,10 +30,10 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "hw/char/serial.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/pci/pci_device.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "migration/vmstate.h"
 
 #define PCI_SERIAL_MAX_PORTS 4
@@ -56,8 +56,8 @@ static void multi_serial_pci_exit(PCIDevice *dev)
 
     for (i = 0; i < pci->ports; i++) {
         s = pci->state + i;
-        qdev_unrealize(DEVICE(s));
         memory_region_del_subregion(&pci->iobar, &s->io);
+        qdev_unrealize(DEVICE(s));
         g_free(pci->name[i]);
     }
 }

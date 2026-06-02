@@ -29,7 +29,7 @@
 #include "exec/vaddr.h"
 #include "exec/breakpoint.h"
 #include "accel/tcg/tb-cpu-state.h"
-#include "hw/registerfields.h"
+#include "hw/core/registerfields.h"
 #include "tcg/tcg-gvec-desc.h"
 #include "system/memory.h"
 #include "syndrome.h"
@@ -387,6 +387,7 @@ void arm_translate_code(CPUState *cs, TranslationBlock *tb,
 void arm_cpu_register_gdb_commands(ARMCPU *cpu);
 void aarch64_cpu_register_gdb_commands(ARMCPU *cpu, GString *,
                                        GPtrArray *, GPtrArray *);
+void aarch64_cpu_register_gdb_regs_for_features(ARMCPU *cpu);
 
 void arm_restore_state_to_opc(CPUState *cs,
                               const TranslationBlock *tb,
@@ -739,7 +740,10 @@ typedef enum ARMGPCF {
  * @paddr_space: physical address space that caused a fault for gpc
  * @stage2: True if we faulted at stage 2
  * @s1ptw: True if we faulted at stage 2 while doing a stage 1 page-table walk
- * @s1ns: True if we faulted on a non-secure IPA while in secure state
+ * @s1ns: True if we faulted on a non-secure IPA. Note that (unlike the
+ * HPFAR_EL2.NS bit) this is set for any stage 2 fault for an NS IPA, so
+ * code must check that this is for a fault taken to Secure EL2 before
+ * propagating s1ns to HPFAR_EL2.NS.
  * @ea: True if we should set the EA (external abort type) bit in syndrome
  */
 typedef struct ARMMMUFaultInfo ARMMMUFaultInfo;
@@ -1808,6 +1812,15 @@ static inline uint64_t arm_mdcr_el2_eff(CPUARMState *env)
      (1 << (4 - 1)) | (1 << (8 - 1)) | (1 << (16 - 1)))
 
 /*
+ * Return the maximum SVE/SME VQ for this CPU. This defines
+ * the maximum possible size of the Zn vector registers.
+ */
+static inline int arm_max_vq(ARMCPU *cpu)
+{
+    return MAX(cpu->sve_max_vq, cpu->sme_max_vq);
+}
+
+/*
  * Return true if it is possible to take a fine-grained-trap to EL2.
  */
 static inline bool arm_fgt_active(CPUARMState *env, int el)
@@ -1891,6 +1904,11 @@ uint64_t gt_direct_access_timer_offset(CPUARMState *env, int timeridx);
  * all EL1" scope; this covers stage 1 and stage 2.
  */
 int alle1_tlbmask(CPUARMState *env);
+/*
+ * Return mask of ARMMMUIdxBit values corresponding to an "invalidate
+ * all EL2&0" scope.
+ */
+int alle2_tlbmask(void);
 
 /* Set the float_status behaviour to match the Arm defaults */
 void arm_set_default_fp_behaviours(float_status *s);

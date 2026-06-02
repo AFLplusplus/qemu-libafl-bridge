@@ -80,7 +80,7 @@ this code that are retained.
 #ifndef SOFTFLOAT_TYPES_H
 #define SOFTFLOAT_TYPES_H
 
-#include "hw/registerfields.h"
+#include "hw/core/registerfields.h"
 
 /*
  * Software IEC/IEEE floating-point types.
@@ -118,6 +118,13 @@ typedef struct {
  * Software neural-network floating-point types.
  */
 typedef uint16_t bfloat16;
+
+/*
+ * Open Compute Project (OCP) Microscaling Formats
+ */
+typedef uint8_t float4_e2m1;
+typedef uint8_t float8_e4m3;
+typedef uint8_t float8_e5m2;
 
 /*
  * Software IEC/IEEE floating-point underflow tininess-detection mode.

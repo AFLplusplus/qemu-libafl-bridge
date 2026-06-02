@@ -11,8 +11,8 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/log.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "hw/adc/aspeed_adc.h"
 #include "trace.h"
@@ -228,7 +228,8 @@ static void aspeed_adc_engine_write(void *opaque, hwaddr addr, uint64_t value,
         qemu_log_mask(LOG_UNIMP, "%s: engine[%u]: "
                       "0x%" HWADDR_PRIx " 0x%" PRIx64 "\n",
                       __func__, s->engine_id, addr, value);
-        break;
+        /* Do not update the regs[] array */
+        return;
     }
 
     s->regs[reg] = value;

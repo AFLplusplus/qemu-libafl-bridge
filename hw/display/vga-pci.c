@@ -26,14 +26,14 @@
 
 #include "qemu/osdep.h"
 #include "hw/pci/pci_device.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "vga_int.h"
 #include "ui/pixel_ops.h"
 #include "ui/console.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "hw/display/edid.h"
 #include "qom/object.h"
 #include "hw/acpi/acpi_aml_interface.h"
@@ -338,7 +338,6 @@ static const Property vga_pci_properties[] = {
     DEFINE_PROP_BIT("edid",
                     PCIVGAState, flags, PCI_VGA_FLAG_ENABLE_EDID, true),
     DEFINE_EDID_PROPERTIES(PCIVGAState, edid_info),
-    DEFINE_PROP_BOOL("global-vmstate", PCIVGAState, vga.global_vmstate, false),
 };
 
 static const Property secondary_pci_properties[] = {

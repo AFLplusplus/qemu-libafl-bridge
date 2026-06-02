@@ -24,8 +24,8 @@
 #include "hw/arm/fsl-imx6.h"
 #include "hw/misc/unimp.h"
 #include "hw/usb/imx-usb-phy.h"
-#include "hw/boards.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/boards.h"
+#include "hw/core/qdev-properties.h"
 #include "system/system.h"
 #include "chardev/char.h"
 #include "qemu/error-report.h"
@@ -38,16 +38,9 @@
 
 static void fsl_imx6_init(Object *obj)
 {
-    MachineState *ms = MACHINE(qdev_get_machine());
     FslIMX6State *s = FSL_IMX6(obj);
     char name[NAME_SIZE];
     int i;
-
-    for (i = 0; i < MIN(ms->smp.cpus, FSL_IMX6_NUM_CPUS); i++) {
-        snprintf(name, NAME_SIZE, "cpu%d", i);
-        object_initialize_child(obj, name, &s->cpu[i],
-                                ARM_CPU_TYPE_NAME("cortex-a9"));
-    }
 
     object_initialize_child(obj, "a9mpcore", &s->a9mpcore, TYPE_A9MPCORE_PRIV);
 
@@ -79,9 +72,9 @@ static void fsl_imx6_init(Object *obj)
         object_initialize_child(obj, name, &s->gpio[i], TYPE_IMX_GPIO);
     }
 
-    for (i = 0; i < FSL_IMX6_NUM_ESDHCS; i++) {
+    for (i = 0; i < FSL_IMX6_NUM_USDHCS; i++) {
         snprintf(name, NAME_SIZE, "sdhc%d", i + 1);
-        object_initialize_child(obj, name, &s->esdhc[i], TYPE_IMX_USDHC);
+        object_initialize_child(obj, name, &s->usdhc[i], TYPE_IMX_USDHC);
     }
 
     for (i = 0; i < FSL_IMX6_NUM_USB_PHYS; i++) {
@@ -119,11 +112,18 @@ static void fsl_imx6_realize(DeviceState *dev, Error **errp)
     unsigned int smp_cpus = ms->smp.cpus;
     DeviceState *mpcore = DEVICE(&s->a9mpcore);
     DeviceState *gic;
+    char name[NAME_SIZE];
 
     if (smp_cpus > FSL_IMX6_NUM_CPUS) {
         error_setg(errp, "%s: Only %d CPUs are supported (%d requested)",
                    TYPE_FSL_IMX6, FSL_IMX6_NUM_CPUS, smp_cpus);
         return;
+    }
+
+    for (i = 0; i < smp_cpus; i++) {
+        snprintf(name, NAME_SIZE, "cpu%d", i);
+        object_initialize_child(OBJECT(dev), name, &s->cpu[i],
+                                ARM_CPU_TYPE_NAME("cortex-a9"));
     }
 
     for (i = 0; i < smp_cpus; i++) {
@@ -311,11 +311,11 @@ static void fsl_imx6_realize(DeviceState *dev, Error **errp)
     }
 
     /* Initialize all SDHC */
-    for (i = 0; i < FSL_IMX6_NUM_ESDHCS; i++) {
+    for (i = 0; i < FSL_IMX6_NUM_USDHCS; i++) {
         static const struct {
             hwaddr addr;
             unsigned int irq;
-        } esdhc_table[FSL_IMX6_NUM_ESDHCS] = {
+        } esdhc_table[FSL_IMX6_NUM_USDHCS] = {
             { FSL_IMX6_uSDHC1_ADDR, FSL_IMX6_uSDHC1_IRQ },
             { FSL_IMX6_uSDHC2_ADDR, FSL_IMX6_uSDHC2_IRQ },
             { FSL_IMX6_uSDHC3_ADDR, FSL_IMX6_uSDHC3_IRQ },
@@ -323,15 +323,13 @@ static void fsl_imx6_realize(DeviceState *dev, Error **errp)
         };
 
         /* UHS-I SDIO3.0 SDR104 1.8V ADMA */
-        object_property_set_uint(OBJECT(&s->esdhc[i]), "sd-spec-version", 3,
-                                 &error_abort);
-        object_property_set_uint(OBJECT(&s->esdhc[i]), "capareg",
+        object_property_set_uint(OBJECT(&s->usdhc[i]), "capareg",
                                  IMX6_ESDHC_CAPABILITIES, &error_abort);
-        if (!sysbus_realize(SYS_BUS_DEVICE(&s->esdhc[i]), errp)) {
+        if (!sysbus_realize(SYS_BUS_DEVICE(&s->usdhc[i]), errp)) {
             return;
         }
-        sysbus_mmio_map(SYS_BUS_DEVICE(&s->esdhc[i]), 0, esdhc_table[i].addr);
-        sysbus_connect_irq(SYS_BUS_DEVICE(&s->esdhc[i]), 0,
+        sysbus_mmio_map(SYS_BUS_DEVICE(&s->usdhc[i]), 0, esdhc_table[i].addr);
+        sysbus_connect_irq(SYS_BUS_DEVICE(&s->usdhc[i]), 0,
                            qdev_get_gpio_in(gic, esdhc_table[i].irq));
     }
 

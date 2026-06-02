@@ -307,9 +307,9 @@ void hppa_translate_init(void)
 
     cpu_gr[0] = NULL;
     for (i = 1; i < 32; i++) {
-        cpu_gr[i] = tcg_global_mem_new(tcg_env,
-                                       offsetof(CPUHPPAState, gr[i]),
-                                       gr_names[i]);
+        cpu_gr[i] = tcg_global_mem_new_i64(tcg_env,
+                                           offsetof(CPUHPPAState, gr[i]),
+                                           gr_names[i]);
     }
     for (i = 0; i < 4; i++) {
         cpu_sr[i] = tcg_global_mem_new_i64(tcg_env,
@@ -322,7 +322,7 @@ void hppa_translate_init(void)
 
     for (i = 0; i < ARRAY_SIZE(vars); ++i) {
         const GlobalVar *v = &vars[i];
-        *v->var = tcg_global_mem_new(tcg_env, v->ofs, v->name);
+        *v->var = tcg_global_mem_new_i64(tcg_env, v->ofs, v->name);
     }
 
     cpu_psw_xb = tcg_global_mem_new_i32(tcg_env,
@@ -4737,7 +4737,8 @@ static void hppa_tr_translate_insn(DisasContextBase *dcbase, CPUState *cs)
     {
         /* Always fetch the insn, even if nullified, so that we check
            the page permissions for execute.  */
-        uint32_t insn = translator_ldl(env, &ctx->base, ctx->base.pc_next);
+        uint32_t insn = translator_ldl_end(env, &ctx->base, ctx->base.pc_next,
+                                           mo_endian(ctx));
 
         /*
          * Set up the IA queue for the next insn.
@@ -4863,7 +4864,7 @@ static void hppa_tr_tb_stop(DisasContextBase *dcbase, CPUState *cs)
 static bool hppa_tr_disas_log(const DisasContextBase *dcbase,
                               CPUState *cs, FILE *logfile)
 {
-    target_ulong pc = dcbase->pc_first;
+    vaddr pc = dcbase->pc_first;
 
     switch (pc) {
     case 0x00:

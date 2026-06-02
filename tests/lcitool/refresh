@@ -87,9 +87,9 @@ def generate_cirrus(target, trailer=None):
     generate(filename, cmd, trailer)
 
 
-def generate_pkglist(vm, target):
+def generate_pkglist(vm, target, project="qemu"):
     filename = Path(src_dir, "tests", "vm", "generated", vm + ".json")
-    cmd = lcitool_cmd + ["variables", "--format", "json", target, "qemu"]
+    cmd = lcitool_cmd + ["variables", "--format", "json", target, project]
     generate(filename, cmd, None)
 
 
@@ -147,7 +147,7 @@ fedora_rustup_nightly_extras = [
     '  test "$RUSTDOC" = "$(/usr/local/cargo/bin/rustup +nightly which rustdoc)" && \\\n',
     '  test "$RUSTC" = "$(/usr/local/cargo/bin/rustup +nightly which rustc)"\n',
     'ENV PATH=$CARGO_HOME/bin:$PATH\n',
-    'RUN /usr/local/cargo/bin/rustup run nightly cargo install bindgen-cli\n',
+    'RUN /usr/local/cargo/bin/rustup run nightly cargo install --locked bindgen-cli\n',
     'RUN $CARGO --list\n',
 ]
 
@@ -158,7 +158,7 @@ ubuntu2204_rust_extras = [
     'ENV PATH=$CARGO_HOME/bin:$PATH\n',
     "RUN DEBIAN_FRONTEND=noninteractive eatmydata \\\n",
     "  apt install -y --no-install-recommends cargo\n",
-    'RUN cargo install bindgen-cli\n',
+    'RUN cargo install --locked bindgen-cli\n',
 ]
 
 debian_all_test_cross_compilers = [
@@ -167,11 +167,14 @@ debian_all_test_cross_compilers = [
     "  apt install -y --no-install-recommends \\\n",
     "  clang\\\n",
     "  dpkg-dev\\\n",
+    "  gdb-multiarch\\\n",
     "  libclang-rt-dev\n",
     "ENV AVAILABLE_COMPILERS gcc-aarch64-linux-gnu \\\n",
     "  libc6-dev-arm64-cross \\\n",
     "  gcc-arm-linux-gnueabihf \\\n",
     "  libc6-dev-armhf-cross \\\n",
+    "  gcc-alpha-linux-gnu \\\n"
+    "  libc6.1-dev-alpha-cross \\\n"
     "  gcc-mips-linux-gnu \\\n",
     "  libc6-dev-mips-cross \\\n",
     "  gcc-mips64-linux-gnuabi64 \\\n",
@@ -185,7 +188,9 @@ debian_all_test_cross_compilers = [
     "  gcc-riscv64-linux-gnu \\\n",
     "  libc6-dev-riscv64-cross \\\n",
     "  gcc-s390x-linux-gnu \\\n",
-    "  libc6-dev-s390x-cross\n",
+    "  libc6-dev-s390x-cross\\\n",
+    "  gcc-sh4-linux-gnu \\\n",
+    "  libc6-dev-sh4-cross\n",
     "RUN if dpkg-architecture -e amd64; then \\\n",
     "  export AVAILABLE_COMPILERS=\"${AVAILABLE_COMPILERS} gcc-hppa-linux-gnu libc6-dev-hppa-cross\"; \\\n",
     "  export AVAILABLE_COMPILERS=\"${AVAILABLE_COMPILERS} gcc-m68k-linux-gnu libc6-dev-m68k-cross\"; \\\n",
@@ -198,7 +203,7 @@ debian_all_test_cross_compilers = [
     "${AVAILABLE_COMPILERS} && \\\n",
     "dpkg-query --showformat '${Package}_${Version}_${Architecture}' --show > /packages.txt\n",
     "ENV QEMU_CONFIGURE_OPTS --disable-docs\n",
-    "ENV DEF_TARGET_LIST aarch64-linux-user,arm-linux-user,hppa-linux-user,i386-linux-user,m68k-linux-user,mips-linux-user,mips64-linux-user,mips64el-linux-user,mipsel-linux-user,ppc-linux-user,ppc64-linux-user,ppc64le-linux-user,riscv64-linux-user,s390x-linux-user,sparc64-linux-user\n",
+    "ENV DEF_TARGET_LIST aarch64-linux-user,alpha-linux-user,arm-linux-user,hppa-linux-user,i386-linux-user,m68k-linux-user,mips-linux-user,mips64-linux-user,mips64el-linux-user,mipsel-linux-user,ppc-linux-user,ppc64-linux-user,ppc64le-linux-user,riscv64-linux-user,s390x-linux-user,sh4-linux-user,sparc64-linux-user\n",
 ]
 
 def cross_build(prefix, targets):
@@ -215,13 +220,13 @@ try:
     #
     # Standard native builds
     #
-    generate_dockerfile("alpine", "alpine-321",
+    generate_dockerfile("alpine", "alpine-323",
                         trailer="".join(alpine_extras))
     generate_dockerfile("centos9", "centos-stream-9")
     generate_dockerfile("debian", "debian-13",
                         trailer="".join(debian13_extras))
-    generate_dockerfile("fedora", "fedora-41")
-    generate_dockerfile("opensuse-leap", "opensuse-leap-15")
+    generate_dockerfile("fedora", "fedora-43")
+    generate_dockerfile("opensuse-leap", "opensuse-leap-16")
     generate_dockerfile("ubuntu2204", "ubuntu-2204",
                         trailer="".join(ubuntu2204_rust_extras),
                         # https://bugs.launchpad.net/ubuntu/+source/rustc-1.83/+bug/2120318
@@ -230,7 +235,7 @@ try:
     #
     # Non-fatal Rust-enabled build
     #
-    generate_dockerfile("fedora-rust-nightly", "fedora-41",
+    generate_dockerfile("fedora-rust-nightly", "fedora-43",
                         trailer="".join(fedora_rustup_nightly_extras))
 
     #
@@ -287,14 +292,11 @@ try:
                         trailer=cross_build("s390x-linux-gnu-",
                                             "s390x-softmmu,s390x-linux-user"))
 
-    generate_dockerfile("fedora-win64-cross", "fedora-41",
+    generate_dockerfile("fedora-win64-cross", "fedora-43",
                         project='qemu,qemu-win-installer',
                         cross="mingw64",
                         trailer=cross_build("x86_64-w64-mingw32-",
-                                            "x86_64-softmmu"),
-                        # linking with rust is buggy:
-                        # https://github.com/mesonbuild/meson/pull/14991
-                        enable_rust=False)
+                                            "x86_64-softmmu"))
 
     # We also generate some docker files with minimal dependencies and
     # as many cross-compilers as Debian will package for building TCG
@@ -315,6 +317,7 @@ try:
     # VM packages lists
     #
     generate_pkglist("freebsd", "freebsd-14")
+    generate_pkglist("openbsd", "openbsd-78", project="qemu-minimal")
 
     #
     # Ansible package lists

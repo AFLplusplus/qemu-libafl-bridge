@@ -6,11 +6,13 @@ user_ss.add(files('accel-user.c'))
 subdir('tcg')
 if have_system
   subdir('hvf')
+  subdir('whpx')
   subdir('qtest')
   subdir('kvm')
   subdir('xen')
   subdir('stubs')
   subdir('mshv')
+  subdir('nitro')
 endif
 
 # qtest

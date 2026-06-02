@@ -30,6 +30,7 @@
 #include "system/mshv.h"
 #include "trace.h"
 #include "hw/i386/apic-msidef.h"
+#include "exec/cpu-common.h"
 #include "qapi/error.h"
 #include "qom/object.h"
 
@@ -1107,7 +1108,7 @@ static const MemoryRegionOps apic_io_ops = {
     .impl.max_access_size = 4,
     .valid.min_access_size = 1,
     .valid.max_access_size = 4,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
 static void apic_realize(DeviceState *dev, Error **errp)

@@ -30,8 +30,9 @@
 #include "ui/pixel_ops.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
-#include "hw/loader.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/loader.h"
+#include "hw/core/qdev-properties.h"
+#include "migration/vmstate.h"
 #include "ui/console.h"
 #include "qom/object.h"
 
@@ -62,7 +63,6 @@ static void vga_isa_realizefn(DeviceState *dev, Error **errp)
     MemoryRegion *vga_io_memory;
     const MemoryRegionPortio *vga_ports, *vbe_ports;
 
-    s->global_vmstate = true;
     if (!vga_common_init(s, OBJECT(dev), errp)) {
         return;
     }
@@ -88,6 +88,15 @@ static void vga_isa_realizefn(DeviceState *dev, Error **errp)
     rom_add_vga(VGABIOS_FILENAME);
 }
 
+static const VMStateDescription vmstate_vga_isa = {
+    .name = "vga-isa",
+    .version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_STRUCT(state, ISAVGAState, 0, vmstate_vga_common, VGACommonState),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static const Property vga_isa_properties[] = {
     DEFINE_PROP_UINT32("vgamem_mb", ISAVGAState, state.vram_size_mb, 8),
 };
@@ -98,7 +107,7 @@ static void vga_isa_class_initfn(ObjectClass *klass, const void *data)
 
     dc->realize = vga_isa_realizefn;
     device_class_set_legacy_reset(dc, vga_isa_reset);
-    dc->vmsd = &vmstate_vga_common;
+    dc->vmsd = &vmstate_vga_isa;
     device_class_set_props(dc, vga_isa_properties);
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
 }

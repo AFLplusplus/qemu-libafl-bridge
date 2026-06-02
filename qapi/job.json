@@ -196,7 +196,7 @@
 # the device to write to the target path only.  Note that drive
 # mirroring includes `drive-mirror`, `blockdev-mirror` and
 # `block-commit` job (only in case of "active commit", when the node
-# being commited is used by the guest).  The ability to complete is
+# being committed is used by the guest).  The ability to complete is
 # signaled with a `BLOCK_JOB_READY` event.
 #
 # This command completes an active background block operation

@@ -25,7 +25,7 @@
 #include "qemu/osdep.h"
 #include "exec/cpu-common.h"
 #include "hw/display/vga.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "hw/xen/xen.h"
 #include "net/net.h"
 #include "system/cpus.h"
@@ -49,6 +49,9 @@ bool enable_cpu_pm;
 int autostart = 1;
 int vga_interface_type = VGA_NONE;
 bool vga_interface_created;
+int graphic_width;
+int graphic_height;
+int graphic_depth;
 Chardev *parallel_hds[MAX_PARALLEL_PORTS];
 QEMUOptionRom option_rom[MAX_OPTION_ROMS];
 int nb_option_roms;

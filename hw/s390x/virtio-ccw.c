@@ -32,6 +32,7 @@
 #include "trace.h"
 #include "hw/s390x/css-bridge.h"
 #include "hw/s390x/s390-virtio-ccw.h"
+#include "exec/cpu-common.h"
 #include "system/replay.h"
 
 #define NR_CLASSIC_INDICATOR_BITS 64
@@ -889,26 +890,26 @@ static void virtio_ccw_notify(DeviceState *d, uint16_t vector)
             }
         } else {
             assert(vector < NR_CLASSIC_INDICATOR_BITS);
-            indicators = address_space_ldq(&address_space_memory,
-                                           dev->indicators->addr,
-                                           MEMTXATTRS_UNSPECIFIED,
-                                           NULL);
+            indicators = address_space_ldq_be(&address_space_memory,
+                                              dev->indicators->addr,
+                                              MEMTXATTRS_UNSPECIFIED,
+                                              NULL);
             indicators |= 1ULL << vector;
-            address_space_stq(&address_space_memory, dev->indicators->addr,
-                              indicators, MEMTXATTRS_UNSPECIFIED, NULL);
+            address_space_stq_be(&address_space_memory, dev->indicators->addr,
+                                 indicators, MEMTXATTRS_UNSPECIFIED, NULL);
             css_conditional_io_interrupt(sch);
         }
     } else {
         if (!dev->indicators2) {
             return;
         }
-        indicators = address_space_ldq(&address_space_memory,
-                                       dev->indicators2->addr,
-                                       MEMTXATTRS_UNSPECIFIED,
-                                       NULL);
+        indicators = address_space_ldq_be(&address_space_memory,
+                                          dev->indicators2->addr,
+                                          MEMTXATTRS_UNSPECIFIED,
+                                          NULL);
         indicators |= 1ULL;
-        address_space_stq(&address_space_memory, dev->indicators2->addr,
-                          indicators, MEMTXATTRS_UNSPECIFIED, NULL);
+        address_space_stq_be(&address_space_memory, dev->indicators2->addr,
+                             indicators, MEMTXATTRS_UNSPECIFIED, NULL);
         css_conditional_io_interrupt(sch);
     }
 }
@@ -1037,6 +1038,7 @@ static int virtio_ccw_set_guest_notifier(VirtioCcwDevice *dev, int n,
             if (r) {
                 virtio_queue_set_guest_notifier_fd_handler(vq, false,
                                                            with_irqfd);
+                event_notifier_cleanup(notifier);
                 return r;
             }
         }

@@ -4,12 +4,12 @@
 #include "qemu/notify.h"
 #include "qapi/qapi-types-common.h"
 #include "qemu/uuid.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "hw/block/fdc.h"
 #include "hw/block/flash.h"
 #include "hw/i386/x86.h"
 
-#include "hw/hotplug.h"
+#include "hw/core/hotplug.h"
 #include "qom/object.h"
 #include "hw/i386/sgx-epc.h"
 #include "hw/cxl/cxl.h"
@@ -110,12 +110,6 @@ struct PCMachineClass {
     bool enforce_amd_1tb_hole;
     bool isa_bios_alias;
 
-    /* generate legacy CPU hotplug AML */
-    bool legacy_cpu_hotplug;
-
-    /* use PVH to load kernels that support this feature */
-    bool pvh_enabled;
-
     /* create kvmclock device even when KVM PV features are not exposed */
     bool kvmclock_create_always;
 
@@ -214,6 +208,9 @@ void pc_system_parse_ovmf_flash(uint8_t *flash_ptr, size_t flash_size);
 /* sgx.c */
 void pc_machine_init_sgx_epc(PCMachineState *pcms);
 
+extern GlobalProperty pc_compat_10_2[];
+extern const size_t pc_compat_10_2_len;
+
 extern GlobalProperty pc_compat_10_1[];
 extern const size_t pc_compat_10_1_len;
 
@@ -270,36 +267,6 @@ extern const size_t pc_compat_4_2_len;
 
 extern GlobalProperty pc_compat_4_1[];
 extern const size_t pc_compat_4_1_len;
-
-extern GlobalProperty pc_compat_4_0[];
-extern const size_t pc_compat_4_0_len;
-
-extern GlobalProperty pc_compat_3_1[];
-extern const size_t pc_compat_3_1_len;
-
-extern GlobalProperty pc_compat_3_0[];
-extern const size_t pc_compat_3_0_len;
-
-extern GlobalProperty pc_compat_2_12[];
-extern const size_t pc_compat_2_12_len;
-
-extern GlobalProperty pc_compat_2_11[];
-extern const size_t pc_compat_2_11_len;
-
-extern GlobalProperty pc_compat_2_10[];
-extern const size_t pc_compat_2_10_len;
-
-extern GlobalProperty pc_compat_2_9[];
-extern const size_t pc_compat_2_9_len;
-
-extern GlobalProperty pc_compat_2_8[];
-extern const size_t pc_compat_2_8_len;
-
-extern GlobalProperty pc_compat_2_7[];
-extern const size_t pc_compat_2_7_len;
-
-extern GlobalProperty pc_compat_2_6[];
-extern const size_t pc_compat_2_6_len;
 
 #define DEFINE_PC_MACHINE(suffix, namestr, initfn, optsfn) \
     static void pc_machine_##suffix##_class_init(ObjectClass *oc, \

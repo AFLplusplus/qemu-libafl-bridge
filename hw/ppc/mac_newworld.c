@@ -52,9 +52,9 @@
 #include "qapi/error.h"
 #include "exec/target_page.h"
 #include "hw/ppc/ppc.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/nvram/mac_nvram.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "hw/pci-host/uninorth.h"
 #include "hw/input/adb.h"
 #include "hw/ppc/mac_dbdma.h"
@@ -65,15 +65,15 @@
 #include "hw/char/escc.h"
 #include "hw/misc/macio/macio.h"
 #include "hw/ppc/openpic.h"
-#include "hw/loader.h"
-#include "hw/fw-path-provider.h"
+#include "hw/core/loader.h"
+#include "hw/core/fw-path-provider.h"
 #include "elf.h"
 #include "qemu/error-report.h"
 #include "system/kvm.h"
 #include "system/reset.h"
 #include "kvm_ppc.h"
-#include "hw/usb.h"
-#include "hw/sysbus.h"
+#include "hw/usb/usb.h"
+#include "hw/core/sysbus.h"
 #include "trace.h"
 
 #define MAX_IDE_BUS 2
@@ -432,6 +432,15 @@ static void ppc_core99_init(MachineState *machine)
 
     pci_vga_init(pci_bus);
 
+    if (!graphic_width) {
+        graphic_width = 800;
+    }
+    if (!graphic_height) {
+        graphic_height = 600;
+    }
+    if (!graphic_depth) {
+        graphic_depth = 32;
+    }
     if (graphic_depth != 15 && graphic_depth != 32 && graphic_depth != 8) {
         graphic_depth = 15;
     }

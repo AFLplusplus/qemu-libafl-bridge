@@ -21,8 +21,8 @@
 #define PPC_PNV_H
 
 #include "cpu.h"
-#include "hw/boards.h"
-#include "hw/sysbus.h"
+#include "hw/core/boards.h"
+#include "hw/core/sysbus.h"
 #include "hw/ipmi/ipmi.h"
 #include "hw/ppc/pnv_pnor.h"
 
@@ -111,6 +111,8 @@ struct PnvMachineState {
 
     bool         big_core;
     bool         lpar_per_core;
+
+    Notifier     machine_init_done;
 };
 
 PnvChip *pnv_get_chip(PnvMachineState *pnv, uint32_t chip_id);

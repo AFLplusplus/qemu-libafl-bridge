@@ -955,7 +955,7 @@ static void s390_qemu_cpu_model_class_init(ObjectClass *oc, const void *data)
 
     xcc->is_migration_safe = true;
     xcc->desc = g_strdup_printf("QEMU Virtual CPU version %s",
-                                qemu_hw_version());
+                                QEMU_HW_VERSION);
 }
 
 static void s390_max_cpu_model_class_init(ObjectClass *oc, const void *data)

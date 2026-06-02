@@ -26,8 +26,8 @@
 #include "system/block-backend.h"
 #include "hw/block/block.h"
 #include "hw/block/flash.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "hw/ssi/ssi.h"
 #include "migration/vmstate.h"
 #include "qemu/bitops.h"
@@ -364,6 +364,8 @@ static const FlashPartInfo known_devices[] = {
       .sfdp_read = m25p80_sfdp_w25q512jv },
     { INFO("w25q01jvq",   0xef4021,      0,  64 << 10, 2048, ER_4K),
       .sfdp_read = m25p80_sfdp_w25q01jvq },
+    { INFO("w25q02jvm",   0xef7022,      0,  64 << 10, 4096, ER_4K),
+      .sfdp_read = m25p80_sfdp_w25q02jvm },
 
     /* Microchip */
     { INFO("25csm04",      0x29cc00,      0x100,  64 << 10,  8, 0) },

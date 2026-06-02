@@ -15,9 +15,9 @@
 #include "qapi/qapi-commands-migration.h"
 #include "trace.h"
 
-#include "hw/hw.h"
+#include "hw/core/hw-error.h"
 #include "hw/i386/pc.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/i386/apic-msidef.h"
 #include "hw/xen/xen-x86.h"
 #include "qemu/range.h"
@@ -622,7 +622,7 @@ void xen_hvm_init_pc(PCMachineState *pcms, MemoryRegion **ram_memory)
 
     xen_register_ioreq(state, max_cpus,
                        HVM_IOREQSRV_BUFIOREQ_ATOMIC,
-                       &xen_memory_listener);
+                       &xen_memory_listener, true);
 
     xen_is_stubdomain = xen_check_stubdomain(state->xenstore);
 
@@ -720,7 +720,8 @@ void arch_xen_set_memory(XenIOState *state, MemoryRegionSection *section,
         return;
     }
 
-    if (log_dirty != add) {
+    if (log_dirty != add &&
+        !(section->mr == framebuffer && start_addr > 0xbffff)) {
         return;
     }
 

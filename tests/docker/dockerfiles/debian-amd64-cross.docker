@@ -37,7 +37,6 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
                       locales \
                       make \
                       mtools \
-                      ncat \
                       ninja-build \
                       openssh-client \
                       pkgconf \

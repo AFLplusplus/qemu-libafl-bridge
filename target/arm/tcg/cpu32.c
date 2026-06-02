@@ -14,7 +14,7 @@
 #include "internals.h"
 #include "target/arm/idau.h"
 #if !defined(CONFIG_USER_ONLY)
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #endif
 #include "cpregs.h"
 
@@ -896,9 +896,6 @@ static const ARMCPUInfo arm_tcg_cpus[] = {
     { .name = "sa1110",      .initfn = sa1110_initfn },
 #ifndef TARGET_AARCH64
     { .name = "max",         .initfn = arm_max_initfn },
-#endif
-#ifdef CONFIG_USER_ONLY
-    { .name = "any",         .initfn = arm_max_initfn },
 #endif
 };
 

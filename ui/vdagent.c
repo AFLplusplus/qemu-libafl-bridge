@@ -5,7 +5,9 @@
 #include "qemu/error-report.h"
 #include "qemu/option.h"
 #include "qemu/units.h"
-#include "hw/qdev-core.h"
+#include "hw/core/qdev.h"
+#include "hw/core/qdev-properties.h"
+#include "migration/blocker.h"
 #include "ui/clipboard.h"
 #include "ui/console.h"
 #include "ui/input.h"
@@ -17,20 +19,16 @@
 
 #include "spice/vd_agent.h"
 
-#define CHECK_SPICE_PROTOCOL_VERSION(major, minor, micro) \
-    (CONFIG_SPICE_PROTOCOL_MAJOR > (major) ||             \
-     (CONFIG_SPICE_PROTOCOL_MAJOR == (major) &&           \
-      CONFIG_SPICE_PROTOCOL_MINOR > (minor)) ||           \
-     (CONFIG_SPICE_PROTOCOL_MAJOR == (major) &&           \
-      CONFIG_SPICE_PROTOCOL_MINOR == (minor) &&           \
-      CONFIG_SPICE_PROTOCOL_MICRO >= (micro)))
-
 #define VDAGENT_BUFFER_LIMIT (1 * MiB)
 #define VDAGENT_MOUSE_DEFAULT true
 #define VDAGENT_CLIPBOARD_DEFAULT false
 
 struct VDAgentChardev {
     Chardev parent;
+
+    /* needed for machine versions < 10.1 when migration was not supported */
+    Error *migration_blocker;
+    bool migration_blocked;
 
     /* config */
     bool mouse;
@@ -87,10 +85,8 @@ static const char *cap_name[] = {
     [VD_AGENT_CAP_FILE_XFER_DISABLED]             = "file-xfer-disabled",
     [VD_AGENT_CAP_FILE_XFER_DETAILED_ERRORS]      = "file-xfer-detailed-errors",
     [VD_AGENT_CAP_GRAPHICS_DEVICE_INFO]           = "graphics-device-info",
-#if CHECK_SPICE_PROTOCOL_VERSION(0, 14, 1)
     [VD_AGENT_CAP_CLIPBOARD_NO_RELEASE_ON_REGRAB] = "clipboard-no-release-on-regrab",
     [VD_AGENT_CAP_CLIPBOARD_GRAB_SERIAL]          = "clipboard-grab-serial",
-#endif
 };
 
 static const char *msg_name[] = {
@@ -125,9 +121,7 @@ static const char *type_name[] = {
     [VD_AGENT_CLIPBOARD_IMAGE_BMP]  = "bmp",
     [VD_AGENT_CLIPBOARD_IMAGE_TIFF] = "tiff",
     [VD_AGENT_CLIPBOARD_IMAGE_JPG]  = "jpg",
-#if CHECK_SPICE_PROTOCOL_VERSION(0, 14, 3)
     [VD_AGENT_CLIPBOARD_FILE_LIST]  = "files",
-#endif
 };
 
 #define GET_NAME(_m, _v) \
@@ -197,9 +191,7 @@ static void vdagent_send_caps(VDAgentChardev *vd, bool request)
     if (vd->clipboard) {
         caps->caps[0] |= (1 << VD_AGENT_CAP_CLIPBOARD_BY_DEMAND);
         caps->caps[0] |= (1 << VD_AGENT_CAP_CLIPBOARD_SELECTION);
-#if CHECK_SPICE_PROTOCOL_VERSION(0, 14, 1)
         caps->caps[0] |= (1 << VD_AGENT_CAP_CLIPBOARD_GRAB_SERIAL);
-#endif
     }
 
     caps->request = request;
@@ -318,11 +310,7 @@ static bool have_selection(VDAgentChardev *vd)
 
 static bool have_clipboard_serial(VDAgentChardev *vd)
 {
-#if CHECK_SPICE_PROTOCOL_VERSION(0, 14, 1)
     return vd->caps & (1 << VD_AGENT_CAP_CLIPBOARD_GRAB_SERIAL);
-#else
-    return false;
-#endif
 }
 
 static uint32_t type_qemu_to_vdagent(enum QemuClipboardType type)
@@ -660,9 +648,7 @@ static void vdagent_chr_recv_clipboard(VDAgentChardev *vd, VDAgentMessage *msg)
 /* ------------------------------------------------------------------ */
 /* chardev backend                                                    */
 
-static void vdagent_chr_open(Chardev *chr,
-                             ChardevBackend *backend,
-                             bool *be_opened,
+static bool vdagent_chr_open(Chardev *chr, ChardevBackend *backend,
                              Error **errp)
 {
     VDAgentChardev *vd = QEMU_VDAGENT_CHARDEV(chr);
@@ -674,8 +660,14 @@ static void vdagent_chr_open(Chardev *chr,
      * so we have to byteswap everything on BE hosts.
      */
     error_setg(errp, "vdagent is not supported on bigendian hosts");
-    return;
+    return false;
 #endif
+
+    if (vd->migration_blocked) {
+        if (migrate_add_blocker(&vd->migration_blocker, errp) != 0) {
+            return false;
+        }
+    }
 
     vd->mouse = VDAGENT_MOUSE_DEFAULT;
     if (cfg->has_mouse) {
@@ -692,7 +684,8 @@ static void vdagent_chr_open(Chardev *chr,
                                                    &vdagent_mouse_handler);
     }
 
-    *be_opened = true;
+    qemu_chr_be_event(chr, CHR_EVENT_OPENED);
+    return true;
 }
 
 static void vdagent_clipboard_peer_register(VDAgentChardev *vd)
@@ -920,15 +913,32 @@ static void vdagent_chr_parse(QemuOpts *opts, ChardevBackend *backend,
 
 /* ------------------------------------------------------------------ */
 
+static bool get_migration_blocked(Object *o, Error **errp)
+{
+    VDAgentChardev *vd = QEMU_VDAGENT_CHARDEV(o);
+    return vd->migration_blocked;
+}
+
+static void set_migration_blocked(Object *o, bool migration_blocked,
+                                   Error **errp)
+{
+    VDAgentChardev *vd = QEMU_VDAGENT_CHARDEV(o);
+    vd->migration_blocked = migration_blocked;
+}
+
 static void vdagent_chr_class_init(ObjectClass *oc, const void *data)
 {
     ChardevClass *cc = CHARDEV_CLASS(oc);
 
-    cc->parse            = vdagent_chr_parse;
-    cc->open             = vdagent_chr_open;
+    cc->chr_parse        = vdagent_chr_parse;
+    cc->chr_open         = vdagent_chr_open;
     cc->chr_write        = vdagent_chr_write;
     cc->chr_set_fe_open  = vdagent_chr_set_fe_open;
     cc->chr_accept_input = vdagent_chr_accept_input;
+
+    object_class_property_add_bool(oc, "x-migration-blocked",
+                                   get_migration_blocked,
+                                   set_migration_blocked);
 }
 
 static int post_load(void *opaque, int version_id)
@@ -1075,7 +1085,7 @@ static const VMStateDescription vmstate_vdagent = {
     }
 };
 
-static void vdagent_chr_init(Object *obj)
+static void vdagent_chr_instance_init(Object *obj)
 {
     VDAgentChardev *vd = QEMU_VDAGENT_CHARDEV(obj);
 
@@ -1083,10 +1093,26 @@ static void vdagent_chr_init(Object *obj)
     vmstate_register_any(NULL, &vmstate_vdagent, vd);
 }
 
+static void vdagent_post_init(Object *obj)
+{
+    VDAgentChardev *vd = QEMU_VDAGENT_CHARDEV(obj);
+
+    object_apply_compat_props(obj);
+
+    if (vd->migration_blocked) {
+        error_setg(&vd->migration_blocker,
+                   "The vdagent chardev doesn't support migration with machine"
+                   " version less than 10.1");
+    }
+}
+
 static void vdagent_chr_fini(Object *obj)
 {
     VDAgentChardev *vd = QEMU_VDAGENT_CHARDEV(obj);
 
+    if (vd->migration_blocked) {
+        migrate_del_blocker(&vd->migration_blocker);
+    }
     vdagent_disconnect(vd);
     if (vd->mouse_hs) {
         qemu_input_handler_unregister(vd->mouse_hs);
@@ -1098,7 +1124,8 @@ static const TypeInfo vdagent_chr_type_info = {
     .name = TYPE_CHARDEV_QEMU_VDAGENT,
     .parent = TYPE_CHARDEV,
     .instance_size = sizeof(VDAgentChardev),
-    .instance_init = vdagent_chr_init,
+    .instance_init = vdagent_chr_instance_init,
+    .instance_post_init = vdagent_post_init,
     .instance_finalize = vdagent_chr_fini,
     .class_init = vdagent_chr_class_init,
 };

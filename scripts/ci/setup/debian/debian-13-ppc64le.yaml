@@ -101,7 +101,6 @@ packages:
   - make
   - mtools
   - multipath-tools
-  - ncat
   - nettle-dev
   - ninja-build
   - openssh-client

@@ -17,7 +17,7 @@
 #ifndef AIO_POSIX_H
 #define AIO_POSIX_H
 
-#include "block/aio.h"
+#include "qemu/aio.h"
 #include "qapi/error.h"
 
 struct AioHandler {
@@ -52,7 +52,7 @@ extern const FDMonOps fdmon_poll_ops;
 /* Switch back to poll(2). list_lock must be held. */
 void fdmon_poll_downgrade(AioContext *ctx);
 
-#ifdef CONFIG_EPOLL_CREATE1
+#ifdef CONFIG_EPOLL
 bool fdmon_epoll_try_upgrade(AioContext *ctx, unsigned npfd);
 void fdmon_epoll_setup(AioContext *ctx);
 
@@ -71,7 +71,7 @@ static inline void fdmon_epoll_setup(AioContext *ctx)
 static inline void fdmon_epoll_disable(AioContext *ctx)
 {
 }
-#endif /* !CONFIG_EPOLL_CREATE1 */
+#endif /* !CONFIG_EPOLL */
 
 #ifdef CONFIG_LINUX_IO_URING
 bool fdmon_io_uring_setup(AioContext *ctx, Error **errp);

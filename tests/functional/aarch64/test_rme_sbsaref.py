@@ -20,10 +20,10 @@ class Aarch64RMESbsaRefMachine(QemuSystemTest):
 
     # Stack is inspired from:
     # https://linaro.atlassian.net/wiki/spaces/QEMU/pages/29051027459/
-    # https://github.com/pbo-linaro/qemu-linux-stack/tree/rme_sbsa_release
+    # https://github.com/p-b-o/qemu-linux-stack/tree/rme_sbsa_release
     # ./build.sh && ./archive_artifacts.sh out.tar.xz
     ASSET_RME_STACK_SBSA = Asset(
-        ('https://github.com/pbo-linaro/qemu-linux-stack/'
+        ('https://github.com/p-b-o/qemu-linux-stack/'
          'releases/download/build/rme_sbsa_release-6a2dfc5.tar.xz'),
          '5adba482aa069912292a8da746c6b21268224d9d81c97fe7c0bed690579ebdcb')
 

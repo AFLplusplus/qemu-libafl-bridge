@@ -30,7 +30,7 @@
 #include "system/system.h"
 #include "qemu/error-report.h"
 #include "trace.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "system/ramblock.h"
 #include "socket.h"
 #include "yank_functions.h"
@@ -582,7 +582,7 @@ bool postcopy_ram_supported_by_host(MigrationIncomingState *mis, Error **errp)
 
     ufd = uffd_open(O_CLOEXEC);
     if (ufd == -1) {
-        error_setg(errp, "Userfaultfd not available: %s", strerror(errno));
+        error_setg_errno(errp, errno, "Userfaultfd not available");
         goto out;
     }
 
@@ -620,7 +620,7 @@ bool postcopy_ram_supported_by_host(MigrationIncomingState *mis, Error **errp)
      * it was enabled.
      */
     if (munlockall()) {
-        error_setg(errp, "munlockall() failed: %s", strerror(errno));
+        error_setg_errno(errp, errno, "munlockall() failed");
         goto out;
     }
 
@@ -632,7 +632,7 @@ bool postcopy_ram_supported_by_host(MigrationIncomingState *mis, Error **errp)
     testarea = mmap(NULL, pagesize, PROT_READ | PROT_WRITE, MAP_PRIVATE |
                                     MAP_ANONYMOUS, -1, 0);
     if (testarea == MAP_FAILED) {
-        error_setg(errp, "Failed to map test area: %s", strerror(errno));
+        error_setg_errno(errp, errno, "Failed to map test area");
         goto out;
     }
     g_assert(QEMU_PTR_IS_ALIGNED(testarea, pagesize));
@@ -642,14 +642,14 @@ bool postcopy_ram_supported_by_host(MigrationIncomingState *mis, Error **errp)
     reg_struct.mode = UFFDIO_REGISTER_MODE_MISSING;
 
     if (ioctl(ufd, UFFDIO_REGISTER, &reg_struct)) {
-        error_setg(errp, "UFFDIO_REGISTER failed: %s", strerror(errno));
+        error_setg_errno(errp, errno, "UFFDIO_REGISTER failed");
         goto out;
     }
 
     range_struct.start = (uintptr_t)testarea;
     range_struct.len = pagesize;
     if (ioctl(ufd, UFFDIO_UNREGISTER, &range_struct)) {
-        error_setg(errp, "UFFDIO_UNREGISTER failed: %s", strerror(errno));
+        error_setg_errno(errp, errno, "UFFDIO_UNREGISTER failed");
         goto out;
     }
 
@@ -1928,8 +1928,7 @@ postcopy_preempt_send_channel_done(MigrationState *s,
                                    QIOChannel *ioc, Error *local_err)
 {
     if (local_err) {
-        migrate_set_error(s, local_err);
-        error_free(local_err);
+        migrate_error_propagate(s, local_err);
     } else {
         migration_ioc_register_yank(ioc);
         s->postcopy_qemufile_src = qemu_file_new_output(ioc);
@@ -1967,7 +1966,7 @@ postcopy_preempt_send_channel_new(QIOTask *task, gpointer opaque)
     }
 
     if (migrate_channel_requires_tls_upgrade(ioc)) {
-        tioc = migration_tls_client_create(ioc, s->hostname, &local_err);
+        tioc = migration_tls_client_create(ioc, &local_err);
         if (!tioc) {
             goto out;
         }
@@ -2163,7 +2162,7 @@ static void *postcopy_listen_thread(void *opaque)
              * exit depending on if postcopy-exit-on-error is true, but the
              * migration cannot be recovered.
              */
-            migrate_set_error(migr, local_err);
+            migrate_error_propagate(migr, error_copy(local_err));
             error_report_err(local_err);
             migrate_set_state(&mis->state, mis->state, MIGRATION_STATUS_FAILED);
             goto out;

@@ -15,13 +15,12 @@
 #ifndef HW_NCR53C710_H
 #define HW_NCR53C710_H
 
-#include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/scsi/scsi.h"
 #include "qemu/fifo8.h"
 #include "qom/object.h"
 #include "system/memory.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qemu/timer.h"
 
 #define TYPE_NCR710_SCSI "ncr710-scsi"

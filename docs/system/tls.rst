@@ -76,10 +76,10 @@ loaded certificate will preferred. IOW file naming can influence
 which certificates are used for a session.
 
 The use of multiple sets of certificates is intended to allow an
-incremental transition to certificates using different crytographic
+incremental transition to certificates using different cryptographic
 algorithms. This allows a newly deployed QEMU to introduce use of
 stronger cryptographic algorithms that will be preferred when talking
-to other newly deployed QEMU instances, while retaining compatbility
+to other newly deployed QEMU instances, while retaining compatibility
 with certificates issued to a historically deployed QEMU. This is
 notably useful to support live migration from an old QEMU deployed
 on older operating system releases, which may support fewer crypto
@@ -350,7 +350,7 @@ TLS certificates for Post-Quantum Cryptography
 
 Given a new enough gnutls release, suitably integrated & configured with the
 operating system crypto policies, QEMU is able to support post-quantum
-crytography on TLS enabled services, either exclusively or in a hybrid mode.
+cryptography on TLS enabled services, either exclusively or in a hybrid mode.
 
 In exclusive mode, only a single set of certificates need to be configured
 for QEMU, with PQC compliant algorithms. Such a QEMU configuration will only
@@ -404,7 +404,7 @@ Force disabling PQC via crypto priority
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 In the OS configuration for system crypto algorithm priorities has
-enabled PQC, this can (optionally) be overriden in QEMU configuration
+enabled PQC, this can (optionally) be overridden in QEMU configuration
 disable use of PQC using the ``priority`` parameter to the ``tls-creds-x509``
 object::
 

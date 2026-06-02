@@ -19,11 +19,11 @@
 #include "hw/pci/pci.h"
 #include "exec/memattrs.h"
 #include "system/address-spaces.h"
-#include "hw/boards.h"
-#include "hw/irq.h"
+#include "hw/core/boards.h"
+#include "hw/core/irq.h"
 #include "hw/loongarch/virt.h"
 #include "qemu/log.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "system/runstate.h"
 #include "cpu-csr.h"
 #include "kvm_loongarch.h"
@@ -150,6 +150,46 @@ static int kvm_loongarch_put_regs_core(CPUState *cs)
     ret = kvm_vcpu_ioctl(cs, KVM_SET_REGS, &regs);
     if (ret < 0) {
         trace_kvm_failed_put_regs_core(strerror(errno));
+    }
+
+    return ret;
+}
+
+static int kvm_loongarch_put_pmu(CPUState *cs)
+{
+    int i, ret = 0;
+    CPULoongArchState *env = cpu_env(cs);
+    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
+
+    if (cpu->pmu != ON_OFF_AUTO_ON) {
+        return 0;
+    }
+
+    for (i = 0; i < env->perf_event_num; i++) {
+        ret |= kvm_set_one_reg(cs, KVM_IOC_CSRID(LOONGARCH_CSR_PERFCTRL(i)),
+                               &env->CSR_PERFCTRL[i]);
+        ret |= kvm_set_one_reg(cs, KVM_IOC_CSRID(LOONGARCH_CSR_PERFCNTR(i)),
+                               &env->CSR_PERFCNTR[i]);
+    }
+
+    return ret;
+}
+
+static int kvm_loongarch_get_pmu(CPUState *cs)
+{
+    int i, ret = 0;
+    CPULoongArchState *env = cpu_env(cs);
+    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
+
+    if (cpu->pmu != ON_OFF_AUTO_ON) {
+        return 0;
+    }
+
+    for (i = 0; i < env->perf_event_num; i++) {
+        ret |= kvm_get_one_reg(cs, KVM_IOC_CSRID(LOONGARCH_CSR_PERFCTRL(i)),
+                               &env->CSR_PERFCTRL[i]);
+        ret |= kvm_get_one_reg(cs, KVM_IOC_CSRID(LOONGARCH_CSR_PERFCNTR(i)),
+                               &env->CSR_PERFCNTR[i]);
     }
 
     return ret;
@@ -315,6 +355,8 @@ static int kvm_loongarch_get_csr(CPUState *cs)
 
     ret |= kvm_get_one_reg(cs, KVM_IOC_CSRID(LOONGARCH_CSR_DMW(3)),
                            &env->CSR_DMW[3]);
+
+    ret |= kvm_loongarch_get_pmu(cs);
 
     ret |= kvm_get_one_reg(cs, KVM_IOC_CSRID(LOONGARCH_CSR_TVAL),
                            &env->CSR_TVAL);
@@ -488,6 +530,9 @@ static int kvm_loongarch_put_csr(CPUState *cs, KvmPutState level)
 
     ret |= kvm_set_one_reg(cs, KVM_IOC_CSRID(LOONGARCH_CSR_DMW(3)),
                            &env->CSR_DMW[3]);
+
+    ret |= kvm_loongarch_put_pmu(cs);
+
     /*
      * timer cfg must be put at last since it is used to enable
      * guest timer
@@ -1027,8 +1072,15 @@ static int kvm_cpu_check_pmu(CPUState *cs, Error **errp)
     }
 
     if (kvm_supported) {
+        /*
+         * TODO: Will add supported perf event number query interface
+         * from host, set perf event number with 4 by default
+         */
+        cpu->pmu = ON_OFF_AUTO_ON;
+        env->perf_event_num = 4;
         env->cpucfg[6] = FIELD_DP32(env->cpucfg[6], CPUCFG6, PMP, 1);
-        env->cpucfg[6] = FIELD_DP32(env->cpucfg[6], CPUCFG6, PMNUM, 3);
+        env->cpucfg[6] = FIELD_DP32(env->cpucfg[6], CPUCFG6, PMNUM,
+                                    env->perf_event_num  - 1);
         env->cpucfg[6] = FIELD_DP32(env->cpucfg[6], CPUCFG6, PMBITS, 63);
         env->cpucfg[6] = FIELD_DP32(env->cpucfg[6], CPUCFG6, UPM, 1);
     }

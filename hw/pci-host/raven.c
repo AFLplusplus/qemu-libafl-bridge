@@ -30,10 +30,10 @@
 #include "hw/pci/pci_device.h"
 #include "hw/pci/pci_bus.h"
 #include "hw/pci/pci_host.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/intc/i8259.h"
-#include "hw/irq.h"
-#include "hw/or-irq.h"
+#include "hw/core/irq.h"
+#include "hw/core/or-irq.h"
 #include "qom/object.h"
 
 #define TYPE_RAVEN_PCI_DEVICE "raven"
@@ -212,7 +212,38 @@ static void raven_pcihost_realizefn(DeviceState *d, Error **errp)
     PCIHostState *h = PCI_HOST_BRIDGE(dev);
     PREPPCIState *s = RAVEN_PCI_HOST_BRIDGE(dev);
     MemoryRegion *address_space_mem = get_system_memory();
+    Object *obj = OBJECT(d);
     int i;
+
+    memory_region_init(&s->pci_io, obj, "pci-io", 0x3f800000);
+    memory_region_init_io(&s->pci_io_non_contiguous, obj, &raven_io_ops, s,
+                          "pci-io-non-contiguous", 0x00800000);
+    memory_region_init(&s->pci_memory, obj, "pci-memory", 0x3f000000);
+    address_space_init(&s->pci_io_as, &s->pci_io, "raven-io");
+
+    /*
+     * Raven's raven_io_ops use the address-space API to access pci-conf-idx
+     * (which is also owned by the raven device). As such, mark the
+     * pci_io_non_contiguous as re-entrancy safe.
+     */
+    s->pci_io_non_contiguous.disable_reentrancy_guard = true;
+
+    /* CPU address space */
+    memory_region_add_subregion(address_space_mem, PCI_IO_BASE_ADDR,
+                                &s->pci_io);
+    memory_region_add_subregion_overlap(address_space_mem, PCI_IO_BASE_ADDR,
+                                        &s->pci_io_non_contiguous, 1);
+    memory_region_add_subregion(address_space_mem, 0xc0000000, &s->pci_memory);
+
+    /* Bus master address space */
+    memory_region_init(&s->bm, obj, "bm-raven", 4 * GiB);
+    memory_region_init_alias(&s->bm_pci_memory_alias, obj, "bm-pci-memory",
+                             &s->pci_memory, 0,
+                             memory_region_size(&s->pci_memory));
+    memory_region_init_alias(&s->bm_ram_alias, obj, "bm-system",
+                             address_space_mem, 0, 0x80000000);
+    memory_region_add_subregion(&s->bm, 0         , &s->bm_pci_memory_alias);
+    memory_region_add_subregion(&s->bm, 0x80000000, &s->bm_ram_alias);
 
     /*
      * According to PReP specification section 6.1.6 "System Interrupt
@@ -256,47 +287,10 @@ static void raven_pcihost_realizefn(DeviceState *d, Error **errp)
     pci_setup_iommu(h->bus, &raven_iommu_ops, s);
 }
 
-static void raven_pcihost_initfn(Object *obj)
-{
-    PREPPCIState *s = RAVEN_PCI_HOST_BRIDGE(obj);
-    MemoryRegion *address_space_mem = get_system_memory();
-
-    memory_region_init(&s->pci_io, obj, "pci-io", 0x3f800000);
-    memory_region_init_io(&s->pci_io_non_contiguous, obj, &raven_io_ops, s,
-                          "pci-io-non-contiguous", 0x00800000);
-    memory_region_init(&s->pci_memory, obj, "pci-memory", 0x3f000000);
-    address_space_init(&s->pci_io_as, &s->pci_io, "raven-io");
-
-    /*
-     * Raven's raven_io_ops use the address-space API to access pci-conf-idx
-     * (which is also owned by the raven device). As such, mark the
-     * pci_io_non_contiguous as re-entrancy safe.
-     */
-    s->pci_io_non_contiguous.disable_reentrancy_guard = true;
-
-    /* CPU address space */
-    memory_region_add_subregion(address_space_mem, PCI_IO_BASE_ADDR,
-                                &s->pci_io);
-    memory_region_add_subregion_overlap(address_space_mem, PCI_IO_BASE_ADDR,
-                                        &s->pci_io_non_contiguous, 1);
-    memory_region_add_subregion(address_space_mem, 0xc0000000, &s->pci_memory);
-
-    /* Bus master address space */
-    memory_region_init(&s->bm, obj, "bm-raven", 4 * GiB);
-    memory_region_init_alias(&s->bm_pci_memory_alias, obj, "bm-pci-memory",
-                             &s->pci_memory, 0,
-                             memory_region_size(&s->pci_memory));
-    memory_region_init_alias(&s->bm_ram_alias, obj, "bm-system",
-                             get_system_memory(), 0, 0x80000000);
-    memory_region_add_subregion(&s->bm, 0         , &s->bm_pci_memory_alias);
-    memory_region_add_subregion(&s->bm, 0x80000000, &s->bm_ram_alias);
-}
-
 static void raven_pcihost_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
     dc->realize = raven_pcihost_realizefn;
     dc->fw_name = "pci";
 }
@@ -331,7 +325,6 @@ static const TypeInfo raven_types[] = {
         .name = TYPE_RAVEN_PCI_HOST_BRIDGE,
         .parent = TYPE_PCI_HOST_BRIDGE,
         .instance_size = sizeof(PREPPCIState),
-        .instance_init = raven_pcihost_initfn,
         .class_init = raven_pcihost_class_init,
     },
     {

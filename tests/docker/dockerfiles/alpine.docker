@@ -1,10 +1,10 @@
 # THIS FILE WAS AUTO-GENERATED
 #
-#  $ lcitool dockerfile --layers all alpine-321 qemu
+#  $ lcitool dockerfile --layers all alpine-323 qemu
 #
 # https://gitlab.com/libvirt/libvirt-ci
 
-FROM docker.io/library/alpine:3.21
+FROM docker.io/library/alpine:3.23
 
 RUN apk update && \
     apk upgrade && \
@@ -76,7 +76,6 @@ RUN apk update && \
         ndctl-dev \
         net-tools \
         nettle-dev \
-        nmap-ncat \
         numactl-dev \
         openssh-client \
         pcre2-dev \
@@ -87,8 +86,10 @@ RUN apk update && \
         py3-numpy \
         py3-pillow \
         py3-pip \
+        py3-setuptools \
         py3-sphinx \
         py3-sphinx_rtd_theme \
+        py3-wheel \
         py3-yaml \
         python3 \
         rpm2cpio \

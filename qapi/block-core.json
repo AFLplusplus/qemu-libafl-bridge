@@ -855,6 +855,10 @@
 #
 # Get a list of `BlockInfo` for all virtual block devices.
 #
+# @flat: Omit nested data about the backing image, i.e. `BlockInfo`
+#     member 'inserted.image.backing-image' will be absent.
+#     Default is false.  (Since 11.0)
+#
 # Returns: a list describing each virtual block device.  Filter nodes
 #     that were created implicitly are skipped over.
 #
@@ -945,6 +949,7 @@
 #        }
 ##
 { 'command': 'query-block', 'returns': ['BlockInfo'],
+  'data': { '*flat': 'bool' },
   'allow-preconfig': true }
 
 ##
@@ -3117,7 +3122,7 @@
 # the device to write to the target path only.  Note that drive
 # mirroring includes `drive-mirror`, `blockdev-mirror` and
 # `block-commit` job (only in case of "active commit", when the node
-# being commited is used by the guest).  The ability to complete is
+# being committed is used by the guest).  The ability to complete is
 # signaled with a `BLOCK_JOB_READY` event.
 #
 # This command completes an active background block operation
@@ -3914,6 +3919,9 @@
 #
 # @errno: error identifier (errno) to be returned; defaults to EIO
 #
+# @delay-ns: request delay before completion in nanoseconds
+#            (default: 0, since: 11.1)
+#
 # @sector: specifies the sector index which has to be affected in
 #     order to actually trigger the event; defaults to "any sector"
 #
@@ -3929,6 +3937,7 @@
             '*state': 'int',
             '*iotype': 'BlkdebugIOType',
             '*errno': 'int',
+            '*delay-ns': 'int',
             '*sector': 'int',
             '*once': 'bool',
             '*immediately': 'bool' } }
@@ -4582,12 +4591,18 @@
 # @cookie-secret: ID of a QCryptoSecret object providing the cookie
 #     data in a secure way.  See @cookie for the format.  (since 2.10)
 #
+# @force-range: Don't issue a HEAD HTTP request to discover if the
+#     http server supports range requests and rely only on GET
+#     requests.  This is especially useful for S3 presigned URLs where
+#     HEAD requests are unauthorized.  (default: false; since 11.0)
+#
 # Since: 2.9
 ##
 { 'struct': 'BlockdevOptionsCurlHttp',
   'base': 'BlockdevOptionsCurlBase',
   'data': { '*cookie': 'str',
-            '*cookie-secret': 'str'} }
+            '*cookie-secret': 'str',
+            '*force-range': 'bool'} }
 
 ##
 # @BlockdevOptionsCurlHttps:
@@ -4595,23 +4610,14 @@
 # Driver specific block device options for HTTPS connections over the
 # curl backend.  URLs must start with "https://".
 #
-# @cookie: List of cookies to set; format is "name1=content1;
-#     name2=content2;" as explained by CURLOPT_COOKIE(3).  Defaults to
-#     no cookies.
-#
 # @sslverify: Whether to verify the SSL certificate's validity
 #     (defaults to true)
-#
-# @cookie-secret: ID of a QCryptoSecret object providing the cookie
-#     data in a secure way.  See @cookie for the format.  (since 2.10)
 #
 # Since: 2.9
 ##
 { 'struct': 'BlockdevOptionsCurlHttps',
-  'base': 'BlockdevOptionsCurlBase',
-  'data': { '*cookie': 'str',
-            '*sslverify': 'bool',
-            '*cookie-secret': 'str'} }
+  'base': 'BlockdevOptionsCurlHttp',
+  'data': { '*sslverify': 'bool'} }
 
 ##
 # @BlockdevOptionsCurlFtp:
@@ -5084,14 +5090,14 @@
 ##
 # @blockdev-set-active:
 #
-# Activate or inactivate a block device.  Use this to manage the
+# Activate or deactivate a block device.  Use this to manage the
 # handover of block devices on migration with qemu-storage-daemon.
 #
 # Activating a node automatically activates all of its child nodes
-# first.  Inactivating a node automatically inactivates any of its
+# first.  Deactivating a node automatically deactivates any of its
 # child nodes that are not in use by a still active node.
 #
-# @node-name: Name of the graph node to activate or inactivate.  By
+# @node-name: Name of the graph node to activate or deactivate.  By
 #     default, all nodes are affected by the operation.
 #
 # @active: true if the nodes should be active when the command returns
@@ -5789,7 +5795,7 @@
 # .. note:: If action is "stop", a `STOP` event will eventually follow
 #    the `BLOCK_IO_ERROR` event.
 #
-# .. note:: This event is rate-limited.
+# .. note:: This event is rate-limited, except if action is "stop".
 #
 # Since: 0.13
 #

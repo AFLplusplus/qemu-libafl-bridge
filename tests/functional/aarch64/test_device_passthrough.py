@@ -78,14 +78,14 @@ echo device_passthrough_test_ok
 
 class Aarch64DevicePassthrough(QemuSystemTest):
 
-    # https://github.com/pbo-linaro/qemu-linux-stack/tree/device_passthrough
+    # https://github.com/p-b-o/qemu-linux-stack/tree/device_passthrough
     # $ ./build.sh && ./archive_artifacts.sh out.tar.xz
     #
     # Linux kernel is compiled with defconfig +
     # IOMMUFD + VFIO_DEVICE_CDEV + ARM_SMMU_V3_IOMMUFD
     # https://docs.kernel.org/driver-api/vfio.html#vfio-device-cde
     ASSET_DEVICE_PASSTHROUGH_STACK = Asset(
-        ('https://github.com/pbo-linaro/qemu-linux-stack/'
+        ('https://github.com/p-b-o/qemu-linux-stack/'
          'releases/download/build/device_passthrough-a9612a2.tar.xz'),
         'f7d2f70912e7231986e6e293e1a2c4786dd02bec113a7acb6bfc619e96155455')
 

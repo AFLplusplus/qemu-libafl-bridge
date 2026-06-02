@@ -463,6 +463,18 @@ Example::
   0x000000004002b0, 1, 4, 66087
   ...
 
+Behaviour can be tweaked with the following arguments:
+
+.. list-table:: Hot Blocks plugin arguments
+  :widths: 20 80
+  :header-rows: 1
+
+  * - Option
+    - Description
+  * - inline=true|false
+    - Use faster inline addition of a single counter.
+  * - limit=N
+    - The number of blocks to be printed. (Default: N = 20, use 0 for no limit).
 
 Hot Pages
 .........
@@ -824,8 +836,8 @@ Uftrace
 This plugin generates a binary trace compatible with
 `uftrace <https://github.com/namhyung/uftrace>`_.
 
-Plugin supports aarch64 and x64, and works in user and system mode, allowing to
-trace a system boot, which is not something possible usually.
+Plugin supports aarch64, x64 and riscv64, and works in user and system mode,
+allowing to trace a system boot, which is not something possible usually.
 
 In user mode, the memory mapping is directly copied from ``/proc/self/maps`` at
 the end of execution. Uftrace should be able to retrieve symbols by itself,
@@ -837,7 +849,7 @@ Symbols must be present in ELF binaries.
 It tracks the call stack (based on frame pointer analysis). Thus, your program
 and its dependencies must be compiled using ``-fno-omit-frame-pointer
 -mno-omit-leaf-frame-pointer``. In 2024, `Ubuntu and Fedora enabled it by
-default again on x64
+default again on 64-bit platforms
 <https://www.brendangregg.com/blog/2024-03-17/the-return-of-the-frame-pointers.html>`_.
 On aarch64, this is less of a problem, as they are usually part of the ABI,
 except for leaf functions. That's true for user space applications, but not
@@ -860,7 +872,7 @@ Performance wise, overhead compared to normal tcg execution is around x5-x15.
     - Description
   * - trace-privilege-level=[on|off]
     - Generate separate traces for each privilege level (Exception Level +
-      Security State on aarch64, Rings on x64).
+      Security State on aarch64, Privilege levels on riscv64 and Rings on x64).
 
 .. list-table:: uftrace_symbols.py arguments
   :widths: 20 80
@@ -886,24 +898,24 @@ As an example, we can trace qemu itself running git::
     $ uftrace dump --chrome | gzip > ~/qemu_aarch64_git_help.json.gz
 
 For convenience, you can download this trace `qemu_aarch64_git_help.json.gz
-<https://github.com/pbo-linaro/qemu-assets/raw/refs/heads/master/qemu-uftrace/qemu_aarch64_git_help.json.gz>`_.
+<https://github.com/p-b-o/qemu-assets/raw/refs/heads/master/qemu-uftrace/qemu_aarch64_git_help.json.gz>`_.
 Download it and open this trace on https://ui.perfetto.dev/. You can zoom in/out
 using :kbd:`W`, :kbd:`A`, :kbd:`S`, :kbd:`D` keys.
 Some sequences taken from this trace:
 
 - Loading program and its interpreter
 
-.. image:: https://github.com/pbo-linaro/qemu-assets/blob/master/qemu-uftrace/loader_exec.png?raw=true
+.. image:: https://github.com/p-b-o/qemu-assets/blob/master/qemu-uftrace/loader_exec.png?raw=true
    :height: 200px
 
 - open syscall
 
-.. image:: https://github.com/pbo-linaro/qemu-assets/blob/master/qemu-uftrace/open_syscall.png?raw=true
+.. image:: https://github.com/p-b-o/qemu-assets/blob/master/qemu-uftrace/open_syscall.png?raw=true
    :height: 200px
 
 - TB creation
 
-.. image:: https://github.com/pbo-linaro/qemu-assets/blob/master/qemu-uftrace/tb_translation.png?raw=true
+.. image:: https://github.com/p-b-o/qemu-assets/blob/master/qemu-uftrace/tb_translation.png?raw=true
    :height: 200px
 
 It's usually better to use ``uftrace record`` directly. However, tracing
@@ -916,7 +928,7 @@ Example system trace
 
 A full trace example (chrome trace, from instructions below) generated from a
 system boot can be found `here
-<https://github.com/pbo-linaro/qemu-assets/raw/refs/heads/master/qemu-uftrace/aarch64_boot.json.gz>`_.
+<https://github.com/p-b-o/qemu-assets/raw/refs/heads/master/qemu-uftrace/aarch64_boot.json.gz>`_.
 Download it and open this trace on https://ui.perfetto.dev/. You can see code
 executed for all privilege levels, and zoom in/out using
 :kbd:`W`, :kbd:`A`, :kbd:`S`, :kbd:`D` keys. You can find below some sequences
@@ -924,27 +936,27 @@ taken from this trace:
 
 - Two first stages of boot sequence in Arm Trusted Firmware (EL3 and S-EL1)
 
-.. image:: https://github.com/pbo-linaro/qemu-assets/blob/master/qemu-uftrace/bl3_to_bl1.png?raw=true
+.. image:: https://github.com/p-b-o/qemu-assets/blob/master/qemu-uftrace/bl3_to_bl1.png?raw=true
    :height: 200px
 
 - U-boot initialization (until code relocation, after which we can't track it)
 
-.. image:: https://github.com/pbo-linaro/qemu-assets/blob/master/qemu-uftrace/uboot.png?raw=true
+.. image:: https://github.com/p-b-o/qemu-assets/blob/master/qemu-uftrace/uboot.png?raw=true
    :height: 200px
 
 - Stat and open syscalls in kernel
 
-.. image:: https://github.com/pbo-linaro/qemu-assets/blob/master/qemu-uftrace/stat.png?raw=true
+.. image:: https://github.com/p-b-o/qemu-assets/blob/master/qemu-uftrace/stat.png?raw=true
    :height: 200px
 
 - Timer interrupt
 
-.. image:: https://github.com/pbo-linaro/qemu-assets/blob/master/qemu-uftrace/timer_interrupt.png?raw=true
+.. image:: https://github.com/p-b-o/qemu-assets/blob/master/qemu-uftrace/timer_interrupt.png?raw=true
    :height: 200px
 
 - Poweroff sequence (from kernel back to firmware, NS-EL2 to EL3)
 
-.. image:: https://github.com/pbo-linaro/qemu-assets/blob/master/qemu-uftrace/poweroff.png?raw=true
+.. image:: https://github.com/p-b-o/qemu-assets/blob/master/qemu-uftrace/poweroff.png?raw=true
    :height: 200px
 
 Build and run system example
@@ -954,7 +966,7 @@ Build and run system example
 
 Building a full system image with frame pointers is not trivial.
 
-We provide a `simple way <https://github.com/pbo-linaro/qemu-linux-stack>`_ to
+We provide a `simple way <https://github.com/p-b-o/qemu-linux-stack>`_ to
 build an aarch64 system, combining Arm Trusted firmware, U-boot, Linux kernel
 and debian userland. It's based on containers (``podman`` only) and
 ``qemu-user-static (binfmt)`` to make sure it's easily reproducible and does not depend
@@ -962,21 +974,32 @@ on machine where you build it.
 
 You can follow the exact same instructions for a x64 system, combining edk2,
 Linux, and Ubuntu, simply by switching to
-`x86_64 <https://github.com/pbo-linaro/qemu-linux-stack/tree/x86_64>`_ branch.
+`x86_64 <https://github.com/p-b-o/qemu-linux-stack/tree/x86_64>`_ branch.
 
-To build the system::
+You can follow the exact same instructions for a riscv64 system, combining
+opensbi, Linux, and Ubuntu, simply by switching to
+`riscv64 <https://github.com/p-b-o/qemu-linux-stack/tree/riscv64>`_ branch.
+
+To build and run the system::
 
     # Install dependencies
     $ sudo apt install -y podman qemu-user-static
 
-    $ git clone https://github.com/pbo-linaro/qemu-linux-stack
+    $ git clone https://github.com/p-b-o/qemu-linux-stack
     $ cd qemu-linux-stack
     $ ./build.sh
 
     # system can be started using:
     $ ./run.sh /path/to/qemu-system-aarch64
 
-To generate a uftrace for a system boot from that::
+    # generate a uftrace for execution (collect symbols automatically)
+    $ ./trace.sh /path/to/qemu-system-aarch64
+    # show output log to read timestamps
+    $ cat uftrace.data/exec.log
+    # generate final trace (compressed) for perfetto
+    $ ./perfetto.sh <start_timestamp> <end_timestamp> ~/trace.gz
+
+To generate manually the same trace::
 
     # run true and poweroff the system
     $ env INIT=true ./run.sh path/to/qemu-system-aarch64 \
@@ -1020,7 +1043,7 @@ Count traps
 
 ``contrib/plugins/traps.c``
 
-This plugin counts the number of interrupts (asyncronous events), exceptions
+This plugin counts the number of interrupts (asynchronous events), exceptions
 (synchronous events) and host calls (e.g. semihosting) per cpu.
 
 Other emulation features

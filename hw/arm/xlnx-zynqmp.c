@@ -21,7 +21,7 @@
 #include "hw/arm/xlnx-zynqmp.h"
 #include "hw/intc/arm_gic_common.h"
 #include "hw/misc/unimp.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "system/system.h"
 #include "target/arm/cpu-qom.h"
 #include "target/arm/gtimer.h"
@@ -380,29 +380,14 @@ static void xlnx_zynqmp_create_unimp_mmio(XlnxZynqMPState *s)
 
 static void xlnx_zynqmp_init(Object *obj)
 {
-    MachineState *ms = MACHINE(qdev_get_machine());
     XlnxZynqMPState *s = XLNX_ZYNQMP(obj);
     int i;
-    int num_apus = MIN(ms->smp.cpus, XLNX_ZYNQMP_NUM_APU_CPUS);
-    int num_rpus = xlnx_zynqmp_get_rpu_number(ms);
 
     object_initialize_child(obj, "apu-cluster", &s->apu_cluster,
                             TYPE_CPU_CLUSTER);
     qdev_prop_set_uint32(DEVICE(&s->apu_cluster), "cluster-id", 0);
 
-    for (i = 0; i < num_apus; i++) {
-        object_initialize_child(OBJECT(&s->apu_cluster), "apu-cpu[*]",
-                                &s->apu_cpu[i],
-                                ARM_CPU_TYPE_NAME("cortex-a53"));
-    }
-
     object_initialize_child(obj, "gic", &s->gic, gic_class_name());
-
-    if (num_rpus) {
-        /* Do not create the rpu_gic if we don't have rpus */
-        object_initialize_child(obj, "rpu_gic", &s->rpu_gic,
-                                gic_class_name());
-    }
 
     for (i = 0; i < XLNX_ZYNQMP_NUM_GEMS; i++) {
         object_initialize_child(obj, "gem[*]", &s->gem[i], TYPE_CADENCE_GEM);
@@ -453,15 +438,6 @@ static void xlnx_zynqmp_init(Object *obj)
     object_initialize_child(obj, "qspi-irq-orgate",
                             &s->qspi_irq_orgate, TYPE_OR_IRQ);
 
-    if (num_rpus) {
-        for (i = 0; i < ARRAY_SIZE(s->splitter); i++) {
-            g_autofree char *name = g_strdup_printf("irq-splitter%d", i);
-            object_initialize_child(obj, name, &s->splitter[i], TYPE_SPLIT_IRQ);
-        }
-    }
-
-
-
     for (i = 0; i < XLNX_ZYNQMP_NUM_USB; i++) {
         object_initialize_child(obj, "usb[*]", &s->usb[i], TYPE_USB_DWC3);
     }
@@ -482,6 +458,24 @@ static void xlnx_zynqmp_realize(DeviceState *dev, Error **errp)
     Error *err = NULL;
 
     ram_size = memory_region_size(s->ddr_ram);
+
+    for (i = 0; i < num_apus; i++) {
+        object_initialize_child(OBJECT(&s->apu_cluster), "apu-cpu[*]",
+                                &s->apu_cpu[i],
+                                ARM_CPU_TYPE_NAME("cortex-a53"));
+    }
+
+    if (num_rpus) {
+        /* Do not create the rpu_gic if we don't have rpus */
+        object_initialize_child(OBJECT(dev), "rpu_gic", &s->rpu_gic,
+                                gic_class_name());
+
+        for (i = 0; i < ARRAY_SIZE(s->splitter); i++) {
+            g_autofree char *name = g_strdup_printf("irq-splitter%d", i);
+            object_initialize_child(OBJECT(dev), name, &s->splitter[i], TYPE_SPLIT_IRQ);
+        }
+    }
+
 
     /*
      * Create the DDR Memory Regions. User friendly checks should happen at

@@ -24,7 +24,7 @@
 
 extern const SemanticInsn opcode_genptr[];
 
-void gen_store32(TCGv vaddr, TCGv src, int width, uint32_t slot);
+void gen_store32(TCGv vaddr, TCGv src, uint32_t width, uint32_t slot);
 void gen_store1(TCGv_env cpu_env, TCGv vaddr, TCGv src, uint32_t slot);
 void gen_store2(TCGv_env cpu_env, TCGv vaddr, TCGv src, uint32_t slot);
 void gen_store4(TCGv_env cpu_env, TCGv vaddr, TCGv src, uint32_t slot);
@@ -37,8 +37,7 @@ TCGv gen_read_reg(TCGv result, int num);
 TCGv gen_read_preg(TCGv pred, uint8_t num);
 TCGv get_result_gpr(DisasContext *ctx, int rnum);
 TCGv get_result_pred(DisasContext *ctx, int pnum);
-void gen_log_reg_write(DisasContext *ctx, int rnum, TCGv val);
-void gen_log_pred_write(DisasContext *ctx, int pnum, TCGv val);
+void gen_pred_write(DisasContext *ctx, int pnum, TCGv val);
 void gen_set_usr_field(DisasContext *ctx, int field, TCGv val);
 void gen_set_usr_fieldi(DisasContext *ctx, int field, int x);
 void gen_set_usr_field_if(DisasContext *ctx, int field, TCGv val);

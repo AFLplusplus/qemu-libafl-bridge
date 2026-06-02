@@ -9,7 +9,7 @@
 import os
 
 from qemu_test import QemuSystemTest, Asset
-from qemu_test import wait_for_console_pattern
+from qemu_test import wait_for_console_pattern, exec_command
 from qemu_test import exec_command_and_wait_for_pattern
 
 
@@ -27,9 +27,28 @@ class AST2x00MachineSDK(QemuSystemTest):
 
         self.vm.launch()
 
+    def disable_kernel_crypto_selftest(self):
+         exec_command_and_wait_for_pattern(self,
+            'setenv bootargs "${bootargs} cryptomgr.notests=1"', '=>')
+
+    def enable_ast2700_pcie2(self):
+        exec_command_and_wait_for_pattern(self,
+            'cp 100420000 403000000 900000', '=>')
+        exec_command_and_wait_for_pattern(self,
+            'bootm start 403000000', '=>')
+        exec_command_and_wait_for_pattern(self, 'bootm loados', '=>')
+        exec_command_and_wait_for_pattern(self, 'bootm ramdisk', '=>')
+        exec_command_and_wait_for_pattern(self, 'bootm prep', '=>')
+        exec_command_and_wait_for_pattern(self,
+            'fdt set /soc@14000000/pcie@140d0000 status "okay"', '=>')
+        exec_command(self, 'bootm go')
+
     def verify_openbmc_boot_and_login(self, name):
         wait_for_console_pattern(self, 'U-Boot 2023.10')
-        wait_for_console_pattern(self, '## Loading kernel from FIT Image')
+        wait_for_console_pattern(self, 'Hit any key to stop autoboot')
+        exec_command_and_wait_for_pattern(self, '\012', '=>')
+        self.disable_kernel_crypto_selftest()
+        self.enable_ast2700_pcie2()
         wait_for_console_pattern(self, 'Starting kernel ...')
 
         wait_for_console_pattern(self, f'{name} login:')
@@ -47,9 +66,9 @@ class AST2x00MachineSDK(QemuSystemTest):
             self.vm.add_args('-device',
                              f'loader,file={file},cpu-num={cpu_num}')
 
-    ASSET_SDK_V908_AST2700 = Asset(
-            'https://github.com/AspeedTech-BMC/openbmc/releases/download/v09.08/ast2700-default-obmc.tar.gz',
-            'eac3dc409b7ea3cd4b03d4792d3cebd469792ad893cb51e1d15f0fc20bd1e2cd')
+    ASSET_SDK_V1101_AST2700 = Asset(
+            'https://github.com/AspeedTech-BMC/openbmc/releases/download/v11.01/ast2700-default-image.tar.gz',
+            'ce89dcd995cf284d41a6a4bd17a1b97d59939f0277bfe54fdaaf30e741ce7487')
 
     def do_ast2700_i2c_test(self):
         exec_command_and_wait_for_pattern(self,
@@ -84,7 +103,7 @@ class AST2x00MachineSDK(QemuSystemTest):
         exec_command_and_wait_for_pattern(self, 'version',
                                           'Zephyr version 3.7.1')
         exec_command_and_wait_for_pattern(self, 'md 72c02000 1',
-                                          '[72c02000] 06010103')
+                                          '[72c02000] 06020103')
 
     def do_ast2700fc_tsp_test(self):
         self.vm.shutdown()
@@ -95,23 +114,14 @@ class AST2x00MachineSDK(QemuSystemTest):
         exec_command_and_wait_for_pattern(self, 'version',
                                           'Zephyr version 3.7.1')
         exec_command_and_wait_for_pattern(self, 'md 72c02000 1',
-                                          '[72c02000] 06010103')
+                                          '[72c02000] 06020103')
 
     def start_ast2700fc_test(self, name):
         ca35_core = 4
-        uboot_size = os.path.getsize(self.scratch_file(name,
-                                                       'u-boot-nodtb.bin'))
-        uboot_dtb_load_addr = hex(0x400000000 + uboot_size)
-
         load_images_list = [
             {
                 'addr': '0x400000000',
-                'file': self.scratch_file(name,
-                                          'u-boot-nodtb.bin')
-            },
-            {
-                'addr': str(uboot_dtb_load_addr),
-                'file': self.scratch_file(name, 'u-boot.dtb')
+                'file': self.scratch_file(name, 'u-boot.bin')
             },
             {
                 'addr': '0x430000000',
@@ -119,8 +129,7 @@ class AST2x00MachineSDK(QemuSystemTest):
             },
             {
                 'addr': '0x430080000',
-                'file': self.scratch_file(name, 'optee',
-                                          'tee-raw.bin')
+                'file': self.scratch_file(name, 'optee', 'tee-raw.bin')
             }
         ]
 
@@ -144,23 +153,23 @@ class AST2x00MachineSDK(QemuSystemTest):
         self.do_test_aarch64_aspeed_sdk_start(
                 self.scratch_file(name, 'image-bmc'))
 
-    def test_aarch64_ast2700fc_sdk_v09_08(self):
+    def test_aarch64_ast2700fc_sdk_v11_01(self):
         self.set_machine('ast2700fc')
         self.require_netdev('user')
 
-        self.archive_extract(self.ASSET_SDK_V908_AST2700)
-        self.start_ast2700fc_test('ast2700-default')
+        self.archive_extract(self.ASSET_SDK_V1101_AST2700)
+        self.start_ast2700fc_test('ast2700-default-image')
         self.verify_openbmc_boot_and_login('ast2700-default')
         self.do_ast2700_i2c_test()
         self.do_ast2700_pcie_test()
         self.do_ast2700fc_ssp_test()
         self.do_ast2700fc_tsp_test()
 
-    def test_aarch64_ast2700fc_sdk_vbootrom_v09_08(self):
+    def test_aarch64_ast2700fc_sdk_vbootrom_v11_01(self):
         self.set_machine('ast2700fc')
 
-        self.archive_extract(self.ASSET_SDK_V908_AST2700)
-        self.start_ast2700fc_test_vbootrom('ast2700-default')
+        self.archive_extract(self.ASSET_SDK_V1101_AST2700)
+        self.start_ast2700fc_test_vbootrom('ast2700-default-image')
         self.verify_openbmc_boot_and_login('ast2700-default')
         self.do_ast2700fc_ssp_test()
         self.do_ast2700fc_tsp_test()

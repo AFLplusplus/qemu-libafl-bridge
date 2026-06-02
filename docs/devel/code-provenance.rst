@@ -213,7 +213,7 @@ The general principles when picking up abandoned work are:
  * Indicate where the original patch was obtained from (mailing list, bug
    tracker, author's git repo, etc) when sending it for review
  * Acknowledge the extra work of the new contributor by including their
-   ``Signed-off-by`` in the patch in addition to the orignal author's
+   ``Signed-off-by`` in the patch in addition to the original author's
  * Indicate who is responsible for what parts of the patch. This is typically
    done via a note in the commit message, just prior to the new contributor's
    ``Signed-off-by``::
@@ -259,7 +259,7 @@ process. A non-exhaustive list of examples is:
    container images from a clean git checkout.
 
  * eBPF: QEMU includes some generated eBPF machine code, since the required
-   eBPF compilation tools are not broadly available on all targetted OS
+   eBPF compilation tools are not broadly available on all targeted OS
    distributions. The corresponding eBPF C code for the binary is also
    provided. This is a time-limited exception until the eBPF toolchain is
    sufficiently broadly available in distros.

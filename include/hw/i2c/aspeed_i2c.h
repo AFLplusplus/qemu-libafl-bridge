@@ -21,8 +21,8 @@
 #define ASPEED_I2C_H
 
 #include "hw/i2c/i2c.h"
-#include "hw/sysbus.h"
-#include "hw/registerfields.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/registerfields.h"
 #include "qom/object.h"
 
 #define TYPE_ASPEED_I2C "aspeed.i2c"
@@ -36,8 +36,7 @@ OBJECT_DECLARE_TYPE(AspeedI2CState, AspeedI2CClass, ASPEED_I2C)
 #define ASPEED_I2C_NR_BUSSES 16
 #define ASPEED_I2C_SHARE_POOL_SIZE 0x800
 #define ASPEED_I2C_BUS_POOL_SIZE 0x20
-#define ASPEED_I2C_OLD_NUM_REG 11
-#define ASPEED_I2C_NEW_NUM_REG 28
+#define ASPEED_I2C_NEW_NUM_REG (0xa0 >> 2)
 
 #define A_I2CD_M_STOP_CMD       BIT(5)
 #define A_I2CD_M_RX_CMD         BIT(3)
@@ -252,10 +251,12 @@ struct AspeedI2CBus {
     MemoryRegion mr_pool;
 
     I2CBus *bus;
+    char *name;
     uint8_t id;
     qemu_irq irq;
 
     uint32_t regs[ASPEED_I2C_NEW_NUM_REG];
+    uint32_t pending_intr_sts;
     uint8_t pool[ASPEED_I2C_BUS_POOL_SIZE];
     uint64_t dma_dram_offset;
 };
@@ -269,6 +270,7 @@ struct AspeedI2CState {
     uint32_t intr_status;
     uint32_t ctrl_global;
     uint32_t new_clk_divider;
+    char *bus_label;
     MemoryRegion pool_iomem;
     uint8_t share_pool[ASPEED_I2C_SHARE_POOL_SIZE];
 

@@ -23,17 +23,17 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/hw.h"
-#include "hw/sysbus.h"
+#include "hw/core/hw-error.h"
+#include "hw/core/sysbus.h"
 #include "qapi/error.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "net/net.h"
 #include "net/checksum.h"
 
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
-#include "hw/stream.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/stream.h"
 #include "qom/object.h"
 
 #define DPHY(x)
@@ -141,6 +141,10 @@ tdk_write(struct PHY *phy, unsigned int req, unsigned int data)
     regnum = req & 0x1f;
     DPHY(qemu_log("%s reg[%d] = %x\n", __func__, regnum, data));
     switch (regnum) {
+        case 2:
+        case 3:
+            /* Writes to PHY Identification registers are disallowed */
+            break;
         default:
             phy->regs[regnum] = data;
             break;

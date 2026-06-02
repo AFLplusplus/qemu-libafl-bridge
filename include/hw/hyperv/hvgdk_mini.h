@@ -211,7 +211,7 @@ enum hv_intercept_type {
 struct hv_u128 {
     uint64_t low_part;
     uint64_t high_part;
-};
+} QEMU_PACKED;
 
 union hv_x64_xmm_control_status_register {
     struct hv_u128 as_uint128;
@@ -326,13 +326,13 @@ typedef struct hv_x64_segment_register {
         };
         uint16_t attributes;
     };
-} hv_x64_segment_register;
+} QEMU_PACKED hv_x64_segment_register;
 
 typedef struct hv_x64_table_register {
     uint16_t pad[3];
     uint16_t limit;
     uint64_t base;
-} hv_x64_table_register;
+} QEMU_PACKED hv_x64_table_register;
 
 union hv_x64_fp_control_status_register {
     struct hv_u128 as_uint128;
@@ -416,6 +416,10 @@ typedef union hv_register_value {
     union hv_x64_register_sev_control sev_control;
 } hv_register_value;
 
+/*
+ * This struct is __packed in the kernel. Since all members are naturally
+ * aligned, we can omit QEMU_PACKED to avoid address-of-packed-member warnings.
+ */
 typedef struct hv_register_assoc {
     uint32_t name;         /* enum hv_register_name */
     uint32_t reserved1;
@@ -439,7 +443,7 @@ typedef struct hv_input_get_vp_registers {
     uint8_t  rsvd_z8;
     uint16_t rsvd_z16;
     uint32_t names[];
-} hv_input_get_vp_registers;
+} QEMU_PACKED hv_input_get_vp_registers;
 
 typedef struct hv_input_set_vp_registers {
     uint64_t partition_id;
@@ -448,14 +452,7 @@ typedef struct hv_input_set_vp_registers {
     uint8_t  rsvd_z8;
     uint16_t rsvd_z16;
     struct hv_register_assoc elements[];
-} hv_input_set_vp_registers;
-
-#define MSHV_VP_MAX_REGISTERS   128
-
-struct mshv_vp_registers {
-    int count; /* at most MSHV_VP_MAX_REGISTERS */
-    struct hv_register_assoc *regs;
-};
+} QEMU_PACKED hv_input_set_vp_registers;
 
 union hv_interrupt_control {
     uint64_t as_uint64;
@@ -475,7 +472,7 @@ struct hv_input_assert_virtual_interrupt {
     uint8_t target_vtl;
     uint8_t rsvd_z0;
     uint16_t rsvd_z1;
-};
+} QEMU_PACKED;
 
 /* /dev/mshv */
 #define MSHV_CREATE_PARTITION   _IOW(MSHV_IOCTL, 0x00, struct mshv_create_partition)
@@ -494,6 +491,11 @@ struct hv_input_assert_virtual_interrupt {
  ********************************
  */
 
+/*
+ * This struct is __packed in the kernel, but since all members are naturally
+ * aligned, so we can omit QEMU_PACKED to avoid address-of-packed-member
+ * warnings.
+ */
 struct hv_local_interrupt_controller_state {
     /* HV_X64_INTERRUPT_CONTROLLER_STATE */
     uint32_t apic_id;
@@ -651,7 +653,7 @@ struct hv_x64_intercept_message_header {
     struct hv_x64_segment_register cs_segment;
     uint64_t rip;
     uint64_t rflags;
-};
+} QEMU_PACKED;
 
 union hv_x64_io_port_access_info {
     uint8_t as_uint8;
@@ -676,7 +678,7 @@ typedef struct hv_x64_io_port_intercept_message {
     uint64_t rcx;
     uint64_t rsi;
     uint64_t rdi;
-} hv_x64_io_port_intercept_message;
+} QEMU_PACKED hv_x64_io_port_intercept_message;
 
 union hv_x64_memory_access_info {
     uint8_t as_uint8;
@@ -699,7 +701,7 @@ struct hv_x64_memory_intercept_message {
     uint64_t guest_virtual_address;
     uint64_t guest_physical_address;
     uint8_t instruction_bytes[16];
-};
+} QEMU_PACKED;
 
 union hv_message_flags {
     uint8_t asu8;
@@ -718,14 +720,14 @@ struct hv_message_header {
         uint64_t sender;
         union hv_port_id port;
     };
-};
+} QEMU_PACKED;
 
 struct hv_message {
     struct hv_message_header header;
     union {
         uint64_t payload[HV_MESSAGE_PAYLOAD_QWORD_COUNT];
     } u;
-};
+} QEMU_PACKED;
 
 /* From  github.com/rust-vmm/mshv-bindings/src/x86_64/regs.rs */
 
@@ -738,13 +740,13 @@ struct hv_cpuid_entry {
     uint32_t ecx;
     uint32_t edx;
     uint32_t padding[3];
-};
+} QEMU_PACKED;
 
 struct hv_cpuid {
     uint32_t nent;
     uint32_t padding;
     struct hv_cpuid_entry entries[0];
-};
+} QEMU_PACKED;
 
 #define IA32_MSR_TSC            0x00000010
 #define IA32_MSR_EFER           0xC0000080

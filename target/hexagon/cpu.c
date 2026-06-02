@@ -21,7 +21,7 @@
 #include "internal.h"
 #include "exec/translation-block.h"
 #include "qapi/error.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "fpu/softfloat-helpers.h"
 #include "tcg/tcg.h"
 #include "exec/gdbstub.h"
@@ -301,7 +301,8 @@ static void hexagon_cpu_reset_hold(Object *obj, ResetType type)
     set_float_default_nan_pattern(0b11111111, &env->fp_status);
 }
 
-static void hexagon_cpu_disas_set_info(CPUState *s, disassemble_info *info)
+static void hexagon_cpu_disas_set_info(const CPUState *cs,
+                                       disassemble_info *info)
 {
     info->print_insn = print_insn_hexagon;
     info->endian = BFD_ENDIAN_LITTLE;
@@ -321,7 +322,7 @@ static void hexagon_cpu_realize(DeviceState *dev, Error **errp)
 
     gdb_register_coprocessor(cs, hexagon_hvx_gdb_read_register,
                              hexagon_hvx_gdb_write_register,
-                             gdb_find_static_feature("hexagon-hvx.xml"), 0);
+                             gdb_find_static_feature("hexagon-hvx.xml"));
 
     qemu_init_vcpu(cs);
     cpu_reset(cs);

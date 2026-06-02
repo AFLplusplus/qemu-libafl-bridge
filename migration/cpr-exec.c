@@ -158,12 +158,13 @@ static void cpr_exec_cb(void *opaque)
 
     error_report_err(error_copy(err));
     migrate_set_state(&s->state, s->state, MIGRATION_STATUS_FAILED);
-    migrate_set_error(s, err);
-    error_free(err);
+
+    migrate_error_propagate(s, err);
+    /* We must reset the error because it'll be reused later */
     err = NULL;
 
     /* Note, we can go from state COMPLETED to FAILED */
-    migration_call_notifiers(s, MIG_EVENT_PRECOPY_FAILED, NULL);
+    migration_call_notifiers(MIG_EVENT_FAILED, NULL);
 
     if (!migration_block_activate(&err)) {
         /* error was already reported */
@@ -181,12 +182,12 @@ static int cpr_exec_notifier(NotifierWithReturn *notifier, MigrationEvent *e,
 {
     MigrationState *s = migrate_get_current();
 
-    if (e->type == MIG_EVENT_PRECOPY_DONE) {
+    if (e->type == MIG_EVENT_DONE) {
         QEMUBH *cpr_exec_bh = qemu_bh_new(cpr_exec_cb, NULL);
         assert(s->state == MIGRATION_STATUS_COMPLETED);
         qemu_bh_schedule(cpr_exec_bh);
         qemu_notify_event();
-    } else if (e->type == MIG_EVENT_PRECOPY_FAILED) {
+    } else if (e->type == MIG_EVENT_FAILED) {
         cpr_exec_unpersist_state();
     }
     return 0;

@@ -72,7 +72,7 @@
 
 #if defined(TARGET_I386) || defined(TARGET_ARM) || defined(TARGET_SH4)  \
     || defined(TARGET_M68K)                                             \
-    || defined(TARGET_S390X) || defined(TARGET_OPENRISC)                \
+    || defined(TARGET_S390X) || defined(TARGET_OR1K)                    \
     || defined(TARGET_RISCV)                                            \
     || defined(TARGET_XTENSA) || defined(TARGET_LOONGARCH64)
 
@@ -210,7 +210,7 @@ struct target_ip_mreq {
 struct target_ip_mreqn {
     struct target_in_addr imr_multiaddr;
     struct target_in_addr imr_address;
-    abi_long imr_ifindex;
+    abi_int imr_ifindex;
 };
 
 struct target_ip_mreq_source {
@@ -1976,7 +1976,7 @@ struct target_stat64  {
     abi_ulong __unused5;
 };
 
-#elif defined(TARGET_OPENRISC) \
+#elif defined(TARGET_OR1K) \
     || defined(TARGET_RISCV) || defined(TARGET_HEXAGON) || defined(TARGET_LOONGARCH)
 
 /* These are the asm-generic versions of the stat and stat64 structures */
@@ -2005,7 +2005,7 @@ struct target_stat {
     abi_uint __unused5;
 };
 
-#if !defined(TARGET_RISCV64)
+#if !defined(TARGET_RISCV64) && !defined(TARGET_LOONGARCH64)
 #define TARGET_HAS_STRUCT_STAT64
 struct target_stat64 {
     abi_ullong st_dev;
@@ -2595,7 +2595,6 @@ struct target_drm_i915_getparam {
 #define FUTEX_CLOCK_REALTIME    256
 #define FUTEX_CMD_MASK          ~(FUTEX_PRIVATE_FLAG | FUTEX_CLOCK_REALTIME)
 
-#ifdef CONFIG_EPOLL
 #if defined(TARGET_X86_64)
 #define TARGET_EPOLL_PACKED QEMU_PACKED
 #else
@@ -2615,8 +2614,6 @@ struct target_epoll_event {
 } TARGET_EPOLL_PACKED;
 
 #define TARGET_EP_MAX_EVENTS (INT_MAX / sizeof(struct target_epoll_event))
-
-#endif
 
 struct target_ucred {
     abi_uint pid;
@@ -2734,7 +2731,11 @@ struct target_statx {
     abi_uint stx_dev_major; /* ID of device containing file [uncond] */
     abi_uint stx_dev_minor;
     /* 0x90 */
-    abi_ullong __spare2[14]; /* Spare space for future expansion */
+    abi_ullong stx_mnt_id;
+    abi_uint stx_dio_mem_align;
+    abi_uint stx_dio_offset_align;
+    /* 0xa0 */
+    abi_ullong __spare2[12]; /* Spare space for future expansion */
     /* 0x100 */
 };
 
@@ -2773,7 +2774,12 @@ struct target_open_how_ver0 {
 #ifndef RESOLVE_NO_SYMLINKS
 #define RESOLVE_NO_SYMLINKS     0x04
 #endif
-
+#ifndef RESOLVE_BENEATH
+#define RESOLVE_BENEATH         0x08
+#endif
+#ifndef RESOLVE_IN_ROOT
+#define RESOLVE_IN_ROOT         0x10
+#endif
 #if (defined(TARGET_I386) && defined(TARGET_ABI32)) || \
     (defined(TARGET_ARM) && defined(TARGET_ABI32)) || \
     defined(TARGET_M68K) || defined(TARGET_MICROBLAZE) || \

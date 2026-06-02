@@ -24,7 +24,7 @@
 #include "qemu/qemu-print.h"
 #include "accel/tcg/cpu-mmu-index.h"
 #include "exec/translation-block.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/visitor.h"
 #include "tcg/tcg.h"
 #include "fpu/softfloat.h"
@@ -103,7 +103,8 @@ static bool sparc_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
 }
 #endif /* !CONFIG_USER_ONLY */
 
-static void cpu_sparc_disas_set_info(CPUState *cpu, disassemble_info *info)
+static void cpu_sparc_disas_set_info(const CPUState *cpu,
+                                     disassemble_info *info)
 {
     info->print_insn = print_insn_sparc;
     info->endian = BFD_ENDIAN_BIG;
@@ -896,6 +897,8 @@ static void sparc_cpu_realizefn(DeviceState *dev, Error **errp)
         return;
     }
 
+    sparc_cpu_register_gdb_regs(cs);
+
     qemu_init_vcpu(cs);
 
     scc->parent_realize(dev, errp);
@@ -1090,10 +1093,9 @@ static void sparc_cpu_class_init(ObjectClass *oc, const void *data)
     cc->disas_set_info = cpu_sparc_disas_set_info;
 
 #if defined(TARGET_SPARC64) && !defined(TARGET_ABI32)
-    cc->gdb_core_xml_file = "sparc64-core.xml";
-    cc->gdb_num_core_regs = 86;
+    cc->gdb_core_xml_file = "sparc64-cpu.xml";
 #else
-    cc->gdb_num_core_regs = 72;
+    cc->gdb_core_xml_file = "sparc32-cpu.xml";
 #endif
     cc->tcg_ops = &sparc_tcg_ops;
 }

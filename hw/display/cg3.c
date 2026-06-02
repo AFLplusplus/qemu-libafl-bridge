@@ -28,11 +28,11 @@
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "ui/console.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "migration/vmstate.h"
-#include "hw/irq.h"
-#include "hw/loader.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/loader.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "trace.h"
@@ -265,7 +265,7 @@ static void cg3_reg_write(void *opaque, hwaddr addr, uint64_t val,
 static const MemoryRegionOps cg3_reg_ops = {
     .read = cg3_reg_read,
     .write = cg3_reg_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_BIG_ENDIAN,
     .valid = {
         .min_access_size = 1,
         .max_access_size = 4,
@@ -277,29 +277,23 @@ static const GraphicHwOps cg3_ops = {
     .gfx_update = cg3_update_display,
 };
 
-static void cg3_initfn(Object *obj)
+static void cg3_realizefn(DeviceState *dev, Error **errp)
 {
-    SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
-    CG3State *s = CG3(obj);
+    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
+    Object *obj = OBJECT(dev);
+    CG3State *s = CG3(dev);
+    int ret;
+    char *fcode_filename;
 
-    memory_region_init_rom_nomigrate(&s->rom, obj, "cg3.prom",
-                                     FCODE_MAX_ROM_SIZE, &error_fatal);
+    memory_region_init_rom(&s->rom, obj, "cg3.prom", FCODE_MAX_ROM_SIZE,
+                           &error_fatal);
     sysbus_init_mmio(sbd, &s->rom);
 
     memory_region_init_io(&s->reg, obj, &cg3_reg_ops, s, "cg3.reg",
                           CG3_REG_SIZE);
     sysbus_init_mmio(sbd, &s->reg);
-}
-
-static void cg3_realizefn(DeviceState *dev, Error **errp)
-{
-    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
-    CG3State *s = CG3(dev);
-    int ret;
-    char *fcode_filename;
 
     /* FCode ROM */
-    vmstate_register_ram_global(&s->rom);
     fcode_filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, CG3_ROM_FILE);
     if (fcode_filename) {
         ret = load_image_mr(fcode_filename, &s->rom);
@@ -382,7 +376,6 @@ static const TypeInfo cg3_info = {
     .name          = TYPE_CG3,
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(CG3State),
-    .instance_init = cg3_initfn,
     .class_init    = cg3_class_init,
 };
 

@@ -462,8 +462,10 @@ static void monitor_qmp_event(void *opaque, QEMUChrEvent event)
 
     switch (event) {
     case CHR_EVENT_OPENED:
-        mon->commands = &qmp_cap_negotiation_commands;
-        monitor_qmp_caps_reset(mon);
+        WITH_QEMU_LOCK_GUARD(&mon->common.mon_lock) {
+            mon->commands = &qmp_cap_negotiation_commands;
+            monitor_qmp_caps_reset(mon);
+        }
         data = qmp_greeting(mon);
         qmp_send_response(mon, data);
         qobject_unref(data);
@@ -537,6 +539,11 @@ void monitor_init_qmp(Chardev *chr, bool pretty, Error **errp)
          * e.g. the chardev is in client mode, with wait=on.
          */
         remove_fd_in_watch(chr);
+        /*
+         * Clean up listener IO sources early to prevent racy fd
+         * handling between the main thread and the I/O thread.
+         */
+        remove_listener_fd_in_watch(chr);
         /*
          * We can't call qemu_chr_fe_set_handlers() directly here
          * since chardev might be running in the monitor I/O

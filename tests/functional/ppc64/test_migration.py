@@ -4,6 +4,7 @@
 #
 # ppc migration test
 
+from qemu_test.ports import Ports
 from migration import MigrationTest
 
 

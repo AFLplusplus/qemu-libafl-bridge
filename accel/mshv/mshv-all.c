@@ -19,7 +19,7 @@
 #include "qemu/event_notifier.h"
 #include "qemu/module.h"
 #include "qemu/main-loop.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 
 #include "hw/hyperv/hvhdk.h"
 #include "hw/hyperv/hvhdk_mini.h"
@@ -31,6 +31,7 @@
 #include "qemu/guest-random.h"
 #include "accel/accel-ops.h"
 #include "accel/accel-cpu-ops.h"
+#include "exec/cpu-common.h"
 #include "system/cpus.h"
 #include "system/runstate.h"
 #include "system/accel-blocker.h"
@@ -40,7 +41,6 @@
 #include "system/reset.h"
 #include "trace.h"
 #include <err.h>
-#include <stdint.h>
 #include <sys/ioctl.h>
 
 #define TYPE_MSHV_ACCEL ACCEL_CLASS_NAME("mshv")
@@ -381,7 +381,7 @@ static void register_mshv_memory_listener(MshvState *s, MshvMemoryListener *mml,
     }
 }
 
-int mshv_hvcall(int fd, const struct mshv_root_hvcall *args)
+int mshv_hvcall(int fd, const mshv_root_hvcall *args)
 {
     int ret = 0;
 
@@ -436,8 +436,6 @@ static int mshv_init(AccelState *as, MachineState *ms)
     mshv_init_mmio_emu();
 
     mshv_init_msicontrol();
-
-    mshv_init_memory_slot_manager(s);
 
     ret = create_vm(mshv_fd, &vm_fd);
     if (ret < 0) {

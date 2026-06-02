@@ -15,7 +15,7 @@
 #define QEMU_VIRTIO_H
 
 #include "system/memory.h"
-#include "hw/qdev-core.h"
+#include "hw/core/qdev.h"
 #include "hw/virtio/virtio-features.h"
 #include "net/net.h"
 #include "migration/vmstate.h"
@@ -23,7 +23,7 @@
 #include "standard-headers/linux/virtio_config.h"
 #include "standard-headers/linux/virtio_ring.h"
 #include "qom/object.h"
-#include "block/aio.h"
+#include "qemu/aio.h"
 
 /*
  * A guest should never accept this. It implies negotiation is broken
@@ -370,7 +370,7 @@ void virtio_queue_set_vector(VirtIODevice *vdev, int n, uint16_t vector);
 int virtio_queue_set_host_notifier_mr(VirtIODevice *vdev, int n,
                                       MemoryRegion *mr, bool assign);
 int virtio_set_status(VirtIODevice *vdev, uint8_t val);
-void virtio_reset(void *opaque);
+void virtio_reset(VirtIODevice *vdev);
 void virtio_queue_reset(VirtIODevice *vdev, uint32_t queue_index);
 void virtio_queue_enable(VirtIODevice *vdev, uint32_t queue_index);
 void virtio_update_irq(VirtIODevice *vdev);
@@ -468,9 +468,14 @@ static inline bool virtio_host_has_feature(VirtIODevice *vdev,
     return virtio_has_feature(vdev->host_features, fbit);
 }
 
-static inline bool virtio_is_big_endian(VirtIODevice *vdev)
+static inline bool virtio_vdev_is_legacy(const VirtIODevice *vdev)
 {
-    if (!virtio_vdev_has_feature(vdev, VIRTIO_F_VERSION_1)) {
+    return !virtio_vdev_has_feature(vdev, VIRTIO_F_VERSION_1);
+}
+
+static inline bool virtio_vdev_is_big_endian(const VirtIODevice *vdev)
+{
+    if (virtio_vdev_is_legacy(vdev)) {
         assert(vdev->device_endian != VIRTIO_DEVICE_ENDIAN_UNKNOWN);
         return vdev->device_endian == VIRTIO_DEVICE_ENDIAN_BIG;
     }
@@ -546,5 +551,15 @@ QEMUBH *virtio_bh_new_guarded_full(DeviceState *dev,
                                    const char *name);
 #define virtio_bh_new_guarded(dev, cb, opaque) \
     virtio_bh_new_guarded_full((dev), (cb), (opaque), (stringify(cb)))
+
+/*
+ * The "_io" variant runs BH only on a main-loop thread, while generic BH
+ * may run on a vCPU thread.
+ */
+QEMUBH *virtio_bh_io_new_guarded_full(DeviceState *dev,
+                                      QEMUBHFunc *cb, void *opaque,
+                                      const char *name);
+#define virtio_bh_io_new_guarded(dev, cb, opaque) \
+    virtio_bh_io_new_guarded_full((dev), (cb), (opaque), (stringify(cb)))
 
 #endif

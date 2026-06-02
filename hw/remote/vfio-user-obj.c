@@ -44,7 +44,7 @@
 #include "qemu/error-report.h"
 #include "trace.h"
 #include "system/runstate.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "hw/remote/machine.h"
 #include "qapi/error.h"
 #include "qapi/qapi-visit-sockets.h"
@@ -54,7 +54,7 @@
 #include "qemu/main-loop.h"
 #include "system/system.h"
 #include "libvfio-user.h"
-#include "hw/qdev-core.h"
+#include "hw/core/qdev.h"
 #include "hw/pci/pci.h"
 #include "qemu/timer.h"
 #include "system/memory.h"
@@ -751,7 +751,7 @@ static void vfu_object_init_ctx(VfuObject *o, Error **errp)
                                 LIBVFIO_USER_FLAG_ATTACH_NB,
                                 o, VFU_DEV_TYPE_PCI);
     if (o->vfu_ctx == NULL) {
-        error_setg(errp, "vfu: Failed to create context - %s", strerror(errno));
+        error_setg_errno(errp, errno, "vfu: Failed to create context");
         return;
     }
 
@@ -776,9 +776,9 @@ static void vfu_object_init_ctx(VfuObject *o, Error **errp)
 
     ret = vfu_pci_init(o->vfu_ctx, pci_type, PCI_HEADER_TYPE_NORMAL, 0);
     if (ret < 0) {
-        error_setg(errp,
-                   "vfu: Failed to attach PCI device %s to context - %s",
-                   o->device, strerror(errno));
+        error_setg_errno(errp, errno,
+                         "vfu: Failed to attach PCI device %s to context",
+                         o->device);
         goto fail;
     }
 
@@ -792,9 +792,9 @@ static void vfu_object_init_ctx(VfuObject *o, Error **errp)
                            VFU_REGION_FLAG_RW | VFU_REGION_FLAG_ALWAYS_CB,
                            NULL, 0, -1, 0);
     if (ret < 0) {
-        error_setg(errp,
-                   "vfu: Failed to setup config space handlers for %s- %s",
-                   o->device, strerror(errno));
+        error_setg_errno(errp, errno,
+                         "vfu: Failed to setup config space handlers for %s",
+                         o->device);
         goto fail;
     }
 
@@ -822,8 +822,8 @@ static void vfu_object_init_ctx(VfuObject *o, Error **errp)
 
     ret = vfu_realize_ctx(o->vfu_ctx);
     if (ret < 0) {
-        error_setg(errp, "vfu: Failed to realize device %s- %s",
-                   o->device, strerror(errno));
+        error_setg_errno(errp, errno, "vfu: Failed to realize device %s",
+                         o->device);
         goto fail;
     }
 

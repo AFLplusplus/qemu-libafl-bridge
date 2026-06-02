@@ -36,11 +36,10 @@ system_ss.add(files(
   'savevm.c',
   'socket.c',
   'tls.c',
-  'threadinfo.c',
 ), gnutls, zlib)
 
 if get_option('replication').allowed()
-  system_ss.add(files('colo-failover.c', 'colo.c'))
+  system_ss.add(files('colo-failover.c', 'colo.c', 'multifd-colo.c'))
 else
   system_ss.add(files('colo-stubs.c'))
 endif

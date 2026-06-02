@@ -70,12 +70,6 @@ test_deps = {
   'test-qht-par': qht_bench,
 }
 
-if have_tools and have_vhost_user and host_os == 'linux'
-  executable('vhost-user-bridge',
-             sources: files('vhost-user-bridge.c'),
-             dependencies: [qemuutil, vhost_user])
-endif
-
 subdir('decode')
 
 if 'CONFIG_TCG' in config_all_accel
@@ -83,6 +77,7 @@ if 'CONFIG_TCG' in config_all_accel
   subdir('tcg/plugins')
 endif
 
+subdir('audio')
 subdir('unit')
 subdir('qapi-schema')
 subdir('qtest')

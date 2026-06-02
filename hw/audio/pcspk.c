@@ -57,7 +57,6 @@ struct PCSpkState {
     unsigned int play_pos;
     uint8_t data_on;
     uint8_t dummy_refresh_clock;
-    bool migrate;
 };
 
 static const char *s_spk = "pcspk";
@@ -106,7 +105,7 @@ static void pcspk_callback(void *opaque, int free)
 
     while (free > 0) {
         n = MIN(s->samples - s->play_pos, (unsigned int)free);
-        n = AUD_write(s->voice, &s->sample_buf[s->play_pos], n);
+        n = audio_be_write(s->audio_be, s->voice, &s->sample_buf[s->play_pos], n);
         if (!n)
             break;
         s->play_pos = (s->play_pos + n) % s->samples;
@@ -123,7 +122,7 @@ static int pcspk_audio_init(PCSpkState *s)
         return 0;
     }
 
-    s->voice = AUD_open_out(s->audio_be, s->voice, s_spk, s, pcspk_callback, &as);
+    s->voice = audio_be_open_out(s->audio_be, s->voice, s_spk, s, pcspk_callback, &as);
     if (!s->voice) {
         error_report("pcspk: Could not open voice");
         return -1;
@@ -164,7 +163,7 @@ static void pcspk_io_write(void *opaque, hwaddr addr, uint64_t val,
     if (s->voice) {
         if (gate) /* restart */
             s->play_pos = 0;
-        AUD_set_active_out(s->voice, gate & s->data_on);
+        audio_be_set_active_out(s->audio_be, s->voice, gate & s->data_on);
     }
 }
 
@@ -196,24 +195,16 @@ static void pcspk_realizefn(DeviceState *dev, Error **errp)
 
     isa_register_ioport(isadev, &s->ioport, s->iobase);
 
-    if (s->audio_be && AUD_backend_check(&s->audio_be, errp)) {
+    if (s->audio_be && audio_be_check(&s->audio_be, errp)) {
         pcspk_audio_init(s);
         return;
     }
-}
-
-static bool migrate_needed(void *opaque)
-{
-    PCSpkState *s = opaque;
-
-    return s->migrate;
 }
 
 static const VMStateDescription vmstate_spk = {
     .name = "pcspk",
     .version_id = 1,
     .minimum_version_id = 1,
-    .needed = migrate_needed,
     .fields = (const VMStateField[]) {
         VMSTATE_UINT8(data_on, PCSpkState),
         VMSTATE_UINT8(dummy_refresh_clock, PCSpkState),
@@ -224,7 +215,6 @@ static const VMStateDescription vmstate_spk = {
 static const Property pcspk_properties[] = {
     DEFINE_AUDIO_PROPERTIES(PCSpkState, audio_be),
     DEFINE_PROP_UINT32("iobase", PCSpkState, iobase,  0x61),
-    DEFINE_PROP_BOOL("migrate", PCSpkState, migrate,  true),
     DEFINE_PROP_LINK("pit", PCSpkState, pit, TYPE_PIT_COMMON, PITCommonState *),
 };
 

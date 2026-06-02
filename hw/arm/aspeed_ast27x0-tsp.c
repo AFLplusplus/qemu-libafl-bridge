@@ -11,7 +11,7 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "hw/qdev-clock.h"
+#include "hw/core/qdev-clock.h"
 #include "hw/misc/unimp.h"
 #include "hw/arm/aspeed_soc.h"
 #include "hw/arm/aspeed_coprocessor.h"
@@ -23,15 +23,15 @@ static const hwaddr aspeed_soc_ast27x0tsp_memmap[] = {
     [ASPEED_DEV_SRAM]      =  0x70000000,
     [ASPEED_DEV_INTC]      =  0x72100000,
     [ASPEED_DEV_SCU]       =  0x72C02000,
+    [ASPEED_DEV_TIMER1]    =  0x72C10000,
+    [ASPEED_DEV_UART4]     =  0x72C1A000,
+    [ASPEED_DEV_IPC0]      =  0x72C1C000,
     [ASPEED_DEV_SCUIO]     =  0x74C02000,
+    [ASPEED_DEV_INTCIO]    =  0x74C18000,
     [ASPEED_DEV_UART0]     =  0x74C33000,
     [ASPEED_DEV_UART1]     =  0x74C33100,
     [ASPEED_DEV_UART2]     =  0x74C33200,
     [ASPEED_DEV_UART3]     =  0x74C33300,
-    [ASPEED_DEV_UART4]     =  0x72C1A000,
-    [ASPEED_DEV_INTCIO]    =  0x74C18000,
-    [ASPEED_DEV_IPC0]      =  0x72C1C000,
-    [ASPEED_DEV_IPC1]      =  0x74C39000,
     [ASPEED_DEV_UART5]     =  0x74C33400,
     [ASPEED_DEV_UART6]     =  0x74C33500,
     [ASPEED_DEV_UART7]     =  0x74C33600,
@@ -40,16 +40,17 @@ static const hwaddr aspeed_soc_ast27x0tsp_memmap[] = {
     [ASPEED_DEV_UART10]    =  0x74C33900,
     [ASPEED_DEV_UART11]    =  0x74C33A00,
     [ASPEED_DEV_UART12]    =  0x74C33B00,
-    [ASPEED_DEV_TIMER1]    =  0x72C10000,
+    [ASPEED_DEV_IPC1]      =  0x74C39000,
 };
 
 static const int aspeed_soc_ast27x0tsp_irqmap[] = {
+    [ASPEED_DEV_UART4]     = 8,
     [ASPEED_DEV_SCU]       = 12,
+    [ASPEED_DEV_TIMER1]    = 16,
     [ASPEED_DEV_UART0]     = 164,
     [ASPEED_DEV_UART1]     = 164,
     [ASPEED_DEV_UART2]     = 164,
     [ASPEED_DEV_UART3]     = 164,
-    [ASPEED_DEV_UART4]     = 8,
     [ASPEED_DEV_UART5]     = 164,
     [ASPEED_DEV_UART6]     = 164,
     [ASPEED_DEV_UART7]     = 164,
@@ -58,11 +59,10 @@ static const int aspeed_soc_ast27x0tsp_irqmap[] = {
     [ASPEED_DEV_UART10]    = 164,
     [ASPEED_DEV_UART11]    = 164,
     [ASPEED_DEV_UART12]    = 164,
-    [ASPEED_DEV_TIMER1]    = 16,
 };
 
 /* TSPINT 164 */
-static const int ast2700_tsp132_tsp164_intcmap[] = {
+static const int ast2700_tsp164_intcmap[] = {
     [ASPEED_DEV_UART0]     = 7,
     [ASPEED_DEV_UART1]     = 8,
     [ASPEED_DEV_UART2]     = 9,
@@ -89,21 +89,12 @@ static struct nvic_intc_irq_info ast2700_tsp_intcmap[] = {
     {161, 1, 1, NULL},
     {162, 1, 2, NULL},
     {163, 1, 3, NULL},
-    {164, 1, 4, ast2700_tsp132_tsp164_intcmap},
+    {164, 1, 4, ast2700_tsp164_intcmap},
     {165, 1, 5, NULL},
     {166, 1, 6, NULL},
     {167, 1, 7, NULL},
     {168, 1, 8, NULL},
     {169, 1, 9, NULL},
-    {128, 0, 1, NULL},
-    {129, 0, 2, NULL},
-    {130, 0, 3, NULL},
-    {131, 0, 4, NULL},
-    {132, 0, 5, ast2700_tsp132_tsp164_intcmap},
-    {133, 0, 6, NULL},
-    {134, 0, 7, NULL},
-    {135, 0, 8, NULL},
-    {136, 0, 9, NULL},
 };
 
 static qemu_irq aspeed_soc_ast27x0tsp_get_irq(AspeedCoprocessorState *s,
@@ -158,6 +149,7 @@ static void aspeed_soc_ast27x0tsp_realize(DeviceState *dev_soc, Error **errp)
     AspeedCoprocessorState *s = ASPEED_COPROCESSOR(dev_soc);
     AspeedCoprocessorClass *sc = ASPEED_COPROCESSOR_GET_CLASS(s);
     DeviceState *armv7m;
+    MemoryRegion *mr;
     g_autofree char *sdram_name = NULL;
     int i;
 
@@ -239,9 +231,9 @@ static void aspeed_soc_ast27x0tsp_realize(DeviceState *dev_soc, Error **errp)
     }
 
     /* UART */
-    memory_region_init_alias(&s->uart_alias, OBJECT(s), "uart.alias",
-                             &s->uart->serial.io, 0,
-                             memory_region_size(&s->uart->serial.io));
+    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(s->uart), 0);
+    memory_region_init_alias(&s->uart_alias, OBJECT(s), "uart.alias", mr, 0,
+                             memory_region_size(mr));
     memory_region_add_subregion(s->memory, sc->memmap[s->uart_dev],
                                 &s->uart_alias);
     /*

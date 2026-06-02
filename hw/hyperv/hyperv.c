@@ -14,6 +14,7 @@
 #include "system/address-spaces.h"
 #include "system/memory.h"
 #include "exec/target_page.h"
+#include "exec/cpu-common.h"
 #include "linux/kvm.h"
 #include "system/kvm.h"
 #include "qemu/bitops.h"
@@ -57,6 +58,11 @@ bool hyperv_is_synic_enabled(void)
 static SynICState *get_synic(CPUState *cs)
 {
     return SYNIC(object_resolve_path_component(OBJECT(cs), "synic"));
+}
+
+bool hyperv_is_synic_present(CPUState *cs)
+{
+    return get_synic(cs);
 }
 
 static void synic_update(SynICState *synic, bool sctl_enable,
@@ -438,7 +444,7 @@ HvSintRoute *hyperv_sint_route_new(uint32_t vp_index, uint32_t sint,
         sint_route->staged_msg->cb_data = cb_data;
 
         r = event_notifier_init(ack_notifier, false);
-        if (r) {
+        if (r < 0) {
             goto cleanup_err_sint;
         }
         event_notifier_set_handler(ack_notifier, sint_ack_handler);
@@ -452,7 +458,7 @@ HvSintRoute *hyperv_sint_route_new(uint32_t vp_index, uint32_t sint,
 
     /* We need to setup a GSI for this SintRoute */
     r = event_notifier_init(&sint_route->sint_set_notifier, false);
-    if (r) {
+    if (r < 0) {
         goto cleanup_err_sint;
     }
 

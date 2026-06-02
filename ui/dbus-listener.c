@@ -660,6 +660,7 @@ static void dbus_cursor_dmabuf(DisplayChangeListener *dcl,
     egl_fb_setup_for_tex(&cursor_fb, width, height, texture, false);
     ds = qemu_create_displaysurface(width, height);
     egl_fb_read(ds, &cursor_fb);
+    egl_fb_destroy(&cursor_fb);
 
     v_data = g_variant_new_from_data(
         G_VARIANT_TYPE("ay"),
@@ -815,8 +816,7 @@ static void ddl_scanout(DBusDisplayListener *ddl)
     qemu_dbus_display1_listener_call_scanout(
         ddl->proxy, surface_width(ddl->ds), surface_height(ddl->ds),
         surface_stride(ddl->ds), surface_format(ddl->ds), v_data,
-        G_DBUS_CALL_FLAGS_NONE, DBUS_DEFAULT_TIMEOUT, NULL, NULL,
-        g_object_ref(ddl));
+        G_DBUS_CALL_FLAGS_NONE, DBUS_DEFAULT_TIMEOUT, NULL, NULL, NULL);
 }
 
 static void dbus_gfx_update(DisplayChangeListener *dcl,
@@ -961,18 +961,18 @@ dbus_display_listener_dispose(GObject *object)
     g_clear_object(&ddl->conn);
     g_clear_pointer(&ddl->bus_name, g_free);
     g_clear_object(&ddl->proxy);
-#ifdef WIN32
     g_clear_object(&ddl->map_proxy);
+#ifdef WIN32
     g_clear_object(&ddl->d3d11_proxy);
     g_clear_pointer(&ddl->peer_process, CloseHandle);
-#ifdef CONFIG_PIXMAN
-    pixman_region32_fini(&ddl->gl_damage);
-#endif
 #ifdef CONFIG_OPENGL
     egl_fb_destroy(&ddl->fb);
 #endif
 #else /* !WIN32 */
     g_clear_object(&ddl->scanout_dmabuf_v2_proxy);
+#endif
+#ifdef CONFIG_PIXMAN
+    pixman_region32_fini(&ddl->gl_damage);
 #endif
 
     G_OBJECT_CLASS(dbus_display_listener_parent_class)->dispose(object);
@@ -1181,6 +1181,20 @@ static void dbus_display_listener_setup_scanout_dmabuf_v2(DBusDisplayListener *d
 #endif
 }
 
+static void
+dbus_conn_closed(GDBusConnection *conn,
+                 gboolean remote_peer_vanished,
+                 GError *error,
+                 gpointer user_data)
+{
+    DBusDisplayListener *ddl = DBUS_DISPLAY_LISTENER(user_data);
+
+    if (ddl->dbus_filter) {
+        g_dbus_connection_remove_filter(ddl->conn, ddl->dbus_filter);
+        ddl->dbus_filter = 0;
+    }
+}
+
 static GDBusMessage *
 dbus_filter(GDBusConnection *connection,
             GDBusMessage    *message,
@@ -1262,6 +1276,7 @@ dbus_display_listener_new(const char *bus_name,
     }
 
     ddl->dbus_filter = g_dbus_connection_add_filter(conn, dbus_filter, g_object_ref(ddl), g_object_unref);
+    g_signal_connect(conn, "closed", G_CALLBACK(dbus_conn_closed), ddl);
     ddl->bus_name = g_strdup(bus_name);
     ddl->conn = conn;
     ddl->console = console;

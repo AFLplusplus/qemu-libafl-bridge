@@ -140,13 +140,13 @@ static void test_set_colocated_pins(const void *data)
 static void test_set_input_pins(const void *data)
 {
     QTestState *s = (QTestState *)data;
-    char name[16];
     uint32_t value;
 
     qtest_writel(s, AST2600_GPIO_BASE + GPIO_ABCD_DIRECTION, 0x00000000);
     for (char c = 'A'; c <= 'D'; c++) {
         for (int i = 0; i < 8; i++) {
-            sprintf(name, "gpio%c%d", c, i);
+            g_autofree const char *name = g_strdup_printf("gpio%c%d", c, i);
+
             qtest_qom_set_bool(s, "/machine/soc/gpio", name, true);
         }
     }

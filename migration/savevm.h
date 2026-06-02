@@ -62,7 +62,6 @@ typedef struct SaveStateEntry {
     const VMStateDescription *vmsd;
     void *opaque;
     CompatEntry *compat;
-    int is_ram;
 } SaveStateEntry;
 
 typedef struct SaveState {
@@ -76,6 +75,7 @@ typedef struct SaveState {
     MigrationCapability *capabilities;
     QemuUUID uuid;
 } SaveState;
+
 
 //// --- End LibAFL code ---
 

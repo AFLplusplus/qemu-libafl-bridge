@@ -15,7 +15,7 @@ runs:
       run: |
         wget https://apt.llvm.org/llvm.sh
         chmod +x llvm.sh
-        ./llvm.sh "${{ inputs.version }}" all
+        sudo ./llvm.sh "${{ inputs.version }}" all
 
     - name: Export LLVM env
       shell: bash

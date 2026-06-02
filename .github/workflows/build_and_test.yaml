@@ -16,13 +16,39 @@ concurrency:
 
 jobs:
   build:
+    name: build (${{ matrix.name }})
     runs-on: ubuntu-24.04
-    container: registry.gitlab.com/qemu-project/qemu/qemu/ubuntu2204:latest
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gcc
+            cc: gcc
+            cxx: g++
+            llvm: ""
+          - name: clang-22
+            cc: clang
+            cxx: clang++
+            llvm: "22"
     steps:
       - uses: actions/checkout@v4
       - name: check submodules
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git submodule status
+      - name: Install QEMU dependencies
+        uses: ./.github/actions/apt
+      - name: Install LLVM
+        if: ${{ matrix.llvm != '' }}
+        uses: ./.github/actions/setup-llvm
+        with:
+          version: ${{ matrix.llvm }}
       - name: Build QEMU
-        run: mkdir -p build && cd build && ../configure --enable-werror --disable-docs --enable-fdt=system && make -j $(expr $(nproc) + 1)
+        run: |
+          mkdir -p build && cd build
+          ../configure --cc=${{ matrix.cc }} --cxx=${{ matrix.cxx }} \
+            --enable-werror --disable-docs --enable-fdt=system
+          make -j $(expr $(nproc) + 1)
+      - name: Test QEMU
+        run: make -C build check

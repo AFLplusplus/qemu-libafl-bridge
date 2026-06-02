@@ -126,6 +126,12 @@ static void vmstate_handle_alloc(void *ptr, const VMStateField *field,
         gsize size = vmstate_size(opaque, field);
         size *= vmstate_n_elems(opaque, field);
         if (size) {
+//// --- Begin LibAFL code ---
+            /* Already allocated by a prior restore: re-allocating would leak it. */
+            if (*(void **)ptr != NULL) {
+                return;
+            }
+//// --- End LibAFL code ---
             *(void **)ptr = g_malloc(size);
         }
     }

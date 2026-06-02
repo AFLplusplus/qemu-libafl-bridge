@@ -2,9 +2,9 @@ name: Build and Test QEMU
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 env:
@@ -20,5 +20,9 @@ jobs:
     container: registry.gitlab.com/qemu-project/qemu/qemu/ubuntu2204:latest
     steps:
       - uses: actions/checkout@v4
+      - name: check submodules
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git submodule status
       - name: Build QEMU
         run: mkdir -p build && cd build && ../configure --enable-werror --disable-docs --enable-fdt=system && make -j $(expr $(nproc) + 1)

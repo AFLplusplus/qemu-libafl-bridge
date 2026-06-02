@@ -10,9 +10,9 @@
 #endif
 
 #if TARGET_LONG_BITS == 32
-#define SHADOW_BASE (0x20000000)
+uintptr_t __attribute__((weak)) libafl_shadow_base = 0x20000000;
 #elif TARGET_LONG_BITS == 64
-#define SHADOW_BASE (0x7fff8000)
+uintptr_t __attribute__((weak)) libafl_shadow_base = 0x1000000000;
 #else
 #error Unhandled TARGET_LONG_BITS value
 #endif
@@ -34,7 +34,7 @@ void libafl_tcg_gen_asan(TCGTemp* addr, size_t size)
     tcg_gen_addi_tl(k, k, size - 1);
 
     tcg_gen_shri_tl(shadow_addr, addr_val, 3);
-    tcg_gen_addi_tl(shadow_addr, shadow_addr, SHADOW_BASE);
+    tcg_gen_addi_tl(shadow_addr, shadow_addr, libafl_shadow_base);
     tcg_gen_tl_ptr(shadow_ptr, shadow_addr);
     tcg_gen_ld8s_tl(shadow_val, shadow_ptr, 0);
 

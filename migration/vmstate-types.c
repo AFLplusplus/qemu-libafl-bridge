@@ -665,14 +665,28 @@ static int get_qtailq(QEMUFile *f, void *pv, size_t unused_size,
         return -EINVAL;
     }
 
+//// --- Begin LibAFL code ---
+    /* Reuse existing elements across repeated restores to avoid leaking. */
+    void *existing_elm = *QTAILQ_RAW_FIRST(pv);
+//// --- End LibAFL code ---
+
     while (qemu_get_byte(f)) {
-        elm = g_malloc(size);
+//// --- Begin LibAFL code ---
+        if (existing_elm) {
+            elm = existing_elm;
+            existing_elm = *QTAILQ_RAW_NEXT(existing_elm, entry_offset);
+        } else {
+//// --- End LibAFL code ---
+            elm = g_malloc0(size);
+//// --- Begin LibAFL code ---
+            QTAILQ_RAW_INSERT_TAIL(pv, elm, entry_offset);
+        }
+//// --- End LibAFL code ---
         ret = vmstate_load_state(f, vmsd, elm, version_id, &local_err);
         if (ret) {
             error_report_err(local_err);
             return ret;
         }
-        QTAILQ_RAW_INSERT_TAIL(pv, elm, entry_offset);
     }
 
     trace_get_qtailq_end(vmsd->name, "end", ret);
@@ -836,13 +850,32 @@ static int get_gtree(QEMUFile *f, void *pv, size_t unused_size,
                 goto key_error;
             }
         }
-        val = g_malloc0(val_size);
-        ret = vmstate_load_state(f, val_vmsd, val, version_id, &local_err);
-        if (ret) {
-            error_report_err(local_err);
-            goto val_error;
+//// --- Begin LibAFL code ---
+        val = g_tree_lookup(tree, key);
+        if (val) {
+            ret = vmstate_load_state(f, val_vmsd, val, version_id, &local_err);
+            if (ret) {
+                error_report_err(local_err);
+                if (!direct_key) {
+                    g_free(key);
+                }
+                return ret;
+            }
+            if (!direct_key) {
+                g_free(key);
+            }
+        } else {
+//// --- End LibAFL code ---
+            val = g_malloc0(val_size);
+            ret = vmstate_load_state(f, val_vmsd, val, version_id, &local_err);
+            if (ret) {
+                error_report_err(local_err);
+                goto val_error;
+            }
+            g_tree_insert(tree, key, val);
+//// --- Begin LibAFL code ---
         }
-        g_tree_insert(tree, key, val);
+//// --- End LibAFL code ---
     }
     if (count != nnodes) {
         error_report("%s inconsistent stream when loading the gtree",
@@ -916,18 +949,37 @@ static int get_qlist(QEMUFile *f, void *pv, size_t unused_size,
         return -EINVAL;
     }
 
+//// --- Begin LibAFL code ---
+    void *existing_elm = *QLIST_RAW_FIRST(pv);
+//// --- End LibAFL code ---
+
     while (qemu_get_byte(f)) {
-        elm = g_malloc(size);
+//// --- Begin LibAFL code ---
+        if (existing_elm) {
+            elm = existing_elm;
+            existing_elm = *QLIST_RAW_NEXT(existing_elm, entry_offset);
+        } else {
+//// --- End LibAFL code ---
+            elm = g_malloc0(size);
+//// --- Begin LibAFL code ---
+            if (!prev) {
+                QLIST_RAW_INSERT_HEAD(pv, elm, entry_offset);
+            } else {
+                QLIST_RAW_INSERT_AFTER(pv, prev, elm, entry_offset);
+            }
+        }
+//// --- End LibAFL code ---
         ret = vmstate_load_state(f, vmsd, elm, version_id, &local_err);
         if (ret) {
             error_report_err(local_err);
-            g_free(elm);
+//// --- Begin LibAFL code ---
+            if (!existing_elm) {
+//// --- End LibAFL code ---
+                g_free(elm);
+//// --- Begin LibAFL code ---
+            }
+//// --- End LibAFL code ---
             return ret;
-        }
-        if (!prev) {
-            QLIST_RAW_INSERT_HEAD(pv, elm, entry_offset);
-        } else {
-            QLIST_RAW_INSERT_AFTER(pv, prev, elm, entry_offset);
         }
         prev = elm;
     }

@@ -289,7 +289,7 @@ void syx_snapshot_stop_track(SyxSnapshotTracker* tracker, SyxSnapshot* snapshot)
 {
     for (uint64_t i = 0; i < tracker->length; ++i) {
         if (tracker->tracked_snapshots[i] == snapshot) {
-            for (uint64_t j = i + i; j < tracker->length; ++j) {
+            for (uint64_t j = i + 1; j < tracker->length; ++j) {
                 tracker->tracked_snapshots[j - 1] =
                     tracker->tracked_snapshots[j];
             }

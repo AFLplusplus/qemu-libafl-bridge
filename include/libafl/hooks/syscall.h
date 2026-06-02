@@ -22,9 +22,9 @@ struct libafl_syshook_ret {
 };
 
 typedef struct libafl_syshook_ret (*libafl_pre_syscall_cb)(
-    uint64_t data, int sys_num, target_ulong arg0, target_ulong arg1,
-    target_ulong arg2, target_ulong arg3, target_ulong arg4, target_ulong arg5,
-    target_ulong arg6, target_ulong arg7);
+    uint64_t data, int* sys_num, target_ulong* arg0, target_ulong* arg1,
+    target_ulong* arg2, target_ulong* arg3, target_ulong* arg4, target_ulong* arg5,
+    target_ulong* arg6, target_ulong* arg7);
 
 typedef target_ulong (*libafl_post_syscall_cb)(
     uint64_t data, target_ulong ret, int sys_num, target_ulong arg0,
@@ -63,10 +63,10 @@ size_t libafl_add_post_syscall_hook(libafl_post_syscall_cb callback,
 int libafl_qemu_remove_pre_syscall_hook(size_t num);
 int libafl_qemu_remove_post_syscall_hook(size_t num);
 
-bool libafl_hook_syscall_pre_run(CPUArchState* env, int num, abi_long arg1,
-                                 abi_long arg2, abi_long arg3, abi_long arg4,
-                                 abi_long arg5, abi_long arg6, abi_long arg7,
-                                 abi_long arg8, abi_long* ret);
+bool libafl_hook_syscall_pre_run(CPUArchState* env, int* num, abi_long* arg1,
+                                 abi_long* arg2, abi_long* arg3, abi_long* arg4,
+                                 abi_long* arg5, abi_long* arg6, abi_long* arg7,
+                                 abi_long* arg8, abi_long* ret);
 
 void libafl_hook_syscall_post_run(int num, abi_long arg1, abi_long arg2,
                                   abi_long arg3, abi_long arg4, abi_long arg5,

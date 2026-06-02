@@ -55,7 +55,7 @@ DeviceSaveState* device_save_kind(DeviceSnapshotKind kind, char** names)
     {
         int ret;
 
-        if (se->is_ram) {
+        if (qemu_savevm_se_iterable(se)) {
             continue;
         }
         if (!strcmp(se->idstr, "globalstate")) {
@@ -127,7 +127,7 @@ char** device_list_all(void)
     size_t i = 0;
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry)
     {
-        if (se->is_ram) {
+        if (qemu_savevm_se_iterable(se)) {
             continue;
         }
         if (!strcmp(se->idstr, "globalstate")) {

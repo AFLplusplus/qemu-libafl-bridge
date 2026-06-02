@@ -53,15 +53,7 @@ static int libafl_setjmp_gen_code(CPUArchState* env, TranslationBlock* tb,
     const int num_insns =
         1; // do "as-if" we were translating a single target instruction
 
-#if TARGET_INSN_START_EXTRA_WORDS == 0
-    tcg_gen_insn_start(pc);
-#elif TARGET_INSN_START_EXTRA_WORDS == 1
-    tcg_gen_insn_start(pc, 0);
-#elif TARGET_INSN_START_EXTRA_WORDS == 2
     tcg_gen_insn_start(pc, 0, 0);
-#else
-#error Unhandled TARGET_INSN_START_EXTRA_WORDS value
-#endif
 
     // run edge hooks
     libafl_qemu_hook_edge_run();

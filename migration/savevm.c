@@ -1855,7 +1855,11 @@ cleanup:
 }
 
 /* Is a save state entry iterable (e.g. RAM)? */
-static bool qemu_savevm_se_iterable(SaveStateEntry *se)
+
+//// --- Begin LibAFL code ---
+/* static */
+//// --- End LibAFL code ---
+bool qemu_savevm_se_iterable(SaveStateEntry *se)
 {
     return se->ops && se->ops->save_setup;
 }

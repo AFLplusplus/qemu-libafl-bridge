@@ -76,6 +76,7 @@ typedef struct SaveState {
     QemuUUID uuid;
 } SaveState;
 
+bool qemu_savevm_se_iterable(SaveStateEntry *se);
 
 //// --- End LibAFL code ---
 

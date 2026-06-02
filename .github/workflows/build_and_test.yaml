@@ -18,7 +18,6 @@ jobs:
   build:
     name: build (${{ matrix.name }})
     runs-on: ubuntu-24.04
-    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:

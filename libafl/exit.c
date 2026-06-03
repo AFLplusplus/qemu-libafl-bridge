@@ -204,6 +204,7 @@ struct libafl_exit_reason* libafl_get_exit_reason(void)
     return NULL;
 }
 
+#ifdef CONFIG_USER_ONLY
 void libafl_thread_info_list_init(void) {
     LibAFLThreadInformation *thread_info = g_new0(LibAFLThreadInformation, 1);
     thread_info->exit_reason = &last_exit_reason;
@@ -239,6 +240,7 @@ void libafl_thread_info_list_remove(void) {
         }
     }
 }
+#endif
 
 void libafl_qemu_breakpoint_run(vaddr pc_next)
 {

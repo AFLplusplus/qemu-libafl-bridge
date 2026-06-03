@@ -179,7 +179,6 @@ int libafl_qemu_run(void)
 }
 
 void libafl_set_qemu_env(CPUArchState* env) { libafl_qemu_env = env; }
-#endif
 
 int libafl_qemu_run_single_cpu(int cpu_index) {
     CPUState *cpu;
@@ -198,3 +197,4 @@ int libafl_qemu_run_single_cpu(int cpu_index) {
     }
     return 0;
 }
+#endif

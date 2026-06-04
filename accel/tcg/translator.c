@@ -185,6 +185,10 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
         libafl_gen_cur_pc = db->pc_next;
         libafl_qemu_breakpoint_run(libafl_gen_cur_pc);
 
+        int saved_record_start = db->record_start;
+        int saved_record_len = db->record_len;
+        bool backdoor_triggered = false;
+
         // 0x0f, 0x3a, 0xf2, 0x44
         uint8_t backdoor = translator_ldub(cpu_env(cpu), db, db->pc_next);
         if (backdoor == 0x0f) {
@@ -197,16 +201,24 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
                         libafl_qemu_hook_backdoor_run(db->pc_next);
 
                         db->pc_next += 4;
+                        backdoor_triggered = true;
                         goto post_translate_insn;
                     } else if (backdoor == 0x66) {
                         // First update pc_next to restart at next instruction
                         db->pc_next += 4;
+                        backdoor_triggered = true;
 
                         TCGv_i64 tmp0 = tcg_constant_i64(db->pc_next);
                         gen_helper_libafl_qemu_handle_custom_insn(tcg_env, tmp0, tcg_constant_i32(LIBAFL_CUSTOM_INSN_LIBAFL));
                     }
                 }
             }
+        }
+
+        if (!backdoor_triggered) {
+            // backdoor not triggered, restore record as it was before
+            db->record_start = saved_record_start;
+            db->record_len = saved_record_len;
         }
 
         //// --- End LibAFL code ---

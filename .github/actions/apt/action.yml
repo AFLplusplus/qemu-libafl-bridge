@@ -1,0 +1,17 @@
+name: apt
+description: Base packages for Linux jobs
+
+runs:
+  using: composite
+  steps:
+    - name: Enable apt source repositories
+      shell: bash
+      run: |
+        sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+        sudo sed -i 's/^# deb-src/deb-src/' /etc/apt/sources.list
+        sudo apt-get update
+
+    - name: Install QEMU build dependencies
+      shell: bash
+      run: |
+          sudo apt-get build-dep -y qemu

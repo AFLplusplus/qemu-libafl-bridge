@@ -8,7 +8,7 @@
 #ifndef LOONGARCH_CPU_CSR_H
 #define LOONGARCH_CPU_CSR_H
 
-#include "hw/registerfields.h"
+#include "hw/core/registerfields.h"
 
 /* Based on kernel definitions: arch/loongarch/include/asm/loongarch.h */
 
@@ -206,6 +206,10 @@ FIELD(CSR_DMW, MAT, 4, 2)
 FIELD(CSR_DMW_32, PSEG, 25, 3)
 FIELD(CSR_DMW_32, VSEG, 29, 3)
 FIELD(CSR_DMW_64, VSEG, 60, 4)
+
+/* Performance Counter registers */
+#define LOONGARCH_CSR_PERFCTRL(N)    (0x200 + 2 * N)
+#define LOONGARCH_CSR_PERFCNTR(N)    (0x201 + 2 * N)
 
 /* Debug CSRs */
 #define LOONGARCH_CSR_DBG            0x500 /* debug config */

@@ -16,7 +16,7 @@
 #define QEMU_VIRTIO_BALLOON_H
 
 #include "standard-headers/linux/virtio_balloon.h"
-#include "hw/resettable.h"
+#include "hw/core/resettable.h"
 #include "hw/virtio/virtio.h"
 #include "system/iothread.h"
 #include "qom/object.h"
@@ -70,7 +70,6 @@ struct VirtIOBalloon {
     int64_t stats_poll_interval;
     uint32_t host_features;
 
-    bool qemu_4_0_config_size;
     uint32_t poison_val;
 
     /* State of the resettable container */

@@ -31,15 +31,15 @@
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_host.h"
 #include "hw/ppc/ppc.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "qemu/log.h"
 #include "qemu/datadir.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "hw/rtc/mc146818rtc.h"
 #include "hw/isa/pc87312.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "exec/target_page.h"
 #include "system/kvm.h"
 #include "system/reset.h"
@@ -412,6 +412,15 @@ static void ibm_40p_init(MachineState *machine)
     fw_cfg_add_i64(fw_cfg, FW_CFG_RAM_SIZE, (uint64_t)machine->ram_size);
     fw_cfg_add_i16(fw_cfg, FW_CFG_MACHINE_ID, ARCH_PREP);
 
+    if (!graphic_width) {
+        graphic_width = 800;
+    }
+    if (!graphic_height) {
+        graphic_height = 600;
+    }
+    if (!graphic_depth) {
+        graphic_depth = 32;
+    }
     fw_cfg_add_i16(fw_cfg, FW_CFG_PPC_WIDTH, graphic_width);
     fw_cfg_add_i16(fw_cfg, FW_CFG_PPC_HEIGHT, graphic_height);
     fw_cfg_add_i16(fw_cfg, FW_CFG_PPC_DEPTH, graphic_depth);

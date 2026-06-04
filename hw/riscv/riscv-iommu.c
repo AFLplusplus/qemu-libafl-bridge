@@ -21,7 +21,7 @@
 #include "exec/target_page.h"
 #include "hw/pci/pci_bus.h"
 #include "hw/pci/pci_device.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/riscv/riscv_hart.h"
 #include "migration/vmstate.h"
 #include "qapi/error.h"
@@ -1292,13 +1292,18 @@ static RISCVIOMMUContext *riscv_iommu_ctx(RISCVIOMMUState *s,
         .devid = devid,
         .process_id = process_id,
     };
+    unsigned mode = get_field(s->ddtp, RISCV_IOMMU_DDTP_MODE);
 
     ctx_cache = g_hash_table_ref(s->ctx_cache);
-    ctx = g_hash_table_lookup(ctx_cache, &key);
 
-    if (ctx && (ctx->tc & RISCV_IOMMU_DC_TC_V)) {
-        *ref = ctx_cache;
-        return ctx;
+    if (mode != RISCV_IOMMU_DDTP_MODE_OFF &&
+        mode != RISCV_IOMMU_DDTP_MODE_BARE) {
+        ctx = g_hash_table_lookup(ctx_cache, &key);
+
+        if (ctx && (ctx->tc & RISCV_IOMMU_DC_TC_V)) {
+            *ref = ctx_cache;
+            return ctx;
+        }
     }
 
     ctx = g_new0(RISCVIOMMUContext, 1);
@@ -1364,7 +1369,7 @@ static AddressSpace *riscv_iommu_space(RISCVIOMMUState *s, uint32_t devid)
         /* IOVA address space, untranslated addresses */
         memory_region_init_iommu(&as->iova_mr, sizeof(as->iova_mr),
             TYPE_RISCV_IOMMU_MEMORY_REGION,
-            OBJECT(as), "riscv_iommu", UINT64_MAX);
+            OBJECT(s), "riscv_iommu", UINT64_MAX);
         address_space_init(&as->iova_as, MEMORY_REGION(&as->iova_mr), name);
 
         QLIST_INSERT_HEAD(&s->spaces, as, list);
@@ -2370,7 +2375,7 @@ static MemTxResult riscv_iommu_mmio_read(void *opaque, hwaddr addr,
 static const MemoryRegionOps riscv_iommu_mmio_ops = {
     .read_with_attrs = riscv_iommu_mmio_read,
     .write_with_attrs = riscv_iommu_mmio_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_LITTLE_ENDIAN,
     .impl = {
         .min_access_size = 4,
         .max_access_size = 8,
@@ -2448,10 +2453,6 @@ static void riscv_iommu_instance_init(Object *obj)
     /* Enable translation debug interface */
     s->cap = RISCV_IOMMU_CAP_DBG;
 
-    /* Report QEMU target physical address space limits */
-    s->cap = set_field(s->cap, RISCV_IOMMU_CAP_PAS,
-                       TARGET_PHYS_ADDR_SPACE_BITS);
-
     /* TODO: method to report supported PID bits */
     s->pid_bits = 8; /* restricted to size of MemTxAttrs.pid */
     s->cap |= RISCV_IOMMU_CAP_PD8;
@@ -2478,9 +2479,24 @@ static void riscv_iommu_instance_init(Object *obj)
     QLIST_INIT(&s->spaces);
 }
 
+static void riscv_iommu_instance_finalize(Object *obj)
+{
+    RISCVIOMMUState *s = RISCV_IOMMU(obj);
+
+    g_free(s->regs_rw);
+    g_free(s->regs_ro);
+    g_free(s->regs_wc);
+
+    g_hash_table_unref(s->ctx_cache);
+    g_hash_table_unref(s->iot_cache);
+}
+
 static void riscv_iommu_realize(DeviceState *dev, Error **errp)
 {
     RISCVIOMMUState *s = RISCV_IOMMU(dev);
+
+    /* Report QEMU target physical address space limits. */
+    s->cap = set_field(s->cap, RISCV_IOMMU_CAP_PAS, s->pas_bits);
 
     s->cap |= s->version & RISCV_IOMMU_CAP_VERSION;
     if (s->enable_msi) {
@@ -2593,9 +2609,6 @@ static void riscv_iommu_unrealize(DeviceState *dev)
 {
     RISCVIOMMUState *s = RISCV_IOMMU(dev);
 
-    g_hash_table_unref(s->iot_cache);
-    g_hash_table_unref(s->ctx_cache);
-
     if (s->cap & RISCV_IOMMU_CAP_HPM) {
         g_hash_table_unref(s->hpm_event_ctr_map);
         timer_free(s->hpm_timer);
@@ -2640,6 +2653,7 @@ void riscv_iommu_reset(RISCVIOMMUState *s)
 static const Property riscv_iommu_properties[] = {
     DEFINE_PROP_UINT32("version", RISCVIOMMUState, version,
         RISCV_IOMMU_SPEC_DOT_VER),
+    DEFINE_PROP_UINT32("pas-bits", RISCVIOMMUState, pas_bits, 0),
     DEFINE_PROP_UINT32("bus", RISCVIOMMUState, bus, 0x0),
     DEFINE_PROP_UINT32("ioatc-limit", RISCVIOMMUState, iot_limit,
         LIMIT_CACHE_IOT),
@@ -2670,6 +2684,7 @@ static const TypeInfo riscv_iommu_info = {
     .parent = TYPE_DEVICE,
     .instance_size = sizeof(RISCVIOMMUState),
     .instance_init = riscv_iommu_instance_init,
+    .instance_finalize = riscv_iommu_instance_finalize,
     .class_init = riscv_iommu_class_init,
 };
 

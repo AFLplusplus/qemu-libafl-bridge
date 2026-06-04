@@ -5517,7 +5517,7 @@ static void nvme_free_cq(NvmeCQueue *cq, NvmeCtrl *n)
         event_notifier_set_handler(&cq->notifier, NULL);
         event_notifier_cleanup(&cq->notifier);
     }
-    if (msix_enabled(pci) && cq->irq_enabled) {
+    if (msix_present(pci) && cq->irq_enabled) {
         msix_vector_unuse(pci, cq->vector);
     }
     if (cq->cqid) {
@@ -5558,7 +5558,7 @@ static void nvme_init_cq(NvmeCQueue *cq, NvmeCtrl *n, uint64_t dma_addr,
 {
     PCIDevice *pci = PCI_DEVICE(n);
 
-    if (msix_enabled(pci) && irq_enabled) {
+    if (msix_present(pci) && irq_enabled) {
         msix_vector_use(pci, vector);
     }
 
@@ -6111,7 +6111,7 @@ static uint16_t nvme_abort(NvmeCtrl *n, NvmeRequest *req)
 {
     uint16_t sqid = le32_to_cpu(req->cmd.cdw10) & 0xffff;
     uint16_t cid  = (le32_to_cpu(req->cmd.cdw10) >> 16) & 0xffff;
-    NvmeSQueue *sq = n->sq[sqid];
+    NvmeSQueue *sq;
     NvmeRequest *r, *next;
     int i;
 
@@ -6119,6 +6119,8 @@ static uint16_t nvme_abort(NvmeCtrl *n, NvmeRequest *req)
     if (nvme_check_sqid(n, sqid)) {
         return NVME_INVALID_FIELD | NVME_DNR;
     }
+
+    sq = n->sq[sqid];
 
     if (sqid == 0) {
         for (i = 0; i < n->outstanding_aers; i++) {

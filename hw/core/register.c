@@ -16,7 +16,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/register.h"
+#include "hw/core/register.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 
@@ -320,6 +320,11 @@ static void register_array_finalize(Object *obj)
     RegisterInfoArray *r_array = REGISTER_ARRAY(obj);
 
     g_free(r_array->r);
+}
+
+DeviceState *register_array_get_owner(const RegisterInfoArray *reg_array)
+{
+    return DEVICE(OBJECT(reg_array)->parent);
 }
 
 static const TypeInfo register_array_info = {

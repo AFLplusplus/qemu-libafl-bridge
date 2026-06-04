@@ -73,7 +73,6 @@ bool block_acct_setup(BlockAcctStats *stats, enum OnOffAuto account_invalid,
             }
             block_acct_add_interval(stats, stats_intervals[i]);
         }
-        g_free(stats_intervals);
     }
     return true;
 }
@@ -184,6 +183,15 @@ int block_latency_histogram_set(BlockAcctStats *stats, enum BlockAcctType type,
         }
         new_nbins++;
         prev = entry->value;
+    }
+
+    /*
+     * block_latency_histogram_account() assumes that it can always access
+     * hist->boundaries[0], so require at least one boundary. A histogram with
+     * a single bin is useless anyway.
+     */
+    if (new_nbins <= 1) {
+        return -EINVAL;
     }
 
     hist->nbins = new_nbins;

@@ -64,22 +64,6 @@ config EXYNOS4
     select USB_EHCI_SYSBUS
     select OR_IRQ
 
-config HIGHBANK
-    bool
-    default y
-    depends on TCG && ARM
-    select A9MPCORE
-    select A15MPCORE
-    select AHCI_SYSBUS
-    select ARM_TIMER # sp804
-    select ARM_V7M
-    select PL011 # UART
-    select PL022 # SPI
-    select PL031 # RTC
-    select PL061 # GPIO
-    select PL310 # cache controller
-    select XGMAC # ethernet
-
 config INTEGRATOR
     bool
     default y
@@ -403,8 +387,13 @@ config STM32F405_SOC
     select ARM_V7M
     select OR_IRQ
     select STM32_RCC
+    select STM32F2XX_ADC
+    select STM32F2XX_SPI
+    select STM32F2XX_TIMER
+    select STM32F2XX_USART
     select STM32F4XX_SYSCFG
     select STM32F4XX_EXTI
+    select UNIMP
 
 config B_L475E_IOT01A
     bool
@@ -493,7 +482,7 @@ config NPCM8XX
     select SMBUS
     select PL310  # cache controller
     select NPCM7XX
-    select SERIAL
+    select SERIAL_MM
     select SSI
     select UNIMP
 
@@ -545,6 +534,9 @@ config ASPEED_SOC
     select DS1338
     select FTGMAC100
     select I2C
+    select I3C
+    select DW_I3C
+    select I3C_DEVICES
     select DPS310
     select PCA9552
     select PCA9554
@@ -626,8 +618,13 @@ config FSL_IMX8MP_EVK
     depends on TCG
     select FSL_IMX8MP
 
+config ARM_SMMUV3_ACCEL
+    bool
+    depends on ARM_SMMUV3
+
 config ARM_SMMUV3
     bool
+    select ARM_SMMUV3_ACCEL if IOMMUFD
 
 config FSL_IMX6UL
     bool
@@ -638,6 +635,7 @@ config FSL_IMX6UL
     select IMX
     select IMX_FEC
     select IMX_I2C
+    select IMX_USBPHY
     select WDT_IMX2
     select SDHCI
     select USB_CHIPIDEA

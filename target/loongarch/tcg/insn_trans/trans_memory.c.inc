@@ -7,11 +7,33 @@ static bool gen_load(DisasContext *ctx, arg_rr_i *a, MemOp mop)
 {
     TCGv dest = gpr_dst(ctx, a->rd, EXT_NONE);
     TCGv addr = gpr_src(ctx, a->rj, EXT_NONE);
+    TCGv t1 = tcg_temp_new();
+    TCGv mask = tcg_constant_tl(0x8);
+    TCGv zero = tcg_constant_tl(0);
+    TCGLabel *done = gen_new_label();
+    TCGLabel *l1 = gen_new_label();
 
     addr = make_address_i(ctx, addr, a->imm);
 
+    if (avail_SCQ(ctx) && mop == MO_LEUQ) {
+        /*
+         * The LL.D+LD.D may be paired with SC.Q,
+         * use llval_high if llbit_scq && (addr == lladdr ^ 0x8)
+         */
+        tcg_gen_brcond_tl(TCG_COND_EQ, cpu_llbit_scq, zero, l1);
+        tcg_gen_xor_tl(t1, addr, mask);
+        tcg_gen_brcond_tl(TCG_COND_NE, cpu_lladdr, t1, l1);
+        gen_set_gpr(a->rd, cpu_llval_high, EXT_NONE);
+        tcg_gen_br(done);
+        gen_set_label(l1);
+    }
+
     tcg_gen_qemu_ld_tl(dest, addr, ctx->mem_idx, mop);
     gen_set_gpr(a->rd, dest, EXT_NONE);
+
+    if (avail_SCQ(ctx) && mop == MO_LEUQ) {
+        gen_set_label(done);
+    }
     return true;
 }
 
@@ -151,44 +173,44 @@ static bool gen_stptr(DisasContext *ctx, arg_rr_i *a, MemOp mop)
 }
 
 TRANS(ld_b, ALL, gen_load, MO_SB)
-TRANS(ld_h, ALL, gen_load, MO_TESW)
-TRANS(ld_w, ALL, gen_load, MO_TESL)
-TRANS(ld_d, 64, gen_load, MO_TEUQ)
+TRANS(ld_h, ALL, gen_load, MO_LESW)
+TRANS(ld_w, ALL, gen_load, MO_LESL)
+TRANS(ld_d, 64, gen_load, MO_LEUQ)
 TRANS(st_b, ALL, gen_store, MO_UB)
-TRANS(st_h, ALL, gen_store, MO_TEUW)
-TRANS(st_w, ALL, gen_store, MO_TEUL)
-TRANS(st_d, 64, gen_store, MO_TEUQ)
+TRANS(st_h, ALL, gen_store, MO_LEUW)
+TRANS(st_w, ALL, gen_store, MO_LEUL)
+TRANS(st_d, 64, gen_store, MO_LEUQ)
 TRANS(ld_bu, ALL, gen_load, MO_UB)
-TRANS(ld_hu, ALL, gen_load, MO_TEUW)
-TRANS(ld_wu, 64, gen_load, MO_TEUL)
+TRANS(ld_hu, ALL, gen_load, MO_LEUW)
+TRANS(ld_wu, 64, gen_load, MO_LEUL)
 TRANS(ldx_b, 64, gen_loadx, MO_SB)
-TRANS(ldx_h, 64, gen_loadx, MO_TESW)
-TRANS(ldx_w, 64, gen_loadx, MO_TESL)
-TRANS(ldx_d, 64, gen_loadx, MO_TEUQ)
+TRANS(ldx_h, 64, gen_loadx, MO_LESW)
+TRANS(ldx_w, 64, gen_loadx, MO_LESL)
+TRANS(ldx_d, 64, gen_loadx, MO_LEUQ)
 TRANS(stx_b, 64, gen_storex, MO_UB)
-TRANS(stx_h, 64, gen_storex, MO_TEUW)
-TRANS(stx_w, 64, gen_storex, MO_TEUL)
-TRANS(stx_d, 64, gen_storex, MO_TEUQ)
+TRANS(stx_h, 64, gen_storex, MO_LEUW)
+TRANS(stx_w, 64, gen_storex, MO_LEUL)
+TRANS(stx_d, 64, gen_storex, MO_LEUQ)
 TRANS(ldx_bu, 64, gen_loadx, MO_UB)
-TRANS(ldx_hu, 64, gen_loadx, MO_TEUW)
-TRANS(ldx_wu, 64, gen_loadx, MO_TEUL)
-TRANS(ldptr_w, 64, gen_ldptr, MO_TESL)
-TRANS(stptr_w, 64, gen_stptr, MO_TEUL)
-TRANS(ldptr_d, 64, gen_ldptr, MO_TEUQ)
-TRANS(stptr_d, 64, gen_stptr, MO_TEUQ)
+TRANS(ldx_hu, 64, gen_loadx, MO_LEUW)
+TRANS(ldx_wu, 64, gen_loadx, MO_LEUL)
+TRANS(ldptr_w, 64, gen_ldptr, MO_LESL)
+TRANS(stptr_w, 64, gen_stptr, MO_LEUL)
+TRANS(ldptr_d, 64, gen_ldptr, MO_LEUQ)
+TRANS(stptr_d, 64, gen_stptr, MO_LEUQ)
 TRANS(ldgt_b, 64, gen_load_gt, MO_SB)
-TRANS(ldgt_h, 64, gen_load_gt, MO_TESW)
-TRANS(ldgt_w, 64, gen_load_gt, MO_TESL)
-TRANS(ldgt_d, 64, gen_load_gt, MO_TEUQ)
+TRANS(ldgt_h, 64, gen_load_gt, MO_LESW)
+TRANS(ldgt_w, 64, gen_load_gt, MO_LESL)
+TRANS(ldgt_d, 64, gen_load_gt, MO_LEUQ)
 TRANS(ldle_b, 64, gen_load_le, MO_SB)
-TRANS(ldle_h, 64, gen_load_le, MO_TESW)
-TRANS(ldle_w, 64, gen_load_le, MO_TESL)
-TRANS(ldle_d, 64, gen_load_le, MO_TEUQ)
+TRANS(ldle_h, 64, gen_load_le, MO_LESW)
+TRANS(ldle_w, 64, gen_load_le, MO_LESL)
+TRANS(ldle_d, 64, gen_load_le, MO_LEUQ)
 TRANS(stgt_b, 64, gen_store_gt, MO_UB)
-TRANS(stgt_h, 64, gen_store_gt, MO_TEUW)
-TRANS(stgt_w, 64, gen_store_gt, MO_TEUL)
-TRANS(stgt_d, 64, gen_store_gt, MO_TEUQ)
+TRANS(stgt_h, 64, gen_store_gt, MO_LEUW)
+TRANS(stgt_w, 64, gen_store_gt, MO_LEUL)
+TRANS(stgt_d, 64, gen_store_gt, MO_LEUQ)
 TRANS(stle_b, 64, gen_store_le, MO_UB)
-TRANS(stle_h, 64, gen_store_le, MO_TEUW)
-TRANS(stle_w, 64, gen_store_le, MO_TEUL)
-TRANS(stle_d, 64, gen_store_le, MO_TEUQ)
+TRANS(stle_h, 64, gen_store_le, MO_LEUW)
+TRANS(stle_w, 64, gen_store_le, MO_LEUL)
+TRANS(stle_d, 64, gen_store_le, MO_LEUQ)

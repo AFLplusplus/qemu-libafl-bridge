@@ -107,7 +107,6 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
                       make \
                       mtools \
                       multipath-tools \
-                      ncat \
                       nettle-dev \
                       ninja-build \
                       openssh-client \
@@ -162,7 +161,7 @@ ENV CARGO_HOME=/usr/local/cargo
 ENV PATH=$CARGO_HOME/bin:$PATH
 RUN DEBIAN_FRONTEND=noninteractive eatmydata \
   apt install -y --no-install-recommends cargo
-RUN cargo install bindgen-cli
+RUN cargo install --locked bindgen-cli
 # As a final step configure the user (if env is defined)
 ARG USER
 ARG UID

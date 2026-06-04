@@ -1,5 +1,5 @@
 #include "qemu/osdep.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "qapi/qapi-types-misc.h"
 #include "qapi/qapi-visit-common.h"
@@ -551,7 +551,8 @@ const PropertyInfo qdev_prop_usize = {
 static void release_string(Object *obj, const char *name, void *opaque)
 {
     const Property *prop = opaque;
-    g_free(*(char **)object_field_prop_ptr(obj, prop));
+
+    g_clear_pointer((char **)object_field_prop_ptr(obj, prop), g_free);
 }
 
 static void get_string(Object *obj, Visitor *v, const char *name,
@@ -673,10 +674,8 @@ static Property array_elem_prop(Object *obj, const Property *parent_prop,
 
 /*
  * Object property release callback for array properties: We call the
- * underlying element's property release hook for each element.
- *
- * Note that it is the responsibility of the individual device's deinit
- * to free the array proper.
+ * underlying element's property release hook for each element and free the
+ * property array.
  */
 static void release_prop_array(Object *obj, const char *name, void *opaque)
 {
@@ -686,15 +685,16 @@ static void release_prop_array(Object *obj, const char *name, void *opaque)
     char *elem = *arrayptr;
     int i;
 
-    if (!prop->arrayinfo->release) {
-        return;
+    if (prop->arrayinfo->release) {
+        for (i = 0; i < *alenptr; i++) {
+            Property elem_prop = array_elem_prop(obj, prop, name, elem);
+            prop->arrayinfo->release(obj, NULL, &elem_prop);
+            elem += prop->arrayfieldsize;
+        }
     }
 
-    for (i = 0; i < *alenptr; i++) {
-        Property elem_prop = array_elem_prop(obj, prop, name, elem);
-        prop->arrayinfo->release(obj, NULL, &elem_prop);
-        elem += prop->arrayfieldsize;
-    }
+    g_clear_pointer(arrayptr, g_free);
+    *alenptr = 0;
 }
 
 /*
@@ -1110,51 +1110,6 @@ static void qdev_class_add_property(DeviceClass *klass, const char *name,
     object_class_property_set_description(oc, name, prop->info->description);
 }
 
-/**
- * Legacy property handling
- */
-
-static void qdev_get_legacy_property(Object *obj, Visitor *v,
-                                     const char *name, void *opaque,
-                                     Error **errp)
-{
-    const Property *prop = opaque;
-    char *s;
-
-    s = prop->info->print(obj, prop);
-    visit_type_str(v, name, &s, errp);
-    g_free(s);
-}
-
-/**
- * qdev_class_add_legacy_property:
- * @dev: Device to add the property to.
- * @prop: The qdev property definition.
- *
- * Add a legacy QOM property to @dev for qdev property @prop.
- *
- * Legacy properties are string versions of QOM properties.  The format of
- * the string depends on the property type.  Legacy properties are only
- * needed for "info qtree".
- *
- * Do not use this in new code!  QOM Properties added through this interface
- * will be given names in the "legacy" namespace.
- */
-static void qdev_class_add_legacy_property(DeviceClass *dc, const Property *prop)
-{
-    g_autofree char *name = NULL;
-
-    /* Register pointer properties as legacy properties */
-    if (!prop->info->print && prop->info->get) {
-        return;
-    }
-
-    name = g_strdup_printf("legacy-%s", prop->name);
-    object_class_property_add(OBJECT_CLASS(dc), name, "str",
-        prop->info->print ? qdev_get_legacy_property : prop->info->get,
-        NULL, NULL, (Property *)prop);
-}
-
 void device_class_set_props_n(DeviceClass *dc, const Property *props, size_t n)
 {
     /* We used a hole in DeviceClass because that's still a lot. */
@@ -1167,7 +1122,6 @@ void device_class_set_props_n(DeviceClass *dc, const Property *props, size_t n)
     for (size_t i = 0; i < n; ++i) {
         const Property *prop = &props[i];
         assert(prop->name);
-        qdev_class_add_legacy_property(dc, prop);
         qdev_class_add_property(dc, prop->name, prop);
     }
 }

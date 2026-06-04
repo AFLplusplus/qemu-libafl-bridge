@@ -19,10 +19,10 @@ class Aarch64RMEVirtMachine(QemuSystemTest):
 
     # Stack is inspired from:
     # https://linaro.atlassian.net/wiki/spaces/QEMU/pages/29051027459/
-    # https://github.com/pbo-linaro/qemu-linux-stack/tree/rme_release
+    # https://github.com/p-b-o/qemu-linux-stack/tree/rme_release
     # ./build.sh && ./archive_artifacts.sh out.tar.xz
     ASSET_RME_STACK_VIRT = Asset(
-        ('https://github.com/pbo-linaro/qemu-linux-stack/'
+        ('https://github.com/p-b-o/qemu-linux-stack/'
          'releases/download/build/rme_release-56bc99e.tar.xz'),
          '0e3dc6b8a4b828dbae09c951a40dcb710eded084b32432b50c69cf4173ffa4be')
 

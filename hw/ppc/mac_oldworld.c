@@ -30,8 +30,8 @@
 #include "qapi/error.h"
 #include "exec/target_page.h"
 #include "hw/ppc/ppc.h"
-#include "hw/qdev-properties.h"
-#include "hw/boards.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/boards.h"
 #include "hw/input/adb.h"
 #include "system/system.h"
 #include "net/net.h"
@@ -42,8 +42,8 @@
 #include "hw/nvram/fw_cfg.h"
 #include "hw/char/escc.h"
 #include "hw/misc/macio/macio.h"
-#include "hw/loader.h"
-#include "hw/fw-path-provider.h"
+#include "hw/core/loader.h"
+#include "hw/core/fw-path-provider.h"
 #include "elf.h"
 #include "qemu/error-report.h"
 #include "system/kvm.h"
@@ -288,6 +288,15 @@ static void ppc_heathrow_init(MachineState *machine)
         pci_create_simple(pci_bus, -1, "pci-ohci");
     }
 
+    if (!graphic_width) {
+        graphic_width = 800;
+    }
+    if (!graphic_height) {
+        graphic_height = 600;
+    }
+    if (!graphic_depth) {
+        graphic_depth = 32;
+    }
     if (graphic_depth != 15 && graphic_depth != 32 && graphic_depth != 8) {
         graphic_depth = 15;
     }

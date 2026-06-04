@@ -26,12 +26,15 @@
 #include "qemu/units.h"
 #include "system/kvm.h"
 #include "system/hvf.h"
+#include "system/whpx.h"
+#include "system/hw_accel.h"
 #include "system/qtest.h"
 #include "system/tcg.h"
 #include "kvm_arm.h"
 #include "hvf_arm.h"
+#include "whpx_arm.h"
 #include "qapi/visitor.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "internals.h"
 #include "cpu-features.h"
 
@@ -76,27 +79,9 @@ void arm_cpu_sve_finalize(ARMCPU *cpu, Error **errp)
      */
     uint32_t vq_map = cpu->sve_vq.map;
     uint32_t vq_init = cpu->sve_vq.init;
-    uint32_t vq_supported;
+    uint32_t vq_supported = cpu->sve_vq.supported;
     uint32_t vq_mask = 0;
     uint32_t tmp, vq, max_vq = 0;
-
-    /*
-     * CPU models specify a set of supported vector lengths which are
-     * enabled by default.  Attempting to enable any vector length not set
-     * in the supported bitmap results in an error.  When KVM is enabled we
-     * fetch the supported bitmap from the host.
-     */
-    if (kvm_enabled()) {
-        if (kvm_arm_sve_supported()) {
-            cpu->sve_vq.supported = kvm_arm_sve_get_vls(cpu);
-            vq_supported = cpu->sve_vq.supported;
-        } else {
-            assert(!cpu_isar_feature(aa64_sve, cpu));
-            vq_supported = 0;
-        }
-    } else {
-        vq_supported = cpu->sve_vq.supported;
-    }
 
     /*
      * Process explicit sve<N> properties.
@@ -133,9 +118,17 @@ void arm_cpu_sve_finalize(ARMCPU *cpu, Error **errp)
         if (!cpu_isar_feature(aa64_sve, cpu)) {
             /*
              * SVE is disabled and so are all vector lengths.  Good.
-             * Disable all SVE extensions as well.
+             * Disable all SVE extensions as well. Note that some ZFR0
+             * fields are used also by SME so must not be wiped in
+             * an SME-no-SVE config. We will clear the rest in
+             * arm_cpu_sme_finalize() if necessary.
              */
-            SET_IDREG(&cpu->isar, ID_AA64ZFR0, 0);
+            FIELD_DP64_IDREG(&cpu->isar, ID_AA64ZFR0, F64MM, 0);
+            FIELD_DP64_IDREG(&cpu->isar, ID_AA64ZFR0, F32MM, 0);
+            FIELD_DP64_IDREG(&cpu->isar, ID_AA64ZFR0, F16MM, 0);
+            FIELD_DP64_IDREG(&cpu->isar, ID_AA64ZFR0, SM4, 0);
+            FIELD_DP64_IDREG(&cpu->isar, ID_AA64ZFR0, B16B16, 0);
+            FIELD_DP64_IDREG(&cpu->isar, ID_AA64ZFR0, SVEVER, 0);
             return;
         }
 
@@ -307,6 +300,30 @@ static void cpu_arm_set_vq(Object *obj, Visitor *v, const char *name,
     vq_map->init |= 1 << (vq - 1);
 }
 
+static void prop_bool_get_false(Object *obj, Visitor *v, const char *name,
+                                void *opaque, Error **errp)
+{
+    bool value = false;
+    visit_type_bool(v, name, &value, errp);
+}
+
+static void prop_bool_set_false(Object *obj, Visitor *v, const char *name,
+                                void *opaque, Error **errp)
+{
+    bool value;
+
+    if (visit_type_bool(v, name, &value, errp) && value) {
+        error_setg(errp, "'%s' feature not supported by %s on this host",
+                   name, current_accel_name());
+    }
+}
+
+static void prop_add_stub_bool(Object *obj, const char *name)
+{
+    object_property_add(obj, name, "bool", prop_bool_get_false,
+                        prop_bool_set_false, NULL, NULL);
+}
+
 static bool cpu_arm_get_sve(Object *obj, Error **errp)
 {
     ARMCPU *cpu = ARM_CPU(obj);
@@ -316,12 +333,6 @@ static bool cpu_arm_get_sve(Object *obj, Error **errp)
 static void cpu_arm_set_sve(Object *obj, bool value, Error **errp)
 {
     ARMCPU *cpu = ARM_CPU(obj);
-
-    if (value && kvm_enabled() && !kvm_arm_sve_supported()) {
-        error_setg(errp, "'sve' feature not supported by KVM on this host");
-        return;
-    }
-
     FIELD_DP64_IDREG(&cpu->isar, ID_AA64PFR0, SVE, value);
 }
 
@@ -335,6 +346,10 @@ void arm_cpu_sme_finalize(ARMCPU *cpu, Error **errp)
     if (vq_map == 0) {
         if (!cpu_isar_feature(aa64_sme, cpu)) {
             SET_IDREG(&cpu->isar, ID_AA64SMFR0, 0);
+            if (!cpu_isar_feature(aa64_sve, cpu)) {
+                /* This clears the "SVE or SME" fields in ZFR0 */
+                SET_IDREG(&cpu->isar, ID_AA64ZFR0, 0);
+            }
             return;
         }
 
@@ -363,6 +378,21 @@ void arm_cpu_sme_finalize(ARMCPU *cpu, Error **errp)
 
     cpu->sme_vq.map = vq_map;
     cpu->sme_max_vq = 32 - clz32(vq_map);
+
+    /*
+     * The "sme" property setter writes a bool value into ID_AA64PFR1_EL1.SME
+     * (and at this point we know it's not 0). Correct that value to report
+     * the same SME version as ID_AA64SMFR0_EL1.SMEver.
+     */
+    if (FIELD_EX64_IDREG(&cpu->isar, ID_AA64SMFR0, SMEVER) != 0) {
+        /* SME2 or better */
+        FIELD_DP64_IDREG(&cpu->isar, ID_AA64PFR1, SME, 2);
+    }
+
+    if (!cpu_isar_feature(aa64_sve, cpu)) {
+        /* FEAT_SME_FA64 requires SVE, not just SME */
+        FIELD_DP64_IDREG(&cpu->isar, ID_AA64SMFR0, FA64, 0);
+    }
 }
 
 static bool cpu_arm_get_sme(Object *obj, Error **errp)
@@ -375,6 +405,11 @@ static void cpu_arm_set_sme(Object *obj, bool value, Error **errp)
 {
     ARMCPU *cpu = ARM_CPU(obj);
 
+    /*
+     * For now, write 0 for "off" and 1 for "on" into the PFR1 field.
+     * We will correct this value to report the right SME
+     * level (SME vs SME2) in arm_cpu_sme_finalize() later.
+     */
     FIELD_DP64_IDREG(&cpu->isar, ID_AA64PFR1, SME, value);
 }
 
@@ -454,7 +489,23 @@ void aarch64_add_sve_properties(Object *obj)
     ARMCPU *cpu = ARM_CPU(obj);
     uint32_t vq;
 
-    object_property_add_bool(obj, "sve", cpu_arm_get_sve, cpu_arm_set_sve);
+    /*
+     * For hw virtualization, we have already probed the set of vector
+     * lengths supported.  If there are none, the host doesn't support
+     * SVE at all.  In which case we register a stub property, to allow
+     *   -cpu max,sve=off
+     * to always be valid.
+     *
+     * For TCG, this function is only called for cpu models which
+     * support SVE.  The error message in the stub is written
+     * assuming host virtualiation is being used.
+     */
+    if (cpu->sve_vq.supported) {
+        object_property_add_bool(obj, "sve", cpu_arm_get_sve, cpu_arm_set_sve);
+    } else {
+        assert(!tcg_enabled());
+        prop_add_stub_bool(obj, "sve");
+    }
 
     for (vq = 1; vq <= ARM_MAX_VQ; ++vq) {
         char name[8];
@@ -521,7 +572,7 @@ void arm_cpu_pauth_finalize(ARMCPU *cpu, Error **errp)
     isar2 = FIELD_DP64(isar2, ID_AA64ISAR2, APA3, 0);
     isar2 = FIELD_DP64(isar2, ID_AA64ISAR2, GPA3, 0);
 
-    if (kvm_enabled() || hvf_enabled()) {
+    if (hwaccel_enabled()) {
         /*
          * Exit early if PAuth is enabled and fall through to disable it.
          * The algorithm selection properties are not present.
@@ -598,10 +649,10 @@ void aarch64_add_pauth_properties(Object *obj)
 
     /* Default to PAUTH on, with the architected algorithm on TCG. */
     qdev_property_add_static(DEVICE(obj), &arm_cpu_pauth_property);
-    if (kvm_enabled() || hvf_enabled()) {
+    if (hwaccel_enabled()) {
         /*
          * Mirror PAuth support from the probed sysregs back into the
-         * property for KVM or hvf. Is it just a bit backward? Yes it is!
+         * property for HW accel. Is it just a bit backward? Yes it is!
          * Note that prop_pauth is true whether the host CPU supports the
          * architected QARMA5 algorithm or the IMPDEF one. We don't
          * provide the separate pauth-impdef property for KVM or hvf,
@@ -689,7 +740,7 @@ static void aarch64_a57_initfn(Object *obj)
     cpu->ccsidr[1] = make_ccsidr(CCSIDR_FORMAT_LEGACY, 3, 64, 48 * KiB, 2);
     /* 2048KB L2 cache */
     cpu->ccsidr[2] = make_ccsidr(CCSIDR_FORMAT_LEGACY, 16, 64, 2 * MiB, 7);
-    cpu->dcz_blocksize = 4; /* 64 bytes */
+    set_dczid_bs(cpu, 4); /* 64 bytes */
     cpu->gic_num_lrs = 4;
     cpu->gic_vpribits = 5;
     cpu->gic_vprebits = 5;
@@ -751,7 +802,7 @@ static void aarch64_a53_initfn(Object *obj)
     cpu->ccsidr[1] = make_ccsidr(CCSIDR_FORMAT_LEGACY, 1, 64, 32 * KiB, 2);
     /* 1024KB L2 cache */
     cpu->ccsidr[2] = make_ccsidr(CCSIDR_FORMAT_LEGACY, 16, 64, 1 * MiB, 7);
-    cpu->dcz_blocksize = 4; /* 64 bytes */
+    set_dczid_bs(cpu, 4); /* 64 bytes */
     cpu->gic_num_lrs = 4;
     cpu->gic_vpribits = 5;
     cpu->gic_vprebits = 5;
@@ -762,13 +813,21 @@ static void aarch64_a53_initfn(Object *obj)
 static void aarch64_host_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+
+#if defined(CONFIG_NITRO)
+    if (nitro_enabled()) {
+        /* The nitro accel uses -cpu host, but does not actually consume it */
+        return;
+    }
+#endif
+
 #if defined(CONFIG_KVM)
     kvm_arm_set_cpu_features_from_host(cpu);
-    if (arm_feature(&cpu->env, ARM_FEATURE_AARCH64)) {
-        aarch64_add_sve_properties(obj);
-    }
+    aarch64_add_sve_properties(obj);
 #elif defined(CONFIG_HVF)
     hvf_arm_set_cpu_features_from_host(cpu);
+#elif defined(CONFIG_WHPX)
+    whpx_arm_set_cpu_features_from_host(cpu);
 #else
     g_assert_not_reached();
 #endif
@@ -779,8 +838,8 @@ static void aarch64_host_initfn(Object *obj)
 
 static void aarch64_max_initfn(Object *obj)
 {
-    if (kvm_enabled() || hvf_enabled()) {
-        /* With KVM or HVF, '-cpu max' is identical to '-cpu host' */
+    if (hwaccel_enabled()) {
+        /* When hardware acceleration enabled, '-cpu max' is identical to '-cpu host' */
         aarch64_host_initfn(obj);
         return;
     }
@@ -799,7 +858,7 @@ static const ARMCPUInfo aarch64_cpus[] = {
     { .name = "cortex-a57",         .initfn = aarch64_a57_initfn },
     { .name = "cortex-a53",         .initfn = aarch64_a53_initfn },
     { .name = "max",                .initfn = aarch64_max_initfn },
-#if defined(CONFIG_KVM) || defined(CONFIG_HVF)
+#if defined(CONFIG_KVM) || defined(CONFIG_HVF) || defined(CONFIG_WHPX)
     { .name = "host",               .initfn = aarch64_host_initfn },
 #endif
 };

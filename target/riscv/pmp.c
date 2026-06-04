@@ -165,6 +165,18 @@ static bool pmp_write_cfg(CPURISCVState *env, uint32_t pmp_index, uint8_t val)
                           "ignoring pmpcfg write - invalid\n");
         } else {
             uint8_t a_field = pmp_get_a_field(val);
+
+            if (!riscv_cpu_cfg(env)->ext_smpmpmt) {
+                /* If smpmpmt not supported, clear the MTMATCH bit */
+                val &= ~PMP_MTMATCH;
+            } else if ((val & PMP_MTMATCH) == PMP_MTMATCH) {
+                /*
+                 * If trying to set reserved value (0x3) for MT field,
+                 * preserve the original MT field from current config.
+                 */
+                val = (val & ~PMP_MTMATCH) |
+                    (env->pmp_state.pmp[pmp_index].cfg_reg & PMP_MTMATCH);
+            }
             /*
              * When granularity g >= 1 (i.e., granularity > 4 bytes),
              * the NA4 (Naturally Aligned 4-byte) mode is not selectable
@@ -355,6 +367,10 @@ static bool pmp_hart_has_privs_default(CPURISCVState *env, pmp_priv_t privs,
  * Check if the address has required RWX privs to complete desired operation
  * Return true if a pmp rule match or default match
  * Return false if no match
+ *
+ * Note: The MT (Memory Type) field from Smpmpmt extension is stored in
+ * pmpcfg but is not acted upon during access checks. Cache attributes
+ * have no functional impact in QEMU emulation.
  */
 bool pmp_hart_has_privs(CPURISCVState *env, hwaddr addr,
                         target_ulong size, pmp_priv_t privs,

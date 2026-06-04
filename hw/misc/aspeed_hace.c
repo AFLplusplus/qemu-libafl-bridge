@@ -18,8 +18,8 @@
 #include "qapi/error.h"
 #include "migration/vmstate.h"
 #include "crypto/hash.h"
-#include "hw/qdev-properties.h"
-#include "hw/irq.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/irq.h"
 #include "trace.h"
 
 #define R_CRYPT_CMD     (0x10 / 4)
@@ -154,6 +154,14 @@ static bool has_padding(AspeedHACEState *s, struct iovec *iov,
                         hwaddr req_len, uint32_t *total_msg_len,
                         uint32_t *pad_offset)
 {
+    /* Need at least 8 bytes to read the total message length field */
+    if (req_len < 8) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "%s: invalid request length=0x%" HWADDR_PRIx "\n",
+                      __func__, req_len);
+        return false;
+    }
+
     *total_msg_len = (uint32_t)(ldq_be_p(iov->iov_base + req_len - 8) / 8);
     /*
      * SG_LIST_LEN_LAST asserted in the request length doesn't mean it is the
@@ -197,6 +205,19 @@ static uint64_t hash_get_source_addr(AspeedHACEState *s)
     return src_addr;
 }
 
+static bool hash_accumulate_len(AspeedHACEState *s, hwaddr plen)
+{
+    if (plen > UINT32_MAX - s->total_req_len) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "%s: total_req_len overflow, current=0x%x, adding=0x%"
+                      HWADDR_PRIx "\n", __func__, s->total_req_len, plen);
+        return false;
+    }
+
+    s->total_req_len += plen;
+    return true;
+}
+
 static int hash_prepare_direct_iov(AspeedHACEState *s, struct iovec *iov,
                                    bool acc_mode, bool *acc_final_request)
 {
@@ -224,7 +245,9 @@ static int hash_prepare_direct_iov(AspeedHACEState *s, struct iovec *iov,
     iov_idx = 1;
 
     if (acc_mode) {
-        s->total_req_len += plen;
+        if (!hash_accumulate_len(s, plen)) {
+            return -1;
+        }
 
         if (has_padding(s, &iov[0], plen, &total_msg_len,
                         &pad_offset)) {
@@ -291,7 +314,9 @@ static int hash_prepare_sg_iov(AspeedHACEState *s, struct iovec *iov,
 
         iov[iov_idx].iov_base = haddr;
         if (acc_mode) {
-            s->total_req_len += plen;
+            if (!hash_accumulate_len(s, plen)) {
+                return -1;
+            }
 
             if (has_padding(s, &iov[iov_idx], plen, &total_msg_len,
                             &pad_offset)) {

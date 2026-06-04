@@ -572,6 +572,12 @@ like the ``akita`` or ``terrier``; it has been deprecated in the
 kernel since 2001. None of the board types QEMU supports need
 ``param_struct`` support, so this option has been removed.
 
+32-bit host operating systems (removed in 11.0)
+'''''''''''''''''''''''''''''''''''''''''''''''
+
+Keeping 32-bit host support alive was a substantial burden for the
+QEMU project.  Thus QEMU dropped all support for all 32-bit host systems.
+
 
 User-mode emulator command line arguments
 -----------------------------------------
@@ -710,12 +716,28 @@ Use blockdev-mirror with NBD instead. See "QMP invocation for live
 storage migration with ``blockdev-mirror`` + NBD" in
 docs/interop/live-block-operations.rst for a detailed explanation.
 
+``migrate`` command with file-based ``fd:`` URI (removed in 11.0)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+In order to reduce ambiguity, the ``fd:`` URI usage of providing a
+file descriptor to a plain file has been removed in favor of
+explicitly using the ``file:`` URI with the file descriptor being
+passed as an ``fdset``. Refer to the ``add-fd`` command documentation
+for details on the ``fdset`` usage.
+
 ``migrate-set-capabilities`` ``block`` option (removed in 9.1)
 ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 Block migration has been removed. For a replacement, see "QMP
 invocation for live storage migration with ``blockdev-mirror`` + NBD"
 in docs/interop/live-block-operations.rst.
+
+``migrate-set-capabilities`` ``zero-blocks`` option (removed in 11.0)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+The ``zero-blocks`` capability was accidentally left behind when
+block migration capability got removed in 9.1.  Removed with no
+replacement.
 
 ``migrate-set-parameter`` ``compress-level`` option (removed in 9.1)
 ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
@@ -750,6 +772,20 @@ QEMU used to incorrectly accept certain invalid arguments. Any object
 or list arguments were silently ignored. Other argument types were not
 checked, but an implicit conversion happened, so that e.g. string
 values could be assigned to integer device properties or vice versa.
+
+``query-migrationthreads`` (removed in 11.0)
+''''''''''''''''''''''''''''''''''''''''''''
+
+Removed with no replacement, as it reported only a limited set of
+threads (for example, it only reported source side of multifd threads,
+without reporting any destination threads, or non-multifd source
+threads).  For debugging purpose, please use ``-name
+$VM,debug-threads=on`` instead.
+
+``migrate`` argument ``detach`` (removed in 11.0)
+''''''''''''''''''''''''''''''''''''''''''''''''''
+
+This argument has always been ignored.
 
 QEMU Machine Protocol (QMP) events
 ----------------------------------
@@ -896,14 +932,14 @@ work around the atomicity issues in system mode by running all vCPUs
 in a single thread context; in user mode atomicity was simply broken.
 From 10.0, QEMU has disabled configuration of 64-bit guests on 32-bit hosts.
 
-32-bit MIPS (since 10.2)
-''''''''''''''''''''''''
+32-bit MIPS (removed in 10.2)
+'''''''''''''''''''''''''''''
 
 Debian 12 "Bookworm" removed support for 32-bit MIPS, making it hard to
 maintain our cross-compilation CI tests of the architecture.
 
-32-bit PPC (since 10.2)
-'''''''''''''''''''''''
+32-bit PPC (removed in 10.2)
+''''''''''''''''''''''''''''
 
 The QEMU project no longer supports 32-bit host builds.
 
@@ -1136,6 +1172,21 @@ Mips ``mipssim`` machine (removed in 10.2)
 Linux dropped support for this virtual machine type in kernel v3.7, and
 there was also no binary available online to use with that board.
 
+Arm ``ast2700a0-evb`` machine (removed in 11.0)
+'''''''''''''''''''''''''''''''''''''''''''''''
+
+The ``ast2700a0-evb`` machine represents the first revision of the AST2700
+and serves as the initial engineering sample rather than a production version.
+A newer revision, A1, is now supported, and the ``ast2700a1-evb`` should
+replace the older A0 version.
+
+Arm ``highbank`` and ``midway`` machines (removed in 11.0)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+There were no known users left for these machines. If you just want to
+boot a Cortex-A15 or Cortex-A9 Linux, use the ``virt`` machine instead.
+
+
 linux-user mode CPUs
 --------------------
 
@@ -1188,6 +1239,17 @@ converting to using TCG plugins they should contact the qemu-devel
 mailing list.
 
 
+Firmware, ACPI, Device Tree
+---------------------------
+
+RISC-V "virt" board "riscv,delegate" DT property (removed in 11.0)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+The "riscv,delegate" DT property was added in QEMU 7.0 as part of
+the AIA APLIC support.  The property changed name during the review
+process in Linux and the correct name ended up being "riscv,delegation".
+
+
 System emulator devices
 -----------------------
 
@@ -1228,10 +1290,24 @@ by using ``-machine graphics=off``.
 
 The 'pvrdma' device and the whole RDMA subsystem have been removed.
 
-``-device sd-card,spec_version=1`` (since 10.2)
-'''''''''''''''''''''''''''''''''''''''''''''''
+``-device sd-card,spec_version=1`` (removed in 10.2)
+''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 SD physical layer specification v2.00 supersedes the v1.10 one.
+
+
+System emulator binaries
+------------------------
+
+``qemu-system-microblazeel`` (removed in 11.0)
+''''''''''''''''''''''''''''''''''''''''''''''
+
+The ``qemu-system-microblaze`` binary can emulate little-endian machines
+now, too, so the separate binary ``qemu-system-microblazeel`` (with the
+``el`` suffix) for little-endian targets is not required anymore. The
+``petalogix-s3adsp1800`` machine can now be switched to little endian by
+setting its ``endianness`` property to ``little``.
+
 
 Related binaries
 ----------------
@@ -1320,21 +1396,21 @@ device driver such as RBD.
 VFIO devices
 ------------
 
-``-device vfio-calxeda-xgmac`` (since 10.2)
-'''''''''''''''''''''''''''''''''''''''''''
+``-device vfio-calxeda-xgmac`` (removed in 10.2)
+''''''''''''''''''''''''''''''''''''''''''''''''
 The vfio-calxeda-xgmac device allows to assign a host Calxeda Highbank
 10Gb XGMAC Ethernet controller device ("calxeda,hb-xgmac" compatibility
 string) to a guest. Calxeda HW has been ewasted now and there is no point
 keeping that device.
 
-``-device vfio-amd-xgbe`` (since 10.2)
-''''''''''''''''''''''''''''''''''''''
+``-device vfio-amd-xgbe`` (removed in 10.2)
+'''''''''''''''''''''''''''''''''''''''''''
 The vfio-amd-xgbe device allows to assign a host AMD 10GbE controller
 to a guest ("amd,xgbe-seattle-v1a" compatibility string). AMD "Seattle"
 is not supported anymore and there is no point keeping that device.
 
-``-device vfio-platform`` (since 10.2)
-''''''''''''''''''''''''''''''''''''''
+``-device vfio-platform`` (removed in 10.2)
+'''''''''''''''''''''''''''''''''''''''''''
 The vfio-platform device allows to assign a host platform device
 to a guest in a generic manner. Integrating a new device into
 the vfio-platform infrastructure requires some adaptation at

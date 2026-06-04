@@ -59,7 +59,6 @@ meson_options_help() {
   printf "%s\n" '  --enable-ubsan           enable undefined behaviour sanitizer'
   printf "%s\n" '  --firmwarepath=VALUES    search PATH for firmware files [share/qemu-'
   printf "%s\n" '                           firmware]'
-  printf "%s\n" '  --gdb=VALUE              Path to GDB'
   printf "%s\n" '  --iasl=VALUE             Path to ACPI disassembler'
   printf "%s\n" '  --includedir=VALUE       Header file directory [include]'
   printf "%s\n" '  --interp-prefix=VALUE    where to find shared libraries etc., use %M for'
@@ -160,6 +159,7 @@ meson_options_help() {
   printf "%s\n" '  multiprocess    Out of process device emulation support'
   printf "%s\n" '  netmap          netmap network backend support'
   printf "%s\n" '  nettle          nettle cryptography support'
+  printf "%s\n" '  nitro           Nitro acceleration support'
   printf "%s\n" '  numa            libnuma support'
   printf "%s\n" '  nvmm            NVMM acceleration support'
   printf "%s\n" '  opengl          OpenGL support'
@@ -420,6 +420,8 @@ _meson_option_parse() {
     --disable-netmap) printf "%s" -Dnetmap=disabled ;;
     --enable-nettle) printf "%s" -Dnettle=enabled ;;
     --disable-nettle) printf "%s" -Dnettle=disabled ;;
+    --enable-nitro) printf "%s" -Dnitro=enabled ;;
+    --disable-nitro) printf "%s" -Dnitro=disabled ;;
     --enable-numa) printf "%s" -Dnuma=enabled ;;
     --disable-numa) printf "%s" -Dnuma=disabled ;;
     --enable-nvmm) printf "%s" -Dnvmm=enabled ;;

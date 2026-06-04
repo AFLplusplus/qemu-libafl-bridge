@@ -16,7 +16,7 @@
 #include "block/blockjob.h"
 #include "block/coroutines.h"
 #include "block/throttle-groups.h"
-#include "hw/qdev-core.h"
+#include "hw/core/qdev.h"
 #include "system/blockdev.h"
 #include "system/runstate.h"
 #include "system/replay.h"
@@ -89,6 +89,7 @@ struct BlockBackend {
     QemuMutex queued_requests_lock; /* protects queued_requests */
     CoQueue queued_requests;
     bool disable_request_queuing; /* atomic */
+    int start_request_count; /* atomic */
 
     VMChangeStateEntry *vmsh;
     bool force_allow_inactivate;
@@ -1350,9 +1351,15 @@ bool blk_in_drain(BlockBackend *blk)
 }
 
 /* To be called between exactly one pair of blk_inc/dec_in_flight() */
-static void coroutine_fn blk_wait_while_drained(BlockBackend *blk)
+static void coroutine_fn blk_wait_while_drained(BlockBackend *blk,
+                                                BdrvRequestFlags flags)
 {
     assert(blk->in_flight > 0);
+
+    if (flags & BDRV_REQ_NO_QUEUE) {
+        assert(qatomic_read(&blk->start_request_count));
+        return;
+    }
 
     if (qatomic_read(&blk->quiesce_counter) &&
         !qatomic_read(&blk->disable_request_queuing)) {
@@ -1379,7 +1386,7 @@ blk_co_do_preadv_part(BlockBackend *blk, int64_t offset, int64_t bytes,
     BlockDriverState *bs;
     IO_CODE();
 
-    blk_wait_while_drained(blk);
+    blk_wait_while_drained(blk, flags);
     GRAPH_RDLOCK_GUARD();
 
     /* Call blk_bs() only after waiting, the graph may have changed */
@@ -1454,7 +1461,7 @@ blk_co_do_pwritev_part(BlockBackend *blk, int64_t offset, int64_t bytes,
     BlockDriverState *bs;
     IO_CODE();
 
-    blk_wait_while_drained(blk);
+    blk_wait_while_drained(blk, flags);
     GRAPH_RDLOCK_GUARD();
 
     /* Call blk_bs() only after waiting, the graph may have changed */
@@ -1565,6 +1572,19 @@ void blk_dec_in_flight(BlockBackend *blk)
     IO_CODE();
     qatomic_dec(&blk->in_flight);
     aio_wait_kick();
+}
+
+void coroutine_fn blk_co_start_request(BlockBackend *blk)
+{
+    blk_inc_in_flight(blk);
+    blk_wait_while_drained(blk, 0);
+    qatomic_inc(&blk->start_request_count);
+}
+
+void blk_end_request(BlockBackend *blk)
+{
+    qatomic_dec(&blk->start_request_count);
+    blk_dec_in_flight(blk);
 }
 
 static void error_callback_bh(void *opaque)
@@ -1804,7 +1824,7 @@ blk_co_do_ioctl(BlockBackend *blk, unsigned long int req, void *buf)
 {
     IO_CODE();
 
-    blk_wait_while_drained(blk);
+    blk_wait_while_drained(blk, 0);
     GRAPH_RDLOCK_GUARD();
 
     if (!blk_co_is_available(blk)) {
@@ -1846,12 +1866,13 @@ BlockAIOCB *blk_aio_ioctl(BlockBackend *blk, unsigned long int req, void *buf,
 
 /* To be called between exactly one pair of blk_inc/dec_in_flight() */
 static int coroutine_fn
-blk_co_do_pdiscard(BlockBackend *blk, int64_t offset, int64_t bytes)
+blk_co_do_pdiscard(BlockBackend *blk, int64_t offset, int64_t bytes,
+                   BdrvRequestFlags flags)
 {
     int ret;
     IO_CODE();
 
-    blk_wait_while_drained(blk);
+    blk_wait_while_drained(blk, flags);
     GRAPH_RDLOCK_GUARD();
 
     ret = blk_check_byte_request(blk, offset, bytes);
@@ -1867,7 +1888,7 @@ static void coroutine_fn blk_aio_pdiscard_entry(void *opaque)
     BlkAioEmAIOCB *acb = opaque;
     BlkRwCo *rwco = &acb->rwco;
 
-    rwco->ret = blk_co_do_pdiscard(rwco->blk, rwco->offset, acb->bytes);
+    rwco->ret = blk_co_do_pdiscard(rwco->blk, rwco->offset, acb->bytes, 0);
     blk_aio_complete(acb);
 }
 
@@ -1881,13 +1902,13 @@ BlockAIOCB *blk_aio_pdiscard(BlockBackend *blk,
 }
 
 int coroutine_fn blk_co_pdiscard(BlockBackend *blk, int64_t offset,
-                                 int64_t bytes)
+                                 int64_t bytes, BdrvRequestFlags flags)
 {
     int ret;
     IO_OR_GS_CODE();
 
     blk_inc_in_flight(blk);
-    ret = blk_co_do_pdiscard(blk, offset, bytes);
+    ret = blk_co_do_pdiscard(blk, offset, bytes, flags);
     blk_dec_in_flight(blk);
 
     return ret;
@@ -1897,7 +1918,7 @@ int coroutine_fn blk_co_pdiscard(BlockBackend *blk, int64_t offset,
 static int coroutine_fn blk_co_do_flush(BlockBackend *blk)
 {
     IO_CODE();
-    blk_wait_while_drained(blk);
+    blk_wait_while_drained(blk, 0);
     GRAPH_RDLOCK_GUARD();
 
     if (!blk_co_is_available(blk)) {
@@ -2072,7 +2093,7 @@ int coroutine_fn blk_co_zone_report(BlockBackend *blk, int64_t offset,
     IO_CODE();
 
     blk_inc_in_flight(blk); /* increase before waiting */
-    blk_wait_while_drained(blk);
+    blk_wait_while_drained(blk, 0);
     GRAPH_RDLOCK_GUARD();
     if (!blk_is_available(blk)) {
         blk_dec_in_flight(blk);
@@ -2097,7 +2118,7 @@ int coroutine_fn blk_co_zone_mgmt(BlockBackend *blk, BlockZoneOp op,
     IO_CODE();
 
     blk_inc_in_flight(blk);
-    blk_wait_while_drained(blk);
+    blk_wait_while_drained(blk, 0);
     GRAPH_RDLOCK_GUARD();
 
     ret = blk_check_byte_request(blk, offset, len);
@@ -2121,7 +2142,7 @@ int coroutine_fn blk_co_zone_append(BlockBackend *blk, int64_t *offset,
     IO_CODE();
 
     blk_inc_in_flight(blk);
-    blk_wait_while_drained(blk);
+    blk_wait_while_drained(blk, flags);
     GRAPH_RDLOCK_GUARD();
     if (!blk_is_available(blk)) {
         blk_dec_in_flight(blk);

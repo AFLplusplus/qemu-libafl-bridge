@@ -19,8 +19,8 @@
 #include "system/ioport.h"
 #include "system/memory.h"
 #include "exec/tswap.h"
-#include "hw/qdev-core.h"
-#include "hw/irq.h"
+#include "hw/core/qdev.h"
+#include "hw/core/irq.h"
 #include "hw/core/cpu.h"
 #include "qemu/accel.h"
 #include "system/cpu-timers.h"
@@ -71,6 +71,7 @@ static void *qtest_server_send_opaque;
  *
  * Extra ASCII space characters in command inputs are permitted and ignored.
  * Lines containing only spaces are permitted and ignored.
+ * Lines that start with a '#' character (comments) are permitted and ignored.
  *
  * Valid requests
  * ^^^^^^^^^^^^^^
@@ -370,8 +371,8 @@ static void qtest_process_command(CharFrontend *chr, gchar **words)
         fprintf(qtest_log_fp, "\n");
     }
 
-    if (!command) {
-        /* Input line was blank: ignore it */
+    if (!command || command[0] == '#') {
+        /* Input line was blank or a comment: ignore it */
         return;
     }
 

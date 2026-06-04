@@ -10,6 +10,8 @@
 #ifndef S390X_INTERNAL_H
 #define S390X_INTERNAL_H
 
+#include "exec/hwaddr.h"
+#include "exec/vaddr.h"
 #include "cpu.h"
 #include "fpu/softfloat.h"
 
@@ -259,7 +261,6 @@ ObjectClass *s390_cpu_class_by_name(const char *name);
 
 
 /* excp_helper.c */
-void s390x_cpu_debug_excp_handler(CPUState *cs);
 void s390_cpu_do_interrupt(CPUState *cpu);
 bool s390_cpu_exec_interrupt(CPUState *cpu, int int_req);
 
@@ -317,7 +318,6 @@ void s390_cpu_gdb_init(CPUState *cs);
 void s390_cpu_dump_state(CPUState *cpu, FILE *f, int flags);
 void do_restart_interrupt(CPUS390XState *env);
 #ifndef CONFIG_USER_ONLY
-void s390_cpu_recompute_watchpoints(CPUState *cs);
 void s390x_tod_timer(void *opaque);
 void s390x_cpu_timer(void *opaque);
 void s390_handle_wait(S390CPU *cpu);
@@ -369,19 +369,19 @@ void ioinst_handle_sal(S390CPU *cpu, uint64_t reg1, uintptr_t ra);
 
 
 /* mem_helper.c */
-target_ulong mmu_real2abs(CPUS390XState *env, target_ulong raddr);
 void probe_write_access(CPUS390XState *env, uint64_t addr, uint64_t len,
                         uintptr_t ra);
 
 
 /* mmu_helper.c */
-bool mmu_absolute_addr_valid(target_ulong addr, bool is_write);
+hwaddr mmu_real2abs(CPUS390XState *env, hwaddr raddr);
+bool mmu_absolute_addr_valid(hwaddr addr, bool is_write);
 /* Special access mode only valid for mmu_translate() */
 #define MMU_S390_LRA        -1
-int mmu_translate(CPUS390XState *env, target_ulong vaddr, int rw, uint64_t asc,
-                  target_ulong *raddr, int *flags, uint64_t *tec);
-int mmu_translate_real(CPUS390XState *env, target_ulong raddr, int rw,
-                       target_ulong *addr, int *flags, uint64_t *tec);
+int mmu_translate(CPUS390XState *env, vaddr vaddr, int rw, uint64_t asc,
+                  hwaddr *raddr, int *flags, uint64_t *tec);
+int mmu_translate_real(CPUS390XState *env, hwaddr raddr, int rw,
+                       hwaddr *addr, int *flags, uint64_t *tec);
 
 
 /* misc_helper.c */

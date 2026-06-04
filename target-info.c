@@ -24,13 +24,7 @@ unsigned target_long_bits(void)
 
 SysEmuTarget target_arch(void)
 {
-    SysEmuTarget arch = target_info()->target_arch;
-
-    if (arch == SYS_EMU_TARGET__MAX) {
-        arch = qapi_enum_parse(&SysEmuTarget_lookup, target_name(), -1,
-                               &error_abort);
-    }
-    return arch;
+    return target_info()->target_arch;
 }
 
 const char *target_cpu_type(void)
@@ -72,4 +66,30 @@ bool target_arm(void)
 bool target_aarch64(void)
 {
     return target_arch() == SYS_EMU_TARGET_AARCH64;
+}
+
+bool target_base_ppc(void)
+{
+    switch (target_arch()) {
+    case SYS_EMU_TARGET_PPC:
+    case SYS_EMU_TARGET_PPC64:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool target_ppc(void)
+{
+    return target_arch() == SYS_EMU_TARGET_PPC;
+}
+
+bool target_ppc64(void)
+{
+    return target_arch() == SYS_EMU_TARGET_PPC64;
+}
+
+bool target_s390x(void)
+{
+    return target_arch() == SYS_EMU_TARGET_S390X;
 }

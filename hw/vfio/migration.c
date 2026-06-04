@@ -16,6 +16,7 @@
 #include <sys/ioctl.h>
 
 #include "system/runstate.h"
+#include "hw/core/boards.h"
 #include "hw/vfio/vfio-device.h"
 #include "hw/vfio/vfio-migration.h"
 #include "migration/misc.h"
@@ -27,10 +28,10 @@
 #include "migration-multifd.h"
 #include "qapi/error.h"
 #include "qapi/qapi-events-vfio.h"
-#include "exec/ramlist.h"
+#include "system/ramlist.h"
 #include "pci.h"
 #include "trace.h"
-#include "hw/hw.h"
+#include "hw/core/hw-error.h"
 #include "vfio-migration-internal.h"
 
 /*
@@ -67,7 +68,7 @@ static const char *mig_state_to_str(enum vfio_device_mig_state state)
 }
 
 static QapiVfioMigrationState
-mig_state_to_qapi_state(enum vfio_device_mig_state state)
+mig_state_to_qapi_state(enum vfio_device_mig_state state, bool prepare)
 {
     switch (state) {
     case VFIO_DEVICE_STATE_STOP:
@@ -83,15 +84,17 @@ mig_state_to_qapi_state(enum vfio_device_mig_state state)
     case VFIO_DEVICE_STATE_PRE_COPY:
         return QAPI_VFIO_MIGRATION_STATE_PRE_COPY;
     case VFIO_DEVICE_STATE_PRE_COPY_P2P:
-        return QAPI_VFIO_MIGRATION_STATE_PRE_COPY_P2P;
+        return prepare ? QAPI_VFIO_MIGRATION_STATE_PRE_COPY_P2P_PREPARE :
+                         QAPI_VFIO_MIGRATION_STATE_PRE_COPY_P2P;
     default:
         g_assert_not_reached();
     }
 }
 
-static void vfio_migration_send_event(VFIODevice *vbasedev)
+static void vfio_migration_send_event(VFIODevice *vbasedev,
+                                      enum vfio_device_mig_state state,
+                                      bool prepare)
 {
-    VFIOMigration *migration = vbasedev->migration;
     DeviceState *dev = vbasedev->dev;
     g_autofree char *qom_path = NULL;
     Object *obj;
@@ -105,8 +108,8 @@ static void vfio_migration_send_event(VFIODevice *vbasedev)
     g_assert(obj);
     qom_path = object_get_canonical_path(obj);
 
-    qapi_event_send_vfio_migration(
-        dev->id, qom_path, mig_state_to_qapi_state(migration->device_state));
+    qapi_event_send_vfio_migration(dev->id, qom_path,
+                                   mig_state_to_qapi_state(state, prepare));
 }
 
 static void vfio_migration_set_device_state(VFIODevice *vbasedev,
@@ -118,7 +121,7 @@ static void vfio_migration_set_device_state(VFIODevice *vbasedev,
                                           mig_state_to_str(state));
 
     migration->device_state = state;
-    vfio_migration_send_event(vbasedev);
+    vfio_migration_send_event(vbasedev, state, false);
 }
 
 int vfio_migration_set_state(VFIODevice *vbasedev,
@@ -143,6 +146,16 @@ int vfio_migration_set_state(VFIODevice *vbasedev,
 
     if (new_state == migration->device_state) {
         return 0;
+    }
+
+    /*
+     * Send a prepare event before initiating the PRE_COPY_P2P transition to
+     * ensure timely event delivery regardless of how long the state transition
+     * takes.
+     */
+    if (new_state == VFIO_DEVICE_STATE_PRE_COPY_P2P) {
+        vfio_migration_send_event(vbasedev, VFIO_DEVICE_STATE_PRE_COPY_P2P,
+                                  true);
     }
 
     feature->argsz = sizeof(buf);
@@ -916,10 +929,10 @@ static int vfio_migration_state_notifier(NotifierWithReturn *notifier,
 
     trace_vfio_migration_state_notifier(vbasedev->name, e->type);
 
-    if (e->type == MIG_EVENT_PRECOPY_FAILED) {
+    if (e->type == MIG_EVENT_FAILED) {
         /*
          * MigrationNotifyFunc may not return an error code and an Error
-         * object for MIG_EVENT_PRECOPY_FAILED. Hence, report the error
+         * object for MIG_EVENT_FAILED. Hence, report the error
          * locally and ignore the errp argument.
          */
         ret = vfio_migration_set_state_or_reset(vbasedev,
@@ -1152,6 +1165,32 @@ static bool vfio_viommu_preset(VFIODevice *vbasedev)
     return vbasedev->bcontainer->space->as != &address_space_memory;
 }
 
+static bool vfio_dirty_tracking_exceed_limit(VFIODevice *vbasedev)
+{
+    VFIOContainer *bcontainer = vbasedev->bcontainer;
+    uint64_t max_size, page_size;
+
+    if (!bcontainer->dirty_pages_supported) {
+        return false;
+    }
+
+    /*
+     * VFIO IOMMU type1 driver has limitation of bitmap size on unmap_bitmap
+     * ioctl(), calculate the limit and compare with guest memory size to
+     * catch dirty tracking failure early.
+     *
+     * This limit is 8TB with default kernel and QEMU config, we are a bit
+     * conservative here as VM memory layout may be nonconsecutive or VM
+     * can run with vIOMMU enabled so the limitation could be relaxed. One
+     * can also switch to use IOMMUFD backend if there is a need to migrate
+     * large VM.
+     */
+    page_size = 1ULL << ctz64(bcontainer->dirty_pgsizes);
+    max_size = bcontainer->max_dirty_bitmap_size * BITS_PER_BYTE * page_size;
+
+    return current_machine->ram_size > max_size;
+}
+
 /*
  * Return true when either migration initialized or blocker registered.
  * Currently only return false when adding blocker fails which will
@@ -1183,13 +1222,19 @@ bool vfio_migration_realize(VFIODevice *vbasedev, Error **errp)
         return !vfio_block_migration(vbasedev, err, errp);
     }
 
-    if ((!vbasedev->dirty_pages_supported ||
-         vbasedev->device_dirty_page_tracking == ON_OFF_AUTO_OFF) &&
+    if (vfio_device_dirty_pages_disabled(vbasedev) &&
         !vbasedev->iommu_dirty_tracking) {
         if (vbasedev->enable_migration == ON_OFF_AUTO_AUTO) {
             error_setg(&err,
                        "%s: VFIO device doesn't support device and "
                        "IOMMU dirty tracking", vbasedev->name);
+            goto add_blocker;
+        }
+
+        if (vfio_dirty_tracking_exceed_limit(vbasedev)) {
+            error_setg(&err, "%s: Migration is currently not supported with "
+                       "large memory VM due to dirty tracking limitation in "
+                       "backend", vbasedev->name);
             goto add_blocker;
         }
 
@@ -1202,7 +1247,8 @@ bool vfio_migration_realize(VFIODevice *vbasedev, Error **errp)
         goto out_deinit;
     }
 
-    if (vfio_viommu_preset(vbasedev)) {
+    if (!vfio_device_dirty_pages_disabled(vbasedev) &&
+        vfio_viommu_preset(vbasedev)) {
         error_setg(&err, "%s: Migration is currently not supported "
                    "with vIOMMU enabled", vbasedev->name);
         goto add_blocker;

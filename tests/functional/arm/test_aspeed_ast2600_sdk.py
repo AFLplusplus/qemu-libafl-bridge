@@ -14,32 +14,37 @@ from qemu_test import exec_command_and_wait_for_pattern
 
 class AST2600Machine(AspeedTest):
 
-    ASSET_SDK_V908_AST2600 = Asset(
-        'https://github.com/AspeedTech-BMC/openbmc/releases/download/v09.08/ast2600-default-obmc.tar.gz',
-        'a0414f14ad696550efe083c2156dbeda855c08cc9ae7f40fe1b41bf292295f82')
+    ASSET_SDK_V1101_AST2600 = Asset(
+        'https://github.com/AspeedTech-BMC/openbmc/releases/download/v11.01/ast2600-default-image.tar.gz',
+        '3c5b4d4ccf27b0d208a073f98426db54cd751b96143180cd15df1a83978f832c')
 
     def do_ast2600_pcie_test(self):
         exec_command_and_wait_for_pattern(self,
-            'lspci -s 80:00.0',
-            '80:00.0 Host bridge: '
-            'ASPEED Technology, Inc. Device 2600')
-        exec_command_and_wait_for_pattern(self,
-            'lspci -s 80:08.0',
-            '80:08.0 PCI bridge: '
+            'lspci -s 00:08.0',
+            '00:08.0 PCI bridge: '
             'ASPEED Technology, Inc. AST1150 PCI-to-PCI Bridge')
         exec_command_and_wait_for_pattern(self,
-            'lspci -s 81:00.0',
-            '81:00.0 Ethernet controller: '
+            'lspci -s 01:00.0',
+            '01:00.0 Ethernet controller: '
             'Intel Corporation 82574L Gigabit Network Connection')
         exec_command_and_wait_for_pattern(self,
             'ip addr show dev eth4',
             'inet 10.0.2.15/24')
 
+    def do_ast2600_i3c_test(self):
+        exec_command_and_wait_for_pattern(self,
+            'i3ctransfer -d /dev/bus/i3c/5-1234567890ab'
+            ' -w 0x12,0x34,0x56,0x78,0x90,0xab,0xcd,0xef',
+            'Success on message 0')
+        exec_command_and_wait_for_pattern(self,
+            'i3ctransfer -d /dev/bus/i3c/5-1234567890ab -r 8 | grep 0x | xargs',
+            '0x12 0x34 0x56 0x78 0x90 0xab 0xcd 0xef')
+
     def test_arm_ast2600_evb_sdk(self):
         self.set_machine('ast2600-evb')
         self.require_netdev('user')
 
-        self.archive_extract(self.ASSET_SDK_V908_AST2600)
+        self.archive_extract(self.ASSET_SDK_V1101_AST2600)
 
         self.vm.add_args('-device',
             'tmp105,bus=aspeed.i2c.bus.5,address=0x4d,id=tmp-test')
@@ -47,8 +52,10 @@ class AST2600Machine(AspeedTest):
             'ds1338,bus=aspeed.i2c.bus.5,address=0x32')
         self.vm.add_args('-device', 'e1000e,netdev=net1,bus=pcie.0')
         self.vm.add_args('-netdev', 'user,id=net1')
+        self.vm.add_args('-device',
+            'mock-i3c-target,bus=dw.i3c.5,pid=0xab9078563412')
         self.do_test_arm_aspeed_sdk_start(
-            self.scratch_file("ast2600-default", "image-bmc"))
+            self.scratch_file("ast2600-default-image", "image-bmc"))
 
         self.wait_for_console_pattern('ast2600-default login:')
 
@@ -73,21 +80,7 @@ class AST2600Machine(AspeedTest):
         exec_command_and_wait_for_pattern(self,
              '/sbin/hwclock -f /dev/rtc1', year)
         self.do_ast2600_pcie_test()
-
-    def test_arm_ast2600_otp_blockdev_device(self):
-        self.vm.set_machine("ast2600-evb")
-
-        image_path = self.archive_extract(self.ASSET_SDK_V908_AST2600)
-        otp_img = self.generate_otpmem_image()
-
-        self.vm.set_console()
-        self.vm.add_args(
-            "-blockdev", f"driver=file,filename={otp_img},node-name=otp",
-            "-global", "aspeed-otp.drive=otp",
-        )
-        self.do_test_arm_aspeed_sdk_start(
-            self.scratch_file("ast2600-default", "image-bmc"))
-        self.wait_for_console_pattern("ast2600-default login:")
+        self.do_ast2600_i3c_test()
 
 
 if __name__ == '__main__':

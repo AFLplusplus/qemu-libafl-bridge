@@ -25,7 +25,7 @@
 #include "exec/page-protection.h"
 #include "exec/translation-block.h"
 #include "exec/target_page.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "fpu/softfloat.h"
 #include "tcg/debug-assert.h"
 #include "accel/tcg/cpu-ops.h"
@@ -99,7 +99,7 @@ static void rx_cpu_reset_hold(Object *obj, ResetType type)
     resetvec = rom_ptr(0xfffffffc, 4);
     if (resetvec) {
         /* In the case of kernel, it is ignored because it is not set. */
-        env->pc = ldl_p(resetvec);
+        env->pc = ldl_le_p(resetvec);
     }
     rx_cpu_unpack_psw(env, 0, 1);
     env->regs[0] = env->isp = env->usp = 0;
@@ -178,7 +178,7 @@ static void rx_cpu_set_irq(void *opaque, int no, int request)
     }
 }
 
-static void rx_cpu_disas_set_info(CPUState *cpu, disassemble_info *info)
+static void rx_cpu_disas_set_info(const CPUState *cpu, disassemble_info *info)
 {
     info->endian = BFD_ENDIAN_LITTLE;
     info->mach = bfd_mach_rx;

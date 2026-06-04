@@ -40,7 +40,7 @@ build-system-ubuntu:
   variables:
     IMAGE: ubuntu2204
     CONFIGURE_ARGS: --enable-docs --enable-rust
-    TARGETS: alpha-softmmu microblazeel-softmmu mips64el-softmmu
+    TARGETS: alpha-softmmu microblaze-softmmu mips64el-softmmu
     MAKE_CHECK_ARGS: check-build
 
 check-system-ubuntu:
@@ -101,8 +101,7 @@ crash-test-debian:
     IMAGE: debian
   script:
     - cd build
-    - make NINJA=":" check-venv
-    - pyvenv/bin/python3 scripts/device-crash-test -q --tcg-only ./qemu-system-i386
+    - ./run scripts/device-crash-test -q --tcg-only ./qemu-system-i386
 
 build-system-fedora:
   extends:
@@ -113,7 +112,7 @@ build-system-fedora:
   variables:
     IMAGE: fedora
     CONFIGURE_ARGS: --disable-gcrypt --enable-nettle --enable-docs --enable-crypto-afalg --enable-rust
-    TARGETS: microblaze-softmmu mips-softmmu
+    TARGETS: mips-softmmu
       xtensa-softmmu m68k-softmmu riscv32-softmmu ppc-softmmu sparc64-softmmu
     MAKE_CHECK_ARGS: check-build check-doc
 
@@ -158,9 +157,8 @@ crash-test-fedora:
     IMAGE: fedora
   script:
     - cd build
-    - make NINJA=":" check-venv
-    - pyvenv/bin/python3 scripts/device-crash-test -q ./qemu-system-ppc
-    - pyvenv/bin/python3 scripts/device-crash-test -q ./qemu-system-riscv32
+    - ./run scripts/device-crash-test -q ./qemu-system-ppc
+    - ./run scripts/device-crash-test -q ./qemu-system-riscv32
 
 build-system-centos:
   extends:
@@ -350,15 +348,15 @@ build-tcg-disabled:
     - make -j"$JOBS"
     - make check-unit
     - make check-qapi-schema
-    - cd tests/qemu-iotests/
-    - ./check -raw 001 002 003 004 005 008 009 010 011 012 021 025 032 033 048
-            052 063 077 086 101 104 106 113 148 150 151 152 157 159 160 163
-            170 171 184 192 194 208 221 226 227 236 253 277 image-fleecing
-    - ./check -qcow2 028 051 056 057 058 065 068 082 085 091 095 096 102 122
-            124 132 139 142 144 145 151 152 155 157 165 194 196 200 202
-            208 209 216 218 227 234 246 247 248 250 254 255 257 258
-            260 261 262 263 264 270 272 273 277 279 image-fleecing
-    - cd ../..
+    - ./run tests/qemu-iotests/check -raw 001 002 003 004 005 008 009
+            010 011 012 021 025 032 033 048 052 063 077 086 101 104 106
+            113 148 150 151 152 157 159 160 163 170 171 184 192 194 208
+            221 226 227 236 253 277 image-fleecing
+    - ./run tests/qemu-iotests/check -qcow2 028 051 056 057 058 065 068
+            082 085 091 095 096 102 122 124 132 139 142 144 145 151 152
+            155 157 165 194 196 200 202 208 209 216 218 227 234 246 247
+            248 250 254 255 257 258 260 261 262 263 264 270 272 273 277
+            279 image-fleecing
     - make distclean
 
 build-user:
@@ -378,18 +376,6 @@ build-user-static:
   variables:
     IMAGE: debian-all-test-cross
     CONFIGURE_ARGS: --disable-tools --disable-system --static
-      --target-list-exclude=alpha-linux-user,sh4-linux-user
-    MAKE_CHECK_ARGS: check-tcg
-
-# targets stuck on older compilers
-build-legacy:
-  extends: .native_build_job_template
-  needs:
-    - job: amd64-debian-legacy-cross-container
-  variables:
-    IMAGE: debian-legacy-test-cross
-    TARGETS: alpha-linux-user alpha-softmmu sh4-linux-user
-    CONFIGURE_ARGS: --disable-tools
     MAKE_CHECK_ARGS: check-tcg
 
 build-user-hexagon:
@@ -628,7 +614,7 @@ build-oss-fuzz:
     IMAGE: fedora
   script:
     - mkdir build-oss-fuzz
-    - export LSAN_OPTIONS=suppressions=scripts/oss-fuzz/lsan_suppressions.txt
+    - export LSAN_OPTIONS=suppressions=scripts/lsan_suppressions.txt
     - CC="clang" CXX="clang++" CFLAGS="-fsanitize=address"
       ./scripts/oss-fuzz/build.sh
     - export ASAN_OPTIONS="fast_unwind_on_malloc=0"
@@ -678,7 +664,7 @@ build-without-defaults:
       --disable-pie
       --disable-qom-cast-debug
       --disable-strip
-      --target-list-exclude=aarch64-softmmu,microblaze-softmmu,mips64-softmmu,mipsel-softmmu,ppc64-softmmu,sh4el-softmmu,xtensa-softmmu,x86_64-softmmu
+      --target-list-exclude=aarch64-softmmu,mips64-softmmu,mipsel-softmmu,ppc64-softmmu,sh4el-softmmu,xtensa-softmmu,x86_64-softmmu
     MAKE_CHECK_ARGS: check
 
 build-libvhost-user:
@@ -785,11 +771,20 @@ coverity:
     # Always manual on forks even if $QEMU_CI == "2"
     - when: manual
 
-build-wasm:
+build-wasm64-64bit:
   extends: .wasm_build_job_template
   timeout: 2h
   needs:
-    - job: wasm-emsdk-cross-container
+    - job: wasm64-emsdk-cross-container
   variables:
-    IMAGE: emsdk-wasm32-cross
-    CONFIGURE_ARGS: --static --disable-tools --enable-debug --enable-tcg-interpreter
+    IMAGE: emsdk-wasm64-cross
+    CONFIGURE_ARGS: --static --cpu=wasm64 --disable-tools --enable-debug --enable-tcg-interpreter
+
+build-wasm64-32bit:
+  extends: .wasm_build_job_template
+  timeout: 2h
+  needs:
+    - job: wasm64-emsdk-cross-container
+  variables:
+    IMAGE: emsdk-wasm64-cross
+    CONFIGURE_ARGS: --static --cpu=wasm64 --wasm64-32bit-address-limit --disable-tools --enable-debug --enable-tcg-interpreter

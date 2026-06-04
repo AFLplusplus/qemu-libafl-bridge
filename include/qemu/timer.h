@@ -6,6 +6,7 @@
 #include "qemu/host-utils.h"
 
 #define NANOSECONDS_PER_SECOND 1000000000LL
+#define MICROSECONDS_PER_SECOND 1000000LL
 
 /* timers */
 
@@ -864,15 +865,6 @@ static inline int64_t cpu_get_host_ticks(void)
                           "beq-    $-8"
                           : "=r" (retval));
     return retval;
-}
-
-#elif defined(__i386__)
-
-static inline int64_t cpu_get_host_ticks(void)
-{
-    int64_t val;
-    asm volatile ("rdtsc" : "=A" (val));
-    return val;
 }
 
 #elif defined(__x86_64__)

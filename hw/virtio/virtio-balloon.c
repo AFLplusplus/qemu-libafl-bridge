@@ -20,8 +20,8 @@
 #include "qemu/madvise.h"
 #include "hw/virtio/virtio.h"
 #include "hw/mem/pc-dimm.h"
-#include "hw/qdev-properties.h"
-#include "hw/boards.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/boards.h"
 #include "system/balloon.h"
 #include "system/ramblock.h"
 #include "hw/virtio/virtio-balloon.h"
@@ -708,9 +708,6 @@ static size_t virtio_balloon_config_size(VirtIOBalloon *s)
 {
     uint64_t features = s->host_features;
 
-    if (s->qemu_4_0_config_size) {
-        return sizeof(struct virtio_balloon_config);
-    }
     if (virtio_has_feature(features, VIRTIO_BALLOON_F_PAGE_POISON)) {
         return sizeof(struct virtio_balloon_config);
     }
@@ -1054,8 +1051,6 @@ static const Property virtio_balloon_properties[] = {
      * is disabled, resulting in QEMU 3.1 migration incompatibility.  This
      * property retains this quirk for QEMU 4.1 machine types.
      */
-    DEFINE_PROP_BOOL("qemu-4-0-config-size", VirtIOBalloon,
-                     qemu_4_0_config_size, false),
     DEFINE_PROP_LINK("iothread", VirtIOBalloon, iothread, TYPE_IOTHREAD,
                      IOThread *),
 };

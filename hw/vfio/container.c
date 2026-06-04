@@ -15,7 +15,7 @@
 #include <linux/vfio.h>
 
 #include "system/tcg.h"
-#include "system/ram_addr.h"
+#include "system/ramblock.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "hw/vfio/vfio-container.h"
@@ -178,10 +178,7 @@ bool vfio_container_devices_dirty_tracking_is_supported(
     VFIODevice *vbasedev;
 
     QLIST_FOREACH(vbasedev, &bcontainer->device_list, container_next) {
-        if (vbasedev->device_dirty_page_tracking == ON_OFF_AUTO_OFF) {
-            return false;
-        }
-        if (!vbasedev->dirty_pages_supported) {
+        if (vfio_device_dirty_pages_disabled(vbasedev)) {
             return false;
         }
     }
@@ -208,18 +205,18 @@ static int vfio_device_dma_logging_report(VFIODevice *vbasedev, hwaddr iova,
     feature->flags = VFIO_DEVICE_FEATURE_GET |
                      VFIO_DEVICE_FEATURE_DMA_LOGGING_REPORT;
 
-    return vbasedev->io_ops->device_feature(vbasedev, feature);
+    return vfio_device_get_feature(vbasedev, feature);
 }
 
 static int vfio_container_iommu_query_dirty_bitmap(
     const VFIOContainer *bcontainer, VFIOBitmap *vbmap, hwaddr iova,
-    hwaddr size, Error **errp)
+    hwaddr size, uint64_t backend_flag, Error **errp)
 {
     VFIOIOMMUClass *vioc = VFIO_IOMMU_GET_CLASS(bcontainer);
 
     g_assert(vioc->query_dirty_bitmap);
     return vioc->query_dirty_bitmap(bcontainer, vbmap, iova, size,
-                                               errp);
+                                    backend_flag, errp);
 }
 
 static int vfio_container_devices_query_dirty_bitmap(
@@ -247,7 +244,9 @@ static int vfio_container_devices_query_dirty_bitmap(
 
 int vfio_container_query_dirty_bitmap(const VFIOContainer *bcontainer,
                                       uint64_t iova, uint64_t size,
-                                      hwaddr translated_addr, Error **errp)
+                                      uint64_t backend_flag,
+                                      hwaddr translated_addr,
+                                      Error **errp)
 {
     bool all_device_dirty_tracking =
         vfio_container_devices_dirty_tracking_is_supported(bcontainer);
@@ -274,7 +273,7 @@ int vfio_container_query_dirty_bitmap(const VFIOContainer *bcontainer,
                                                         errp);
     } else {
         ret = vfio_container_iommu_query_dirty_bitmap(bcontainer, &vbmap, iova, size,
-                                                     errp);
+                                                      backend_flag, errp);
     }
 
     if (ret) {
@@ -285,8 +284,9 @@ int vfio_container_query_dirty_bitmap(const VFIOContainer *bcontainer,
                                                          translated_addr,
                                                          vbmap.pages);
 
-    trace_vfio_container_query_dirty_bitmap(iova, size, vbmap.size,
-                                            translated_addr, dirty_pages);
+    trace_vfio_container_query_dirty_bitmap(iova, size, backend_flag,
+                                            vbmap.size, translated_addr,
+                                            dirty_pages);
 out:
     g_free(vbmap.bitmap);
 

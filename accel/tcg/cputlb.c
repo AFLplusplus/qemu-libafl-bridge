@@ -30,7 +30,7 @@
 #include "accel/tcg/cpu-mmu-index.h"
 #include "exec/cputlb.h"
 #include "exec/tb-flush.h"
-#include "system/ram_addr.h"
+#include "system/ramblock.h"
 #include "exec/mmu-access-type.h"
 #include "exec/tlb-common.h"
 #include "exec/vaddr.h"
@@ -864,8 +864,9 @@ void tlb_flush_page_bits_by_mmuidx_all_cpus_synced(CPUState *src_cpu,
 void tlb_protect_code(ram_addr_t ram_addr)
 {
     physical_memory_test_and_clear_dirty(ram_addr & TARGET_PAGE_MASK,
-                                             TARGET_PAGE_SIZE,
-                                             DIRTY_MEMORY_CODE);
+                                         TARGET_PAGE_SIZE,
+                                         DIRTY_MEMORY_CODE,
+                                         NULL);
 }
 
 /* update the TLB so that writes in physical page 'phys_addr' are no longer
@@ -1096,7 +1097,7 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
         }
     } else {
         /* I/O or ROMD */
-        iotlb = memory_region_section_get_iotlb(cpu, section) + xlat;
+        iotlb = xlat;
         /*
          * Writes to romd devices must go through MMIO to enable write.
          * Reads to romd devices go through the ram_ptr found above,
@@ -1147,10 +1148,9 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
     /*
      * When memory region is ram, iotlb contains a TARGET_PAGE_BITS
      * aligned ram_addr_t of the page base of the target RAM.
-     * Otherwise, iotlb contains
-     *  - a physical section number in the lower TARGET_PAGE_BITS
-     *  - the offset within section->mr of the page base (I/O, ROMD) with the
-     *    TARGET_PAGE_BITS masked off.
+     * Otherwise, iotlb contains a TARGET_PAGE_BITS aligned
+     * offset within section->mr of the page base (I/O, ROMD)
+     *
      * We subtract addr_page (which is page aligned and thus won't
      * disturb the low bits) to give an offset which can be added to the
      * (non-page-aligned) vaddr of the eventual memory access to get
@@ -1160,7 +1160,8 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
      */
     desc->fulltlb[index] = *full;
     full = &desc->fulltlb[index];
-    full->xlat_section = iotlb - addr_page;
+    full->xlat_offset = iotlb - addr_page;
+    full->section = section;
     full->phys_addr = paddr_page;
 
     /* Now calculate the new entry */
@@ -1276,14 +1277,14 @@ static inline void cpu_unaligned_access(CPUState *cpu, vaddr addr,
 }
 
 static MemoryRegionSection *
-io_prepare(hwaddr *out_offset, CPUState *cpu, hwaddr xlat,
-           MemTxAttrs attrs, vaddr addr, uintptr_t retaddr)
+io_prepare(hwaddr *out_offset, CPUState *cpu, CPUTLBEntryFull *full,
+           vaddr addr, uintptr_t retaddr)
 {
     MemoryRegionSection *section;
     hwaddr mr_offset;
 
-    section = iotlb_to_section(cpu, xlat, attrs);
-    mr_offset = (xlat & TARGET_PAGE_MASK) + addr;
+    section = full->section;
+    mr_offset = full->xlat_offset + addr;
     cpu->mem_io_pc = retaddr;
     if (!cpu->neg.can_do_io) {
         cpu_io_recompile(cpu, retaddr);
@@ -1342,7 +1343,7 @@ static bool victim_tlb_hit(CPUState *cpu, size_t mmu_idx, size_t index,
 static void notdirty_write(CPUState *cpu, vaddr mem_vaddr, unsigned size,
                            CPUTLBEntryFull *full, uintptr_t retaddr)
 {
-    ram_addr_t ram_addr = mem_vaddr + full->xlat_section;
+    ram_addr_t ram_addr = mem_vaddr + full->xlat_offset;
 
     trace_memory_notdirty_write_access(mem_vaddr, ram_addr, size);
 
@@ -1558,18 +1559,18 @@ tb_page_addr_t get_page_addr_code_hostp(CPUArchState *env, vaddr addr,
 
     (void)probe_access_internal(env_cpu(env), addr, 1, MMU_INST_FETCH,
                                 cpu_mmu_index(env_cpu(env), true), false,
-                                &p, &full, 0, false);
+                                hostp, &full, 0, false);
+
+    p = *hostp;
     if (p == NULL) {
         return -1;
     }
 
     if (full->lg_page_size < TARGET_PAGE_BITS) {
+        *hostp = NULL;
         return -1;
     }
 
-    if (hostp) {
-        *hostp = p;
-    }
     return qemu_ram_addr_from_host_nofail(p);
 }
 
@@ -1606,9 +1607,7 @@ bool tlb_plugin_lookup(CPUState *cpu, vaddr addr, int mmu_idx,
 
     /* We must have an iotlb entry for MMIO */
     if (tlb_addr & TLB_MMIO) {
-        MemoryRegionSection *section =
-            iotlb_to_section(cpu, full->xlat_section & ~TARGET_PAGE_MASK,
-                             full->attrs);
+        MemoryRegionSection *section = full->section;
         data->is_io = true;
         data->mr = section->mr;
     } else {
@@ -2014,12 +2013,10 @@ static uint64_t do_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
     MemoryRegionSection *section;
     MemoryRegion *mr;
     hwaddr mr_offset;
-    MemTxAttrs attrs;
 
     tcg_debug_assert(size > 0 && size <= 8);
 
-    attrs = full->attrs;
-    section = io_prepare(&mr_offset, cpu, full->xlat_section, attrs, addr, ra);
+    section = io_prepare(&mr_offset, cpu, full, addr, ra);
     mr = section->mr;
 
     BQL_LOCK_GUARD();
@@ -2034,13 +2031,11 @@ static Int128 do_ld16_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
     MemoryRegionSection *section;
     MemoryRegion *mr;
     hwaddr mr_offset;
-    MemTxAttrs attrs;
     uint64_t a, b;
 
     tcg_debug_assert(size > 8 && size <= 16);
 
-    attrs = full->attrs;
-    section = io_prepare(&mr_offset, cpu, full->xlat_section, attrs, addr, ra);
+    section = io_prepare(&mr_offset, cpu, full, addr, ra);
     mr = section->mr;
 
     BQL_LOCK_GUARD();
@@ -2119,25 +2114,6 @@ static uint64_t do_ld_parts_beN(MMULookupPageData *p, uint64_t ret_be)
 }
 
 /**
- * do_ld_parts_be4
- * @p: translation parameters
- * @ret_be: accumulated data
- *
- * As do_ld_bytes_beN, but with one atomic load.
- * Four aligned bytes are guaranteed to cover the load.
- */
-static uint64_t do_ld_whole_be4(MMULookupPageData *p, uint64_t ret_be)
-{
-    int o = p->addr & 3;
-    uint32_t x = load_atomic4(p->haddr - o);
-
-    x = cpu_to_be32(x);
-    x <<= o * 8;
-    x >>= (4 - p->size) * 8;
-    return (ret_be << (p->size * 8)) | x;
-}
-
-/**
  * do_ld_parts_be8
  * @p: translation parameters
  * @ret_be: accumulated data
@@ -2149,7 +2125,7 @@ static uint64_t do_ld_whole_be8(CPUState *cpu, uintptr_t ra,
                                 MMULookupPageData *p, uint64_t ret_be)
 {
     int o = p->addr & 7;
-    uint64_t x = load_atomic8_or_exit(cpu, ra, p->haddr - o);
+    uint64_t x = load_atomic8(p->haddr - o);
 
     x = cpu_to_be64(x);
     x <<= o * 8;
@@ -2214,11 +2190,7 @@ static uint64_t do_ld_beN(CPUState *cpu, MMULookupPageData *p,
         if (atom == MO_ATOM_IFALIGN_PAIR
             ? p->size == half_size
             : p->size >= half_size) {
-            if (!HAVE_al8_fast && p->size < 4) {
-                return do_ld_whole_be4(p, ret_be);
-            } else {
-                return do_ld_whole_be8(cpu, ra, p, ret_be);
-            }
+            return do_ld_whole_be8(cpu, ra, p, ret_be);
         }
         /* fall through */
 
@@ -2555,12 +2527,10 @@ static uint64_t do_st_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
     MemoryRegionSection *section;
     hwaddr mr_offset;
     MemoryRegion *mr;
-    MemTxAttrs attrs;
 
     tcg_debug_assert(size > 0 && size <= 8);
 
-    attrs = full->attrs;
-    section = io_prepare(&mr_offset, cpu, full->xlat_section, attrs, addr, ra);
+    section = io_prepare(&mr_offset, cpu, full, addr, ra);
     mr = section->mr;
 
     BQL_LOCK_GUARD();
@@ -2575,12 +2545,10 @@ static uint64_t do_st16_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
     MemoryRegionSection *section;
     MemoryRegion *mr;
     hwaddr mr_offset;
-    MemTxAttrs attrs;
 
     tcg_debug_assert(size > 8 && size <= 16);
 
-    attrs = full->attrs;
-    section = io_prepare(&mr_offset, cpu, full->xlat_section, attrs, addr, ra);
+    section = io_prepare(&mr_offset, cpu, full, addr, ra);
     mr = section->mr;
 
     BQL_LOCK_GUARD();
@@ -2624,13 +2592,7 @@ static uint64_t do_st_leN(CPUState *cpu, MMULookupPageData *p,
         if (atom == MO_ATOM_IFALIGN_PAIR
             ? p->size == half_size
             : p->size >= half_size) {
-            if (!HAVE_al8_fast && p->size <= 4) {
-                return store_whole_le4(p->haddr, p->size, val_le);
-            } else if (HAVE_al8) {
-                return store_whole_le8(p->haddr, p->size, val_le);
-            } else {
-                cpu_loop_exit_atomic(cpu, ra);
-            }
+            return store_whole_le8(p->haddr, p->size, val_le);
         }
         /* fall through */
 
@@ -2924,10 +2886,8 @@ static void do_st16_mmu(CPUState *cpu, vaddr addr, Int128 val,
 #define DATA_SIZE 4
 #include "atomic_template.h"
 
-#ifdef CONFIG_ATOMIC64
 #define DATA_SIZE 8
 #include "atomic_template.h"
-#endif
 
 #if defined(CONFIG_ATOMIC128) || HAVE_CMPXCHG128
 #define DATA_SIZE 16

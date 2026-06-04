@@ -178,7 +178,7 @@ void hppa_cpu_do_interrupt(CPUState *cs)
                         break;
                     }
                 }
-                env->cr[CR_IIR] = ldl_phys(cs->as, paddr);
+                env->cr[CR_IIR] = ldl_be_phys(cs->as, paddr);
                 if (i == EXCP_ASSIST) {
                     /* stuff insn code into bits of FP exception register #1 */
                     env->fr[0] |= (env->cr[CR_IIR] & 0x03ffffff);
@@ -203,7 +203,12 @@ void hppa_cpu_do_interrupt(CPUState *cs)
 
     /* step 7 */
     if (i == EXCP_TOC) {
-        env->iaoq_f = hppa_form_gva(env, 0, FIRMWARE_START);
+        hwaddr pdc_toc_addr = FIRMWARE_START;
+
+        /* for 64-bit include the high bits of PDC */
+        pdc_toc_addr |= ((uint64_t) FIRMWARE_HIGH) << 32;
+        env->iaoq_f = hppa_form_gva(env, 0, pdc_toc_addr);
+
         /* help SeaBIOS and provide iaoq_b and iasq_back in shadow regs */
         env->gr[24] = env->cr_back[0];
         env->gr[25] = env->cr_back[1];

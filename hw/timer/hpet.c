@@ -25,13 +25,13 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "qemu/timer.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/timer/hpet.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/rtc/mc146818rtc.h"
 #include "hw/rtc/mc146818rtc_regs.h"
 #include "migration/vmstate.h"
@@ -75,7 +75,6 @@ struct HPETState {
     QemuMutex lock;
     MemoryRegion iomem;
     uint64_t hpet_offset;
-    bool hpet_offset_saved;
     QemuSeqLock state_version;
     qemu_irq irqs[HPET_NUM_IRQ_ROUTES];
     uint32_t flags;
@@ -272,11 +271,6 @@ static int hpet_post_load(void *opaque, int version_id)
         t->cmp64 = hpet_calculate_cmp64(t, s->hpet_counter, t->cmp);
         t->last = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - NANOSECONDS_PER_SECOND;
     }
-    /* Recalculate the offset between the main counter and guest time */
-    if (!s->hpet_offset_saved) {
-        s->hpet_offset = ticks_to_ns(s->hpet_counter)
-                        - qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    }
 
     return 0;
 }
@@ -285,7 +279,7 @@ static bool hpet_offset_needed(void *opaque)
 {
     HPETState *s = opaque;
 
-    return hpet_enabled(s) && s->hpet_offset_saved;
+    return hpet_enabled(s);
 }
 
 static bool hpet_rtc_irq_level_needed(void *opaque)
@@ -470,13 +464,14 @@ static uint64_t hpet_ram_read(void *opaque, hwaddr addr,
         }
     } else {
         uint8_t timer_id = (addr - 0x100) / 0x20;
-        HPETTimer *timer = &s->timer[timer_id];
+        HPETTimer *timer;
 
-        if (timer_id > s->num_timers) {
+        if (timer_id >= s->num_timers) {
             trace_hpet_timer_id_out_of_range(timer_id);
             return 0;
         }
 
+        timer = &s->timer[timer_id];
         switch (addr & 0x1f) {
         case HPET_TN_CFG: // including interrupt capabilities
             return timer->config >> shift;
@@ -570,13 +565,15 @@ static void hpet_ram_write(void *opaque, hwaddr addr,
         }
     } else {
         uint8_t timer_id = (addr - 0x100) / 0x20;
-        HPETTimer *timer = &s->timer[timer_id];
+        HPETTimer *timer;
 
         trace_hpet_ram_write_timer_id(timer_id);
-        if (timer_id > s->num_timers) {
+        if (timer_id >= s->num_timers) {
             trace_hpet_timer_id_out_of_range(timer_id);
             return;
         }
+
+        timer = &s->timer[timer_id];
         switch (addr & 0x18) {
         case HPET_TN_CFG:
             trace_hpet_ram_write_tn_cfg(addr & 4);
@@ -648,7 +645,7 @@ static const MemoryRegionOps hpet_ram_ops = {
         .min_access_size = 4,
         .max_access_size = 8,
     },
-    .endianness = DEVICE_NATIVE_ENDIAN,
+    .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
 static void hpet_reset(DeviceState *d)
@@ -766,7 +763,6 @@ static const Property hpet_device_properties[] = {
     DEFINE_PROP_UINT8("timers", HPETState, num_timers, HPET_MIN_TIMERS),
     DEFINE_PROP_BIT("msi", HPETState, flags, HPET_MSI_SUPPORT, false),
     DEFINE_PROP_UINT32(HPET_INTCAP, HPETState, intcap, 0),
-    DEFINE_PROP_BOOL("hpet-offset-saved", HPETState, hpet_offset_saved, true),
 };
 
 static void hpet_device_class_init(ObjectClass *klass, const void *data)

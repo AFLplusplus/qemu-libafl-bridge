@@ -10,23 +10,11 @@ amd64-debian-user-cross-container:
   variables:
     NAME: debian-all-test-cross
 
-amd64-debian-legacy-cross-container:
-  extends: .container_job_template
-  stage: containers
-  variables:
-    NAME: debian-legacy-test-cross
-
 arm64-debian-cross-container:
   extends: .container_job_template
   stage: containers
   variables:
     NAME: debian-arm64-cross
-
-armhf-debian-cross-container:
-  extends: .container_job_template
-  stage: containers
-  variables:
-    NAME: debian-armhf-cross
 
 hexagon-cross-container:
   extends: .container_job_template
@@ -39,12 +27,6 @@ loongarch-debian-cross-container:
   stage: containers
   variables:
     NAME: debian-loongarch-cross
-
-i686-debian-cross-container:
-  extends: .container_job_template
-  stage: containers
-  variables:
-    NAME: debian-i686-cross
 
 mips64el-debian-cross-container:
   extends: .container_job_template
@@ -86,7 +68,7 @@ win64-fedora-cross-container:
   variables:
     NAME: fedora-win64-cross
 
-wasm-emsdk-cross-container:
+wasm64-emsdk-cross-container:
   extends: .container_job_template
   variables:
-    NAME: emsdk-wasm32-cross
+    NAME: emsdk-wasm64-cross

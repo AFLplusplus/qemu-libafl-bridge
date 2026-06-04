@@ -129,7 +129,7 @@ void alpha_cpu_record_sigsegv(CPUState *cs, vaddr address,
                               bool maperr, uintptr_t retaddr)
 {
     CPUAlphaState *env = cpu_env(cs);
-    target_ulong mmcsr, cause;
+    uint64_t mmcsr, cause;
 
     /* Assuming !maperr, infer the missing protection. */
     switch (access_type) {
@@ -165,17 +165,20 @@ void alpha_cpu_record_sigsegv(CPUState *cs, vaddr address,
 }
 #else
 /* Returns the OSF/1 entMM failure indication, or -1 on success.  */
-static int get_physical_address(CPUAlphaState *env, target_ulong addr,
+static int get_physical_address(CPUAlphaState *env, vaddr addr,
                                 int prot_need, int mmu_idx,
-                                target_ulong *pphys, int *pprot)
+                                hwaddr *pphys, int *pprot)
 {
+    const MemTxAttrs attrs = MEMTXATTRS_UNSPECIFIED;
     CPUState *cs = env_cpu(env);
     target_long saddr = addr;
-    target_ulong phys = 0;
-    target_ulong L1pte, L2pte, L3pte;
-    target_ulong pt, index;
+    hwaddr phys = 0;
+    uint64_t L1pte, L2pte, L3pte;
+    uint64_t pt;
+    uint16_t index;
     int prot = 0;
     int ret = MM_K_ACV;
+    MemTxResult txres;
 
     /* Handle physical accesses.  */
     if (mmu_idx == MMU_PHYS_IDX) {
@@ -214,17 +217,13 @@ static int get_physical_address(CPUAlphaState *env, target_ulong addr,
 
     pt = env->ptbr;
 
-    /* TODO: rather than using ldq_phys() to read the page table we should
-     * use address_space_ldq() so that we can handle the case when
-     * the page table read gives a bus fault, rather than ignoring it.
-     * For the existing code the zero data that ldq_phys will return for
-     * an access to invalid memory will result in our treating the page
-     * table as invalid, which may even be the right behaviour.
-     */
-
     /* L1 page table read.  */
     index = (addr >> (TARGET_PAGE_BITS + 20)) & 0x3ff;
-    L1pte = ldq_phys(cs->as, pt + index*8);
+    L1pte = address_space_ldq_le(cs->as, pt + index * 8, attrs, &txres);
+    if (txres != MEMTX_OK) {
+        /* bus fault */
+        goto exit;
+    }
 
     if (unlikely((L1pte & PTE_VALID) == 0)) {
         ret = MM_K_TNV;
@@ -237,7 +236,11 @@ static int get_physical_address(CPUAlphaState *env, target_ulong addr,
 
     /* L2 page table read.  */
     index = (addr >> (TARGET_PAGE_BITS + 10)) & 0x3ff;
-    L2pte = ldq_phys(cs->as, pt + index*8);
+    L2pte = address_space_ldq_le(cs->as, pt + index * 8, attrs, &txres);
+    if (txres != MEMTX_OK) {
+        /* bus fault */
+        goto exit;
+    }
 
     if (unlikely((L2pte & PTE_VALID) == 0)) {
         ret = MM_K_TNV;
@@ -250,7 +253,11 @@ static int get_physical_address(CPUAlphaState *env, target_ulong addr,
 
     /* L3 page table read.  */
     index = (addr >> TARGET_PAGE_BITS) & 0x3ff;
-    L3pte = ldq_phys(cs->as, pt + index*8);
+    L3pte = address_space_ldq_le(cs->as, pt + index * 8, attrs, &txres);
+    if (txres != MEMTX_OK) {
+        /* bus fault */
+        goto exit;
+    }
 
     phys = L3pte >> 32 << TARGET_PAGE_BITS;
     if (unlikely((L3pte & PTE_VALID) == 0)) {
@@ -290,7 +297,7 @@ static int get_physical_address(CPUAlphaState *env, target_ulong addr,
 
 hwaddr alpha_cpu_get_phys_page_debug(CPUState *cs, vaddr addr)
 {
-    target_ulong phys;
+    hwaddr phys;
     int prot, fail;
 
     fail = get_physical_address(cpu_env(cs), addr, 0, 0, &phys, &prot);
@@ -302,7 +309,7 @@ bool alpha_cpu_tlb_fill(CPUState *cs, vaddr addr, int size,
                         bool probe, uintptr_t retaddr)
 {
     CPUAlphaState *env = cpu_env(cs);
-    target_ulong phys;
+    hwaddr phys;
     int prot, fail;
 
     fail = get_physical_address(env, addr, 1 << access_type,

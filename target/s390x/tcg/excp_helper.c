@@ -24,7 +24,6 @@
 #include "exec/helper-proto.h"
 #include "exec/cputlb.h"
 #include "exec/target_page.h"
-#include "exec/watchpoint.h"
 #include "s390x-internal.h"
 #include "tcg_s390x.h"
 #ifndef CONFIG_USER_ONLY
@@ -33,7 +32,7 @@
 #include "system/memory.h"
 #include "hw/s390x/ioinst.h"
 #include "hw/s390x/s390_flic.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #endif
 #include "qemu/plugin.h"
 
@@ -55,8 +54,8 @@ G_NORETURN void tcg_s390_data_exception(CPUS390XState *env, uint32_t dxc,
     g_assert(dxc <= 0xff);
 #if !defined(CONFIG_USER_ONLY)
     /* Store the DXC into the lowcore */
-    stl_phys(env_cpu(env)->as,
-             env->psa + offsetof(LowCore, data_exc_code), dxc);
+    stl_be_phys(env_cpu(env)->as,
+                env->psa + offsetof(LowCore, data_exc_code), dxc);
 #endif
 
     /* Store the DXC into the FPC if AFP is enabled */
@@ -72,8 +71,8 @@ G_NORETURN void tcg_s390_vector_exception(CPUS390XState *env, uint32_t vxc,
     g_assert(vxc <= 0xff);
 #if !defined(CONFIG_USER_ONLY)
     /* Always store the VXC into the lowcore, without AFP it is undefined */
-    stl_phys(env_cpu(env)->as,
-             env->psa + offsetof(LowCore, data_exc_code), vxc);
+    stl_be_phys(env_cpu(env)->as,
+                env->psa + offsetof(LowCore, data_exc_code), vxc);
 #endif
 
     /* Always store the VXC into the FPC, without AFP it is undefined */
@@ -148,7 +147,8 @@ bool s390_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
                        bool probe, uintptr_t retaddr)
 {
     CPUS390XState *env = cpu_env(cs);
-    target_ulong vaddr, raddr;
+    vaddr vaddr;
+    hwaddr raddr;
     uint64_t asc, tec;
     int prot, excp;
 
@@ -607,37 +607,6 @@ bool s390_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
     return false;
 }
 
-void s390x_cpu_debug_excp_handler(CPUState *cs)
-{
-    CPUS390XState *env = cpu_env(cs);
-    CPUWatchpoint *wp_hit = cs->watchpoint_hit;
-
-    if (wp_hit && wp_hit->flags & BP_CPU) {
-        /* FIXME: When the storage-alteration-space control bit is set,
-           the exception should only be triggered if the memory access
-           is done using an address space with the storage-alteration-event
-           bit set.  We have no way to detect that with the current
-           watchpoint code.  */
-        cs->watchpoint_hit = NULL;
-
-        env->per_address = env->psw.addr;
-        env->per_perc_atmid |= PER_CODE_EVENT_STORE | get_per_atmid(env);
-        /* FIXME: We currently no way to detect the address space used
-           to trigger the watchpoint.  For now just consider it is the
-           current default ASC. This turn to be true except when MVCP
-           and MVCS instrutions are not used.  */
-        env->per_perc_atmid |= env->psw.mask & (PSW_MASK_ASC) >> 46;
-
-        /*
-         * Remove all watchpoints to re-execute the code.  A PER exception
-         * will be triggered, it will call s390_cpu_set_psw which will
-         * recompute the watchpoints.
-         */
-        cpu_watchpoint_remove_all(cs, BP_CPU);
-        cpu_loop_exit_noexc(cs);
-    }
-}
-
 void s390x_cpu_do_unaligned_access(CPUState *cs, vaddr addr,
                                    MMUAccessType access_type,
                                    int mmu_idx, uintptr_t retaddr)
@@ -651,10 +620,10 @@ void monitor_event(CPUS390XState *env,
                    uint8_t monitor_class, uintptr_t ra)
 {
     /* Store the Monitor Code and the Monitor Class Number into the lowcore */
-    stq_phys(env_cpu(env)->as,
-             env->psa + offsetof(LowCore, monitor_code), monitor_code);
-    stw_phys(env_cpu(env)->as,
-             env->psa + offsetof(LowCore, mon_class_num), monitor_class);
+    stq_be_phys(env_cpu(env)->as,
+                env->psa + offsetof(LowCore, monitor_code), monitor_code);
+    stw_be_phys(env_cpu(env)->as,
+                env->psa + offsetof(LowCore, mon_class_num), monitor_class);
 
     tcg_s390_program_interrupt(env, PGM_MONITOR, ra);
 }

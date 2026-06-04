@@ -31,8 +31,8 @@
 #include "qapi/error.h"
 #include "system/blockdev.h"
 #include "migration/vmstate.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "hw/nvram/xlnx-efuse.h"
 
 #ifndef XLNX_BBRAM_ERR_DEBUG
@@ -86,18 +86,6 @@ static bool bbram_msw_locked(XlnxBBRam *s)
 static bool bbram_pgm_enabled(XlnxBBRam *s)
 {
     return ARRAY_FIELD_EX32(s->regs, BBRAM_STATUS, PGM_MODE) != 0;
-}
-
-static void bbram_bdrv_error(XlnxBBRam *s, int rc, gchar *detail)
-{
-    Error *errp = NULL;
-
-    error_setg_errno(&errp, -rc, "%s: BBRAM backstore %s failed.",
-                     blk_name(s->blk), detail);
-    error_report("%s", error_get_pretty(errp));
-    error_free(errp);
-
-    g_free(detail);
 }
 
 static void bbram_bdrv_read(XlnxBBRam *s, Error **errp)
@@ -162,7 +150,8 @@ static void bbram_bdrv_sync(XlnxBBRam *s, uint64_t hwaddr)
     offset = hwaddr - A_BBRAM_0;
     rc = blk_pwrite(s->blk, offset, 4, &le32, 0);
     if (rc < 0) {
-        bbram_bdrv_error(s, rc, g_strdup_printf("write to offset %u", offset));
+        error_report("%s: BBRAM backstore write to offset %u failed: %s",
+                     blk_name(s->blk), offset, strerror(-rc));
     }
 }
 
@@ -178,7 +167,8 @@ static void bbram_bdrv_zero(XlnxBBRam *s)
 
     rc = blk_make_zero(s->blk, 0);
     if (rc < 0) {
-        bbram_bdrv_error(s, rc, g_strdup("zeroizing"));
+        error_report("%s: BBRAM backstore zeroizing failed: %s",
+                     blk_name(s->blk), strerror(-rc));
     }
 
     /* Restore bbram8 if it is non-zero */

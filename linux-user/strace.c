@@ -85,6 +85,10 @@ UNUSED static void print_enums(const struct enums *, abi_long, int);
 UNUSED static void print_at_dirfd(abi_long, int);
 UNUSED static void print_file_mode(abi_long, int);
 UNUSED static void print_open_flags(abi_long, int);
+UNUSED static void print_file_offset32(abi_long offset, bool last);
+UNUSED static void print_file_offset64(abi_long word0,
+                                       abi_long word1,
+                                       bool last);
 UNUSED static void print_syscall_prologue(const struct syscallname *);
 UNUSED static void print_syscall_epilogue(const struct syscallname *);
 UNUSED static void print_string(abi_long, int);
@@ -1017,12 +1021,12 @@ print_syscall_ret_ioctl(CPUArchState *cpu_env, const struct syscallname *name,
         int target_size;
 
         for (ie = ioctl_entries; ie->target_cmd != 0; ie++) {
-            if (ie->target_cmd == arg1) {
+            if (ie->target_cmd == (int)arg1) {
                 break;
             }
         }
 
-        if (ie->target_cmd == arg1 &&
+        if (ie->target_cmd == (int)arg1 &&
            (ie->access == IOC_R || ie->access == IOC_RW)) {
             arg_type = ie->arg_type;
             qemu_log(" (");
@@ -1125,7 +1129,9 @@ UNUSED static const struct flags openat2_resolve_flags[] = {
     FLAG_GENERIC(RESOLVE_NO_SYMLINKS),
     FLAG_GENERIC(RESOLVE_BENEATH),
     FLAG_GENERIC(RESOLVE_IN_ROOT),
+#ifdef RESOLVE_CACHED
     FLAG_GENERIC(RESOLVE_CACHED),
+#endif
 #endif
     FLAG_END,
 };
@@ -1664,6 +1670,20 @@ print_open_flags(abi_long flags, int last)
     print_flags(open_flags, flags, last);
 }
 
+/* Prints 32-bit file offset (off_t) */
+static void
+print_file_offset32(abi_long offset, bool last)
+{
+    print_raw_param(TARGET_ABI_FMT_ld, offset, last);
+}
+
+/* Prints 64-bit file offset (loff_t) */
+static void
+print_file_offset64(abi_long word0, abi_long word1, bool last)
+{
+    print_raw_param64("%" PRId64, target_offset64(word0, word1), last);
+}
+
 static void
 print_syscall_prologue(const struct syscallname *sc)
 {
@@ -1935,6 +1955,75 @@ print_termios(void *arg)
     qemu_log("}");
 }
 
+#ifdef TARGET_TCGETS2
+void
+print_termios2(void *arg)
+{
+    const struct target_termios2 *target = arg;
+
+    target_tcflag_t iflags = tswap32(target->c_iflag);
+    target_tcflag_t oflags = tswap32(target->c_oflag);
+    target_tcflag_t cflags = tswap32(target->c_cflag);
+    target_tcflag_t lflags = tswap32(target->c_lflag);
+
+    qemu_log("{");
+
+    qemu_log("c_iflag = ");
+    print_flags(termios_iflags, iflags, 0);
+
+    qemu_log("c_oflag = ");
+    target_tcflag_t oflags_clean =  oflags & ~(TARGET_NLDLY | TARGET_CRDLY |
+                                               TARGET_TABDLY | TARGET_BSDLY |
+                                               TARGET_VTDLY | TARGET_FFDLY);
+    print_flags(termios_oflags, oflags_clean, 0);
+    if (oflags & TARGET_NLDLY) {
+        print_enums(termios_oflags_NLDLY, oflags & TARGET_NLDLY, 0);
+    }
+    if (oflags & TARGET_CRDLY) {
+        print_enums(termios_oflags_CRDLY, oflags & TARGET_CRDLY, 0);
+    }
+    if (oflags & TARGET_TABDLY) {
+        print_enums(termios_oflags_TABDLY, oflags & TARGET_TABDLY, 0);
+    }
+    if (oflags & TARGET_BSDLY) {
+        print_enums(termios_oflags_BSDLY, oflags & TARGET_BSDLY, 0);
+    }
+    if (oflags & TARGET_VTDLY) {
+        print_enums(termios_oflags_VTDLY, oflags & TARGET_VTDLY, 0);
+    }
+    if (oflags & TARGET_FFDLY) {
+        print_enums(termios_oflags_FFDLY, oflags & TARGET_FFDLY, 0);
+    }
+
+    qemu_log("c_cflag = ");
+    if (cflags & TARGET_CBAUD) {
+        print_enums(termios_cflags_CBAUD, cflags & TARGET_CBAUD, 0);
+    }
+    if (cflags & TARGET_CSIZE) {
+        print_enums(termios_cflags_CSIZE, cflags & TARGET_CSIZE, 0);
+    }
+    target_tcflag_t cflags_clean = cflags & ~(TARGET_CBAUD | TARGET_CSIZE);
+    print_flags(termios_cflags, cflags_clean, 0);
+
+    qemu_log("c_lflag = ");
+    print_flags(termios_lflags, lflags, 0);
+
+    qemu_log("c_ispeed = ");
+    print_raw_param("%u", tswap32(target->c_ispeed), 0);
+
+    qemu_log("c_ospeed = ");
+    print_raw_param("%u", tswap32(target->c_ospeed), 0);
+
+    qemu_log("c_cc = ");
+    qemu_log("\"%s\",", target->c_cc);
+
+    qemu_log("c_line = ");
+    print_raw_param("\'%c\'", target->c_line, 1);
+
+    qemu_log("}");
+}
+#endif
+
 #undef UNUSED
 
 #ifdef TARGET_NR_accept
@@ -2187,11 +2276,13 @@ print_fallocate(CPUArchState *cpu_env, const struct syscallname *name,
     print_raw_param("%d", arg0, 0);
     print_flags(falloc_flags, arg1, 0);
 #if TARGET_ABI_BITS == 32
-    print_raw_param("%" PRIu64, target_offset64(arg2, arg3), 0);
-    print_raw_param("%" PRIu64, target_offset64(arg4, arg5), 1);
+    /* On 32-bit targets, two registers are used for `loff_t` */
+    print_file_offset64(arg2, arg3, false);
+    print_file_offset64(arg4, arg5, true);
 #else
-    print_raw_param(TARGET_ABI_FMT_ld, arg2, 0);
-    print_raw_param(TARGET_ABI_FMT_ld, arg3, 1);
+    /* On 64-bit targets, one register is used for `loff_t` */
+    print_file_offset64(arg2, 0, false);
+    print_file_offset64(arg3, 0, true);
 #endif
     print_syscall_epilogue(name);
 }
@@ -2597,8 +2688,7 @@ print__llseek(CPUArchState *cpu_env, const struct syscallname *name,
     const char *whence = "UNKNOWN";
     print_syscall_prologue(name);
     print_raw_param("%d", arg0, 0);
-    print_raw_param("%ld", arg1, 0);
-    print_raw_param("%ld", arg2, 0);
+    print_file_offset64(arg1, arg2, false);
     print_pointer(arg3, 0);
     switch(arg4) {
     case SEEK_SET: whence = "SEEK_SET"; break;
@@ -2619,7 +2709,7 @@ print_lseek(CPUArchState *cpu_env, const struct syscallname *name,
 {
     print_syscall_prologue(name);
     print_raw_param("%d", arg0, 0);
-    print_raw_param(TARGET_ABI_FMT_ld, arg1, 0);
+    print_file_offset32(arg1, false);
     switch (arg2) {
     case SEEK_SET:
         qemu_log("SEEK_SET"); break;
@@ -2650,7 +2740,7 @@ print_truncate(CPUArchState *cpu_env, const struct syscallname *name,
 {
     print_syscall_prologue(name);
     print_string(arg0, 0);
-    print_raw_param(TARGET_ABI_FMT_ld, arg1, 1);
+    print_file_offset32(arg1, true);
     print_syscall_epilogue(name);
 }
 #endif
@@ -2667,7 +2757,7 @@ print_truncate64(CPUArchState *cpu_env, const struct syscallname *name,
         arg1 = arg2;
         arg2 = arg3;
     }
-    print_raw_param("%" PRIu64, target_offset64(arg1, arg2), 1);
+    print_file_offset64(arg1, arg2, true);
     print_syscall_epilogue(name);
 }
 #endif
@@ -2684,7 +2774,7 @@ print_ftruncate64(CPUArchState *cpu_env, const struct syscallname *name,
         arg1 = arg2;
         arg2 = arg3;
     }
-    print_raw_param("%" PRIu64, target_offset64(arg1, arg2), 1);
+    print_file_offset64(arg1, arg2, true);
     print_syscall_epilogue(name);
 }
 #endif
@@ -3239,7 +3329,7 @@ print_stat(CPUArchState *cpu_env, const struct syscallname *name,
     print_syscall_epilogue(name);
 }
 #define print_lstat     print_stat
-#define print_stat64	print_stat
+#define print_stat64    print_stat
 #define print_lstat64   print_stat
 #endif
 
@@ -4081,7 +4171,12 @@ print_futex(CPUArchState *cpu_env, const struct syscallname *name,
             break;
     }
     print_pointer(arg4, 0);
-    print_raw_param("%d", arg4, 1);
+    if ((op == FUTEX_WAIT_BITSET || (op == FUTEX_WAKE_BITSET)) &&
+        (arg5 == FUTEX_BITSET_MATCH_ANY)) {
+        qemu_log("FUTEX_BITSET_MATCH_ANY");
+    } else {
+        print_raw_param("%#x", arg5, 1);
+    }
     print_syscall_epilogue(name);
 }
 #endif
@@ -4228,7 +4323,7 @@ print_pread64(CPUArchState *cpu_env, const struct syscallname *name,
     print_raw_param("%d", arg0, 0);
     print_pointer(arg1, 0);
     print_raw_param("%d", arg2, 0);
-    print_raw_param("%" PRIu64, target_offset64(arg3, arg4), 1);
+    print_file_offset64(arg3, arg4, true);
     print_syscall_epilogue(name);
 }
 #endif
@@ -4264,7 +4359,7 @@ print_ioctl(CPUArchState *cpu_env, const struct syscallname *name,
     int target_size;
 
     for (ie = ioctl_entries; ie->target_cmd != 0; ie++) {
-        if (ie->target_cmd == arg1) {
+        if (ie->target_cmd == (int)arg1) {
             break;
         }
     }

@@ -92,7 +92,7 @@ default_role = 'any'
 
 # General information about the project.
 project = u'QEMU'
-copyright = u'2025, The QEMU Project Developers'
+copyright = u'2026, The QEMU Project Developers'
 author = u'The QEMU Project Developers'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -136,7 +136,7 @@ if micro >= 50:
 
 # These thresholds must match the constants
 # MACHINE_VER_DELETION_MAJOR  & MACHINE_VER_DEPRECATION_MAJOR
-# defined in include/hw/boards.h and the introductory text in
+# defined in include/hw/core/boards.h and the introductory text in
 # docs/about/deprecated.rst
 ver_machine_deprecation_version = "%d.%d.0" % (major - 3, minor)
 ver_machine_deletion_version = "%d.%d.0" % (major - 6, minor)

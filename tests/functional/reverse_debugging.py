@@ -64,16 +64,15 @@ class ReverseDebugging(LinuxKernelTest):
 
     @skipIfMissingImports("pygdbmi") # Required by GDB class
     @skipIfMissingEnv("QEMU_TEST_GDB")
-    def reverse_debugging(self, gdb_arch, shift=7, args=None):
+    def reverse_debugging(self, gdb_arch, shift=7, args=None, big_endian=False):
         from qemu_test import GDB
+
+        self.require_accelerator("tcg")
 
         # create qcow2 for snapshots
         self.log.info('creating qcow2 image for VM snapshots')
         image_path = os.path.join(self.workdir, 'disk.qcow2')
         qemu_img = get_qemu_img(self)
-        if qemu_img is None:
-            self.skipTest('Could not find "qemu-img", which is required to '
-                          'create the temporary qcow2 image')
         out = check_output([qemu_img, 'create', '-f', 'qcow2', image_path, '128M'],
                            encoding='utf8')
         self.log.info("qemu-img: %s" % out)
@@ -99,6 +98,8 @@ class ReverseDebugging(LinuxKernelTest):
             gdb_cmd = os.getenv('QEMU_TEST_GDB')
             gdb = GDB(gdb_cmd)
             try:
+                if big_endian:
+                    gdb.cli("set endian big")
                 self.reverse_debugging_run(gdb, vm, port, gdb_arch, last_icount)
             finally:
                 self.log.info('exiting gdb and qemu')

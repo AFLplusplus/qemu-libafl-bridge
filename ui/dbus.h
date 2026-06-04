@@ -150,5 +150,6 @@ void dbus_display_notify(DBusDisplayEvent *event);
 void dbus_chardev_init(DBusDisplay *dpy);
 
 void dbus_clipboard_init(DBusDisplay *dpy);
+void dbus_clipboard_fini(DBusDisplay *dpy);
 
 #endif /* UI_DBUS_H */

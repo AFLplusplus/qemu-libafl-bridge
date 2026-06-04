@@ -27,8 +27,8 @@
 #include "qapi/error.h"
 #include "qapi/visitor.h"
 #include "migration/misc.h"
-#include "hw/boards.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/boards.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/acpi/acpi.h"
 #include "trace.h"
 
@@ -60,7 +60,7 @@ static uint32_t virtio_mem_default_thp_size(void)
 {
     uint32_t default_thp_size = VIRTIO_MEM_MIN_BLOCK_SIZE;
 
-#if defined(__x86_64__) || defined(__arm__) || defined(__powerpc64__)
+#if defined(__x86_64__) || defined(__powerpc64__)
     default_thp_size = 2 * MiB;
 #elif defined(__aarch64__)
     if (qemu_real_host_page_size() == 4 * KiB) {
@@ -331,14 +331,6 @@ static int virtio_mem_notify_populate_cb(MemoryRegionSection *s, void *arg)
     return rdl->notify_populate(rdl, s);
 }
 
-static int virtio_mem_notify_discard_cb(MemoryRegionSection *s, void *arg)
-{
-    RamDiscardListener *rdl = arg;
-
-    rdl->notify_discard(rdl, s);
-    return 0;
-}
-
 static void virtio_mem_notify_unplug(VirtIOMEM *vmem, uint64_t offset,
                                      uint64_t size)
 {
@@ -398,12 +390,7 @@ static void virtio_mem_notify_unplug_all(VirtIOMEM *vmem)
     }
 
     QLIST_FOREACH(rdl, &vmem->rdl_list, next) {
-        if (rdl->double_discard_supported) {
-            rdl->notify_discard(rdl, rdl->section);
-        } else {
-            virtio_mem_for_each_plugged_section(vmem, rdl->section, rdl,
-                                                virtio_mem_notify_discard_cb);
-        }
+        rdl->notify_discard(rdl, rdl->section);
     }
 }
 
@@ -607,18 +594,7 @@ static int virtio_mem_set_block_state(VirtIOMEM *vmem, uint64_t start_gpa,
         Error *local_err = NULL;
 
         if (!qemu_prealloc_mem(fd, area, size, 1, NULL, false, &local_err)) {
-            static bool warned;
-
-            /*
-             * Warn only once, we don't want to fill the log with these
-             * warnings.
-             */
-            if (!warned) {
-                warn_report_err(local_err);
-                warned = true;
-            } else {
-                error_free(local_err);
-            }
+            warn_report_err_once(local_err);
             ret = -EBUSY;
         }
     }
@@ -1824,12 +1800,7 @@ static void virtio_mem_rdm_unregister_listener(RamDiscardManager *rdm,
 
     g_assert(rdl->section->mr == &vmem->memdev->mr);
     if (vmem->size) {
-        if (rdl->double_discard_supported) {
-            rdl->notify_discard(rdl, rdl->section);
-        } else {
-            virtio_mem_for_each_plugged_section(vmem, rdl->section, rdl,
-                                                virtio_mem_notify_discard_cb);
-        }
+        rdl->notify_discard(rdl, rdl->section);
     }
 
     memory_region_section_free_copy(rdl->section);

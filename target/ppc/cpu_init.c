@@ -34,7 +34,7 @@
 #include "qapi/error.h"
 #include "qobject/qnull.h"
 #include "qapi/visitor.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/ppc/ppc.h"
 #include "mmu-book3s-v3.h"
 #include "qemu/cutils.h"
@@ -46,14 +46,17 @@
 #include "spr_common.h"
 #include "power8-pmu.h"
 #ifndef CONFIG_USER_ONLY
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "hw/intc/intc.h"
 #include "kvm_ppc.h"
 #endif
 
 #include "cpu_init.h"
-/* #define PPC_DEBUG_SPR */
-/* #define USE_APPLE_GDB */
+
+static const Property powerpc_cpu_properties[] = {
+    DEFINE_PROP_BOOL("rtas-stopped-state", PowerPCCPU,
+                      rtas_stopped_state, true),
+};
 
 static inline void vscr_init(CPUPPCState *env, uint32_t val)
 {
@@ -7359,7 +7362,7 @@ static bool ppc_cpu_is_big_endian(CPUState *cs)
 {
     cpu_synchronize_state(cs);
 
-    return !FIELD_EX64(cpu_env(cs)->msr, MSR, LE);
+    return !ppc_env_is_little_endian(cpu_env(cs));
 }
 
 static bool ppc_get_irq_stats(InterruptStatsProvider *obj,
@@ -7447,15 +7450,13 @@ static bool ppc_pvr_match_default(PowerPCCPUClass *pcc, uint32_t pvr, bool best)
     return pcc->pvr == pvr;
 }
 
-static void ppc_disas_set_info(CPUState *cs, disassemble_info *info)
+static void ppc_disas_set_info(const CPUState *cs, disassemble_info *info)
 {
-    CPUPPCState *env = cpu_env(cs);
+    const PowerPCCPU *cpu = POWERPC_CPU(cs);
+    const CPUPPCState *env = &cpu->env;
 
-    if ((env->hflags >> MSR_LE) & 1) {
-        info->endian = BFD_ENDIAN_LITTLE;
-    } else {
-        info->endian = BFD_ENDIAN_BIG;
-    }
+    info->endian = ppc_env_is_little_endian(env) ? BFD_ENDIAN_LITTLE
+                                                 : BFD_ENDIAN_BIG;
     info->mach = env->bfd_mach;
     if (!env->bfd_mach) {
 #ifdef TARGET_PPC64
@@ -7479,7 +7480,7 @@ static const struct SysemuCPUOps ppc_sysemu_ops = {
     .get_phys_page_debug = ppc_cpu_get_phys_page_debug,
     .write_elf32_note = ppc32_cpu_write_elf32_note,
     .write_elf64_note = ppc64_cpu_write_elf64_note,
-    .virtio_is_big_endian = ppc_cpu_is_big_endian,
+    .internal_is_big_endian = ppc_cpu_is_big_endian,
     .legacy_vmsd = &vmstate_ppc_cpu,
 };
 #endif
@@ -7529,6 +7530,8 @@ static void ppc_cpu_class_init(ObjectClass *oc, const void *data)
                                       &pcc->parent_unrealize);
     pcc->pvr_match = ppc_pvr_match_default;
 
+    device_class_set_props(dc, powerpc_cpu_properties);
+
     resettable_class_set_parent_phases(rc, NULL, ppc_cpu_reset_hold, NULL,
                                        &pcc->parent_phases);
 
@@ -7548,14 +7551,6 @@ static void ppc_cpu_class_init(ObjectClass *oc, const void *data)
                       MMU_INST_FETCH == 2 && PAGE_READ == 1 &&
                       PAGE_WRITE == 2 && PAGE_EXEC == 4);
 #endif
-
-    cc->gdb_num_core_regs = 71;
-#ifdef USE_APPLE_GDB
-    cc->gdb_read_register = ppc_cpu_gdb_read_register_apple;
-    cc->gdb_write_register = ppc_cpu_gdb_write_register_apple;
-    cc->gdb_num_core_regs = 71 + 32;
-#endif
-
     cc->gdb_arch_name = ppc_gdb_arch_name;
 #if defined(TARGET_PPC64)
     cc->gdb_core_xml_file = "power64-core.xml";

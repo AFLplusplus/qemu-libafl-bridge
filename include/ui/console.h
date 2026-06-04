@@ -423,8 +423,8 @@ bool console_gl_check_format(DisplayChangeListener *dcl,
 void surface_gl_create_texture(QemuGLShader *gls,
                                DisplaySurface *surface);
 bool surface_gl_create_texture_from_fd(DisplaySurface *surface,
-                                       int fd, GLuint *texture,
-                                       GLuint *mem_obj);
+                                       int fd, uint32_t *texture,
+                                       uint32_t *mem_obj);
 void surface_gl_update_texture(QemuGLShader *gls,
                                DisplaySurface *surface,
                                int x, int y, int w, int h);
@@ -457,7 +457,7 @@ void qemu_display_help(void);
 void vnc_display_init(const char *id, Error **errp);
 void vnc_display_open(const char *id, Error **errp);
 void vnc_display_add_client(const char *id, int csock, bool skipauth);
-int vnc_display_password(const char *id, const char *password);
+int vnc_display_password(const char *id, const char *password, Error **errp);
 int vnc_display_pw_expire(const char *id, time_t expires);
 void vnc_parse(const char *str);
 int vnc_init_func(void *opaque, QemuOpts *opts, Error **errp);

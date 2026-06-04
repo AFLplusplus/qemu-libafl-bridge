@@ -30,7 +30,7 @@
 #include "qapi/error.h"
 #include "ui/console.h"
 #include "hw/arm/omap.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "hw/arm/boot.h"
 #include "hw/arm/machines-qom.h"
 #include "hw/block/flash.h"
@@ -146,7 +146,7 @@ static void sx1_init(MachineState *machine, const int version)
     memory_region_init_io(&cs[3], NULL, &static_ops, &cs3val,
                           "sx1.cs3", OMAP_CS3_SIZE);
     memory_region_add_subregion(address_space,
-                                OMAP_CS2_BASE, &cs[3]);
+                                OMAP_CS3_BASE, &cs[3]);
 
     fl_idx = 0;
     if ((dinfo = drive_get(IF_PFLASH, 0, fl_idx)) != NULL) {

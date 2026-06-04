@@ -28,7 +28,7 @@
 #include "qemu/config-file.h"
 #include "kvm/kvm_s390x.h"
 #include "migration/vmstate.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/s390x/ap-bridge.h"
 #include "system/address-spaces.h"
 #include "qom/object.h"
@@ -180,7 +180,7 @@ static bool vfio_ap_register_irq_notifier(VFIOAPDevice *vapdev,
         return false;
     }
 
-    if (event_notifier_init(notifier, 0)) {
+    if (event_notifier_init(notifier, 0) < 0) {
         error_setg_errno(errp, errno,
                          "vfio: Unable to init event notifier for irq (%d)",
                          irq);

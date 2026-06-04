@@ -83,13 +83,18 @@ void cpu_loop(CPUHexagonState *env)
                              0, 0);
             if (ret == -QEMU_ERESTARTSYS) {
                 env->gpr[HEX_REG_PC] -= 4;
-            } else if (ret != -QEMU_ESIGRETURN) {
+            } else if (ret != -QEMU_ESIGRETURN && ret != -QEMU_ESETPC) {
                 env->gpr[0] = ret;
             }
             break;
         case HEX_CAUSE_PC_NOT_ALIGNED:
             force_sig_fault(TARGET_SIGBUS, TARGET_BUS_ADRALN,
                             env->gpr[HEX_REG_R31]);
+            break;
+        case HEX_CAUSE_INVALID_PACKET:
+        case HEX_CAUSE_REG_WRITE_CONFLICT:
+            force_sig_fault(TARGET_SIGILL, TARGET_ILL_ILLOPC,
+                            env->gpr[HEX_REG_PC]);
             break;
         case EXCP_ATOMIC:
             cpu_exec_step_atomic(cs);

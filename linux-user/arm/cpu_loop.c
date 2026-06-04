@@ -152,25 +152,8 @@ static void arm_kernel_cmpxchg64_helper(CPUARMState *env)
     /* Swap if host != guest endianness, for the host cmpxchg below */
     oldval = tswap64(oldval);
     newval = tswap64(newval);
-
-#ifdef CONFIG_ATOMIC64
-    val = qatomic_cmpxchg__nocheck(host_addr, oldval, newval);
+    val = qatomic_cmpxchg(host_addr, oldval, newval);
     cpsr = (val == oldval) * CPSR_C;
-#else
-    /*
-     * This only works between threads, not between processes, but since
-     * the host has no 64-bit cmpxchg, it is the best that we can do.
-     */
-    start_exclusive();
-    val = *host_addr;
-    if (val == oldval) {
-        *host_addr = newval;
-        cpsr = CPSR_C;
-    } else {
-        cpsr = 0;
-    }
-    end_exclusive();
-#endif
     mmap_unlock();
 
     cpsr_write(env, cpsr, CPSR_C, CPSRWriteByInstr);
@@ -238,7 +221,7 @@ static bool insn_is_linux_bkpt(uint32_t opcode, bool is_thumb)
 static bool emulate_arm_fpa11(CPUARMState *env, uint32_t opcode)
 {
     TaskState *ts = get_task_state(env_cpu(env));
-    int rc = EmulateAll(opcode, &ts->fpa, env);
+    int rc = EmulateAll(opcode, &ts->fpa);
     int raise, enabled;
 
     if (rc == 0) {
@@ -437,7 +420,7 @@ void cpu_loop(CPUARMState *env)
                                      0, 0);
                     if (ret == -QEMU_ERESTARTSYS) {
                         env->regs[15] -= env->thumb ? 2 : 4;
-                    } else if (ret != -QEMU_ESIGRETURN) {
+                    } else if (ret != -QEMU_ESIGRETURN && ret != -QEMU_ESETPC) {
                         env->regs[0] = ret;
                     }
                 }

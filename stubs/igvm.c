@@ -24,3 +24,8 @@ int qigvm_x86_set_vp_context(void *data, int index, Error **errp)
 {
     return -1;
 }
+
+int qigvm_directive_madt(QIgvm *ctx, const uint8_t *header_data, Error **errp)
+{
+    return -1;
+}

@@ -22,7 +22,7 @@
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_bridge.h"
 #include "hw/pci/pci_host.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/module.h"
 #include "hw/pci/pci_bus.h"
 #include "migration/vmstate.h"
@@ -245,6 +245,7 @@ static void pci_host_class_init(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_props(dc, pci_host_properties_common);
     dc->vmsd = &vmstate_pcihost;
+    set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
 }
 
 static const TypeInfo pci_host_type_info = {

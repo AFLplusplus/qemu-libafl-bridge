@@ -28,7 +28,7 @@
 #include "migration/qemu-file-types.h"
 #include "qemu/atomic.h"
 #include "hw/virtio/virtio-bus.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/virtio/virtio-access.h"
 #include "system/dma.h"
 #include "system/iothread.h"
@@ -48,6 +48,7 @@
 #include "standard-headers/linux/virtio_iommu.h"
 #include "standard-headers/linux/virtio_mem.h"
 #include "standard-headers/linux/virtio_vsock.h"
+#include "standard-headers/linux/virtio_spi.h"
 
 /*
  * Maximum size of virtio device config space
@@ -196,7 +197,8 @@ const char *virtio_device_names[] = {
     [VIRTIO_ID_PARAM_SERV] = "virtio-param-serv",
     [VIRTIO_ID_AUDIO_POLICY] = "virtio-audio-pol",
     [VIRTIO_ID_BT] = "virtio-bluetooth",
-    [VIRTIO_ID_GPIO] = "virtio-gpio"
+    [VIRTIO_ID_GPIO] = "virtio-gpio",
+    [VIRTIO_ID_SPI] = "virtio-spi"
 };
 
 static const char *virtio_id_to_name(uint16_t device_id)
@@ -213,6 +215,27 @@ static void virtio_check_indirect_feature(VirtIODevice *vdev)
         qemu_log_mask(LOG_GUEST_ERROR,
                       "Device %s: indirect_desc was not negotiated!\n",
                       vdev->name);
+    }
+}
+
+static inline uint16_t virtio_lduw_phys_cached(VirtIODevice *vdev,
+                                               MemoryRegionCache *cache,
+                                               hwaddr pa)
+{
+    if (virtio_vdev_is_big_endian(vdev)) {
+        return lduw_be_phys_cached(cache, pa);
+    }
+    return lduw_le_phys_cached(cache, pa);
+}
+
+static inline void virtio_stw_phys_cached(VirtIODevice *vdev,
+                                          MemoryRegionCache *cache,
+                                          hwaddr pa, uint16_t value)
+{
+    if (virtio_vdev_is_big_endian(vdev)) {
+        stw_be_phys_cached(cache, pa, value);
+    } else {
+        stw_le_phys_cached(cache, pa, value);
     }
 }
 
@@ -258,10 +281,12 @@ void virtio_init_region_cache(VirtIODevice *vdev, int n)
     len = address_space_cache_init(&new->desc, vdev->dma_as,
                                    addr, size, packed);
     if (len < size) {
+        g_autofree const char *devname = qdev_get_printable_name(DEVICE(vdev));
+
         virtio_error(vdev,
                 "Failed to map descriptor ring for device %s: "
                 "invalid guest physical address or corrupted queue setup",
-                qdev_get_printable_name(DEVICE(vdev)));
+                devname);
         goto err_desc;
     }
 
@@ -269,10 +294,12 @@ void virtio_init_region_cache(VirtIODevice *vdev, int n)
     len = address_space_cache_init(&new->used, vdev->dma_as,
                                    vq->vring.used, size, true);
     if (len < size) {
+        g_autofree const char *devname = qdev_get_printable_name(DEVICE(vdev));
+
         virtio_error(vdev,
                 "Failed to map used ring for device %s: "
                 "possible guest misconfiguration or insufficient memory",
-                qdev_get_printable_name(DEVICE(vdev)));
+                devname);
         goto err_used;
     }
 
@@ -280,10 +307,12 @@ void virtio_init_region_cache(VirtIODevice *vdev, int n)
     len = address_space_cache_init(&new->avail, vdev->dma_as,
                                    vq->vring.avail, size, false);
     if (len < size) {
+        g_autofree const char *devname = qdev_get_printable_name(DEVICE(vdev));
+
         virtio_error(vdev,
                 "Failed to map avalaible ring for device %s: "
                 "possible queue misconfiguration or overlapping memory region",
-                qdev_get_printable_name(DEVICE(vdev)));
+                devname);
         goto err_avail;
     }
 
@@ -2294,7 +2323,7 @@ static enum virtio_device_endian virtio_default_endian(void)
 
 static enum virtio_device_endian virtio_current_cpu_endian(void)
 {
-    if (cpu_virtio_is_big_endian(current_cpu)) {
+    if (cpu_internal_is_big_endian(current_cpu)) {
         return VIRTIO_DEVICE_ENDIAN_BIG;
     } else {
         return VIRTIO_DEVICE_ENDIAN_LITTLE;
@@ -2730,7 +2759,7 @@ static bool virtio_device_endian_needed(void *opaque)
     VirtIODevice *vdev = opaque;
 
     assert(vdev->device_endian != VIRTIO_DEVICE_ENDIAN_UNKNOWN);
-    if (!virtio_vdev_has_feature(vdev, VIRTIO_F_VERSION_1)) {
+    if (virtio_vdev_is_legacy(vdev)) {
         return vdev->device_endian != virtio_default_endian();
     }
     /* Devices conforming to VIRTIO 1.0 or later are always LE. */
@@ -3212,9 +3241,8 @@ int virtio_set_features_ex(VirtIODevice *vdev, const uint64_t *features)
     return ret;
 }
 
-void virtio_reset(void *opaque)
+void virtio_reset(VirtIODevice *vdev)
 {
-    VirtIODevice *vdev = opaque;
     VirtioDeviceClass *k = VIRTIO_DEVICE_GET_CLASS(vdev);
     uint64_t features[VIRTIO_FEATURES_NU64S];
     int i;
@@ -3438,10 +3466,10 @@ virtio_load(VirtIODevice *vdev, QEMUFile *f, int version_id)
              * to calculate used and avail ring addresses based on the desc
              * address.
              */
-            if (virtio_vdev_has_feature(vdev, VIRTIO_F_VERSION_1)) {
-                virtio_init_region_cache(vdev, i);
-            } else {
+            if (virtio_vdev_is_legacy(vdev)) {
                 virtio_queue_update_rings(vdev, i);
+            } else {
+                virtio_init_region_cache(vdev, i);
             }
 
             if (virtio_vdev_has_feature(vdev, VIRTIO_F_RING_PACKED)) {
@@ -4474,4 +4502,14 @@ QEMUBH *virtio_bh_new_guarded_full(DeviceState *dev,
 
     return qemu_bh_new_full(cb, opaque, name,
                             &transport->mem_reentrancy_guard);
+}
+
+QEMUBH *virtio_bh_io_new_guarded_full(DeviceState *dev,
+                                      QEMUBHFunc *cb, void *opaque,
+                                      const char *name)
+{
+    DeviceState *transport = qdev_get_parent_bus(dev)->parent;
+
+    return aio_bh_new_full(iohandler_get_aio_context(), cb, opaque, name,
+                           &transport->mem_reentrancy_guard);
 }

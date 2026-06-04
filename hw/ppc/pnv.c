@@ -38,8 +38,8 @@
 #include "hw/ppc/ppc.h"
 #include "hw/ppc/pnv.h"
 #include "hw/ppc/pnv_core.h"
-#include "hw/loader.h"
-#include "hw/nmi.h"
+#include "hw/core/loader.h"
+#include "hw/core/nmi.h"
 #include "qapi/visitor.h"
 #include "hw/intc/intc.h"
 #include "hw/ipmi/ipmi.h"
@@ -50,7 +50,7 @@
 #include "hw/pci-host/pnv_phb4.h"
 
 #include "hw/ppc/xics.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/ppc/pnv_chip.h"
 #include "hw/ppc/pnv_xscom.h"
 #include "hw/ppc/pnv_pnor.h"
@@ -58,6 +58,7 @@
 #include "hw/isa/isa.h"
 #include "hw/char/serial-isa.h"
 #include "hw/rtc/mc146818rtc.h"
+#include "exec/cpu-common.h"
 
 #include <libfdt.h>
 
@@ -747,51 +748,12 @@ static void pnv_powerdown_notify(Notifier *n, void *opaque)
 
 static void pnv_reset(MachineState *machine, ResetType type)
 {
-    PnvMachineState *pnv = PNV_MACHINE(machine);
-    IPMIBmc *bmc;
     void *fdt;
 
     qemu_devices_reset(type);
 
-    /*
-     * The machine should provide by default an internal BMC simulator.
-     * If not, try to use the BMC device that was provided on the command
-     * line.
-     */
-    bmc = pnv_bmc_find(&error_fatal);
-    if (!pnv->bmc) {
-        if (!bmc) {
-            if (!qtest_enabled()) {
-                warn_report("machine has no BMC device. Use '-device "
-                            "ipmi-bmc-sim,id=bmc0 -device isa-ipmi-bt,bmc=bmc0,irq=10' "
-                            "to define one");
-            }
-        } else {
-            pnv_bmc_set_pnor(bmc, pnv->pnor);
-            pnv->bmc = bmc;
-        }
-    }
-
-    if (machine->fdt) {
-        fdt = machine->fdt;
-    } else {
-        fdt = pnv_dt_create(machine);
-        /* Pack resulting tree */
-        _FDT((fdt_pack(fdt)));
-    }
-
+    fdt = machine->fdt;
     cpu_physical_memory_write(PNV_FDT_ADDR, fdt, fdt_totalsize(fdt));
-
-    /* Update machine->fdt with latest fdt */
-    if (machine->fdt != fdt) {
-        /*
-         * Set machine->fdt for 'dumpdtb' QMP/HMP command. Free
-         * the existing machine->fdt to avoid leaking it during
-         * a reset.
-         */
-        g_free(machine->fdt);
-        machine->fdt = fdt;
-    }
 }
 
 static ISABus *pnv_chip_power8_isa_create(PnvChip *chip, Error **errp)
@@ -999,6 +961,37 @@ static uint64_t pnv_chip_get_ram_size(PnvMachineState *pnv, int chip_id)
 
     ram_per_chip = (machine->ram_size - 1 * GiB) / (pnv->num_chips - 1);
     return chip_id == 0 ? 1 * GiB : QEMU_ALIGN_DOWN(ram_per_chip, 1 * MiB);
+}
+
+static void pnv_machine_init_done(Notifier *notifier, void *data)
+{
+    PnvMachineState *pnv = container_of(notifier, PnvMachineState, machine_init_done);
+    MachineState *machine = MACHINE(pnv);
+    IPMIBmc *bmc;
+
+    /*
+     * The machine should provide by default an internal BMC simulator.
+     * If not, try to use the BMC device that was provided on the command
+     * line.
+     */
+    bmc = pnv_bmc_find(&error_fatal);
+    if (!pnv->bmc) {
+        if (!bmc) {
+            if (!qtest_enabled()) {
+                warn_report("machine has no BMC device. Use '-device "
+                            "ipmi-bmc-sim,id=bmc0 -device isa-ipmi-bt,bmc=bmc0,irq=10' "
+                            "to define one");
+            }
+        } else {
+            pnv_bmc_set_pnor(bmc, pnv->pnor);
+            pnv->bmc = bmc;
+        }
+    }
+
+    if (!machine->fdt) {
+        machine->fdt = pnv_dt_create(machine);
+        _FDT((fdt_pack(machine->fdt)));
+    }
 }
 
 static void pnv_init(MachineState *machine)
@@ -1260,6 +1253,9 @@ static void pnv_init(MachineState *machine)
     if (pmc->i2c_init) {
         pmc->i2c_init(pnv);
     }
+
+    pnv->machine_init_done.notify = pnv_machine_init_done;
+    qemu_add_machine_init_done_notifier(&pnv->machine_init_done);
 }
 
 /*

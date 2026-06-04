@@ -150,6 +150,7 @@ unsigned long guest_stack_size = TARGET_DEFAULT_STACK_SIZE;
 void fork_start(void)
 {
     start_exclusive();
+    clone_fork_start();
     mmap_fork_start();
     cpu_list_lock();
     qemu_plugin_user_prefork_lock();
@@ -179,6 +180,7 @@ void fork_end(pid_t pid)
         cpu_list_unlock();
     }
     gdbserver_fork_end(thread_cpu, pid);
+    clone_fork_end(child);
     /*
      * qemu_init_cpu_list() reinitialized the child exclusive state, but we
      * also need to keep current_cpu consistent, so call end_exclusive() for
@@ -798,13 +800,15 @@ int main(int argc, char **argv, char **envp)
         execfd = open(exec_path, O_RDONLY);
         if (execfd < 0) {
             printf("Error while loading %s: %s\n", exec_path, strerror(errno));
-            _exit(EXIT_FAILURE);
+            exit(EXIT_FAILURE);
         }
     }
 
     /* Resolve executable file name to full path name */
-    if (realpath(exec_path, real_exec_path)) {
-        exec_path = real_exec_path;
+    /* Keep how we started the program in exec_path, e.g. "./my_program" */
+    /* Store real path in real_exec_path, e.g. "/usr/local/bin/my_program" */
+    if (!realpath(exec_path, real_exec_path)) {
+        printf("Could not resolve %s\n", exec_path);
     }
 
     /*
@@ -1006,7 +1010,7 @@ int main(int argc, char **argv, char **envp)
                       info, &bprm);
     if (ret != 0) {
         printf("Error while loading %s: %s\n", exec_path, strerror(-ret));
-        _exit(EXIT_FAILURE);
+        exit(EXIT_FAILURE);
     }
 
     for (wrk = target_environ; *wrk; wrk++) {

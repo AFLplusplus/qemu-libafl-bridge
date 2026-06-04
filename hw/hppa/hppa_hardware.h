@@ -8,7 +8,8 @@
 #define FIRMWARE_END    0xf0100000
 #define FIRMWARE_HIGH   0xfffffff0  /* upper 32-bits of 64-bit firmware address */
 
-#define RAM_MAP_HIGH  0x0100000000  /* memory above 3.75 GB is mapped here */
+#define RAM_MAP_HIGH1 0x0100000000  /* memory above 4 GB */
+#define RAM_MAP_HIGH2 0x4040000000  /* memory between 1 G and 3.75 GB */
 
 #define MEM_PDC_ENTRY       0x4800  /* PDC entry address */
 
@@ -61,8 +62,8 @@
 #define ASTRO_BUS_MODULE        0x0a            /* C3700: 0x0a, others maybe 0 ? */
 
 /* ASTRO Memory and I/O regions */
-#define ASTRO_BASE_HPA            0xfffed00000
-#define ELROY0_BASE_HPA           0xfffed30000  /* ELROY0_HPA */
+#define ASTRO_BASE_HPA            0xffffed00000
+#define ELROY0_BASE_HPA           0xffffed30000  /* ELROY0_HPA */
 
 #define ROPES_PER_IOC           8       /* per Ike half or Pluto/Astro */
 

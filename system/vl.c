@@ -30,7 +30,7 @@
 #include "qemu/target-info.h"
 #include "exec/cpu-common.h"
 #include "exec/page-vary.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/compat-policy.h"
 #include "qapi/error.h"
 #include "qobject/qdict.h"
@@ -41,7 +41,6 @@
 #include "qemu/help_option.h"
 #include "qemu/hw-version.h"
 #include "qemu/uuid.h"
-#include "qemu/target-info.h"
 #include "system/reset.h"
 #include "system/runstate.h"
 #include "system/runstate-action.h"
@@ -54,7 +53,7 @@
 #include "qemu/accel.h"
 #include "qemu/async-teardown.h"
 #include "qemu/exit-with-parent.h"
-#include "hw/usb.h"
+#include "hw/usb/usb.h"
 #include "hw/isa/isa.h"
 #include "hw/scsi/scsi.h"
 #include "hw/sd/sd.h"
@@ -62,7 +61,7 @@
 #include "hw/firmware/smbios.h"
 #include "hw/acpi/acpi.h"
 #include "hw/xen/xen.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "monitor/qdev.h"
 #include "net/net.h"
 #include "net/slirp.h"
@@ -404,9 +403,8 @@ static QemuOptsList qemu_name_opts = {
         }, {
             .name = "debug-threads",
             .type = QEMU_OPT_BOOL,
-            .help = "When enabled, name the individual threads; defaults off.\n"
-                    "NOTE: The thread names are for debugging and not a\n"
-                    "stable API.",
+            .help = "Enable thread names"
+                    "(deprecated, always enabled where supported)",
         },
         { /* End of list */ }
     },
@@ -555,9 +553,12 @@ static int parse_name(void *opaque, QemuOpts *opts, Error **errp)
 {
     const char *proc_name;
 
-    if (qemu_opt_get(opts, "debug-threads")) {
-        qemu_thread_naming(qemu_opt_get_bool(opts, "debug-threads", false));
+    if (qemu_opt_get(opts, "debug-threads") &&
+        !qemu_opt_get_bool(opts, "debug-threads", false)) {
+        fprintf(stderr, "Ignoring deprecated 'debug-threads=no' option, " \
+                "thread naming is unconditionally enabled\n");
     }
+
     qemu_name = qemu_opt_get(opts, "guest");
 
     proc_name = qemu_opt_get(opts, "process");
@@ -619,7 +620,7 @@ static int parse_add_fd(void *opaque, QemuOpts *opts, Error **errp)
     }
 #endif
     if (dupfd == -1) {
-        error_setg(errp, "error duplicating fd: %s", strerror(errno));
+        error_setg_errno(errp, errno, "error duplicating fd");
         return -1;
     }
 
@@ -2211,10 +2212,6 @@ static void qemu_create_machine(QDict *qdict)
 
     cpu_exec_init_all();
 
-    if (machine_class->hw_version) {
-        qemu_set_hw_version(machine_class->hw_version);
-    }
-
     /*
      * Get the default machine options from the machine if it is not already
      * specified either by the configuration file or by the command line.
@@ -2890,10 +2887,8 @@ void qemu_init(int argc, char **argv)
 
     os_setup_limits();
 
-#ifdef CONFIG_MODULES
     module_init_info(qemu_modinfo);
     module_allow_arch(target_name());
-#endif
 
     qemu_init_subsystems();
 

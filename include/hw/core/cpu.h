@@ -20,7 +20,7 @@
 #ifndef QEMU_CPU_H
 #define QEMU_CPU_H
 
-#include "hw/qdev-core.h"
+#include "hw/core/qdev.h"
 #include "disas/dis-asm.h"
 #include "exec/breakpoint.h"
 #include "exec/hwaddr.h"
@@ -128,9 +128,9 @@ struct SysemuCPUOps;
  * @gdb_adjust_breakpoint: Callback for adjusting the address of a
  *       breakpoint.  Used by AVR to handle a gdb mis-feature with
  *       its Harvard architecture split code and data.
- * @gdb_num_core_regs: Number of core registers accessible to GDB or 0 to infer
- *                     from @gdb_core_xml_file.
  * @gdb_core_xml_file: File name for core registers GDB XML description.
+ * @gdb_num_core_regs: Number of core registers accessible to GDB if no
+ *                     @gdb_core_xml_file available (otherwise inferred).
  * @gdb_get_core_xml_file: Optional callback that returns the file name for
  * the core registers GDB XML description. The returned value is expected to
  * be a simple constant string: the caller will not g_free() it. If this
@@ -145,6 +145,9 @@ struct SysemuCPUOps;
  * address before attempting to match it against watchpoints.
  * @deprecation_note: If this CPUClass is deprecated, this field provides
  *                    related information.
+ * @max_as: Maximum valid index used to refer to the address spaces supported by
+ *          the architecture, i.e., to refer to CPUAddressSpaces in
+ *          CPUState::cpu_ases.
  *
  * Represents a CPU family or model.
  */
@@ -172,7 +175,7 @@ struct CPUClass {
     const char * (*gdb_arch_name)(CPUState *cpu);
     const char * (*gdb_get_core_xml_file)(CPUState *cpu);
 
-    void (*disas_set_info)(CPUState *cpu, disassemble_info *info);
+    void (*disas_set_info)(const CPUState *cpu, disassemble_info *info);
 
     const char *deprecation_note;
     struct AccelCPUClass *accel_cpu;
@@ -195,6 +198,8 @@ struct CPUClass {
     int reset_dump_flags;
     int gdb_num_core_regs;
     bool gdb_stop_before_watchpoint;
+
+    int max_as;
 };
 
 /*
@@ -214,15 +219,16 @@ typedef uint32_t MMUIdxMap;
  */
 struct CPUTLBEntryFull {
     /*
-     * @xlat_section contains:
-     *  - in the lower TARGET_PAGE_BITS, a physical section number
-     *  - with the lower TARGET_PAGE_BITS masked off, an offset which
-     *    must be added to the virtual address to obtain:
-     *     + the ram_addr_t of the target RAM (if the physical section
-     *       number is PHYS_SECTION_NOTDIRTY or PHYS_SECTION_ROM)
-     *     + the offset within the target MemoryRegion (otherwise)
+     * @xlat_offset: TARGET_PAGE_BITS aligned offset which must be added to
+     * the virtual address to obtain:
+     *   + the ram_addr_t of the target RAM (if the physical section
+     *     number is PHYS_SECTION_NOTDIRTY or PHYS_SECTION_ROM)
+     *   + the offset within the target MemoryRegion (otherwise)
      */
-    hwaddr xlat_section;
+    hwaddr xlat_offset;
+
+    /* @section contains physical section. */
+    MemoryRegionSection *section;
 
     /*
      * @phys_addr contains the physical address in the address space
@@ -443,7 +449,6 @@ struct qemu_work_item;
  * @icount_extra: Instructions until next timer event.
  * @cpu_ases: Pointer to array of CPUAddressSpaces (which define the
  *            AddressSpaces this CPU has)
- * @num_ases: number of CPUAddressSpaces in @cpu_ases
  * @as: Pointer to the first AddressSpace, for the convenience of targets which
  *      only have a single AddressSpace
  * @gdb_regs: Additional GDB registers.
@@ -516,7 +521,6 @@ struct CPUState {
     QSIMPLEQ_HEAD(, qemu_work_item) work_list;
 
     struct CPUAddressSpace *cpu_ases;
-    int num_ases;
     AddressSpace *as;
     MemoryRegion *memory;
 
@@ -778,13 +782,13 @@ hwaddr cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
 int cpu_asidx_from_attrs(CPUState *cpu, MemTxAttrs attrs);
 
 /**
- * cpu_virtio_is_big_endian:
+ * cpu_internal_is_big_endian:
  * @cpu: CPU
 
  * Returns %true if a CPU which supports runtime configurable endianness
  * is currently big-endian.
  */
-bool cpu_virtio_is_big_endian(CPUState *cpu);
+bool cpu_internal_is_big_endian(CPUState *cpu);
 
 /**
  * cpu_has_work:
@@ -811,6 +815,9 @@ void cpu_list_remove(CPUState *cpu);
 /**
  * cpu_reset:
  * @cpu: The CPU whose state is to be reset.
+ *
+ * You should refrain from calling this during CPU realization and
+ * make sure this is called from the reset logic instead.
  */
 void cpu_reset(CPUState *cpu);
 

@@ -13,7 +13,7 @@
 #include "hw/arm/bsa.h"
 #include "hw/arm/fsl-imx8mp.h"
 #include "hw/misc/unimp.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "system/kvm.h"
 #include "system/system.h"
 #include "target/arm/cpu.h"
@@ -193,15 +193,8 @@ static const struct {
 
 static void fsl_imx8mp_init(Object *obj)
 {
-    MachineState *ms = MACHINE(qdev_get_machine());
     FslImx8mpState *s = FSL_IMX8MP(obj);
-    const char *cpu_type = ms->cpu_type ?: ARM_CPU_TYPE_NAME("cortex-a53");
     int i;
-
-    for (i = 0; i < MIN(ms->smp.cpus, FSL_IMX8MP_NUM_CPUS); i++) {
-        g_autofree char *name = g_strdup_printf("cpu%d", i);
-        object_initialize_child(obj, name, &s->cpu[i], cpu_type);
-    }
 
     object_initialize_child(obj, "gic", &s->gic, gicv3_class_name());
 
@@ -265,12 +258,18 @@ static void fsl_imx8mp_realize(DeviceState *dev, Error **errp)
     MachineState *ms = MACHINE(qdev_get_machine());
     FslImx8mpState *s = FSL_IMX8MP(dev);
     DeviceState *gicdev = DEVICE(&s->gic);
+    const char *cpu_type = ms->cpu_type ?: ARM_CPU_TYPE_NAME("cortex-a53");
     int i;
 
     if (ms->smp.cpus > FSL_IMX8MP_NUM_CPUS) {
         error_setg(errp, "%s: Only %d CPUs are supported (%d requested)",
                    TYPE_FSL_IMX8MP, FSL_IMX8MP_NUM_CPUS, ms->smp.cpus);
         return;
+    }
+
+    for (i = 0; i < ms->smp.cpus; i++) {
+        g_autofree char *name = g_strdup_printf("cpu%d", i);
+        object_initialize_child(OBJECT(dev), name, &s->cpu[i], cpu_type);
     }
 
     /* CPUs */

@@ -18,14 +18,14 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/arm/boot.h"
 #include "hw/arm/machines-qom.h"
 #include "net/net.h"
 #include "system/system.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "hw/block/flash.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "hw/adc/zynq-xadc.h"
 #include "hw/ssi/ssi.h"
 #include "hw/usb/chipidea.h"
@@ -34,7 +34,7 @@
 #include "hw/char/cadence_uart.h"
 #include "hw/net/cadence_gem.h"
 #include "hw/cpu/a9mpcore.h"
-#include "hw/qdev-clock.h"
+#include "hw/core/qdev-clock.h"
 #include "hw/misc/unimp.h"
 #include "system/reset.h"
 #include "qom/object.h"
@@ -186,13 +186,13 @@ static void zynq_set_boot_mode(Object *obj, const char *str,
     ZynqMachineState *m = ZYNQ_MACHINE(obj);
     uint8_t mode = 0;
 
-    if (!strncasecmp(str, "qspi", 4)) {
+    if (!g_ascii_strcasecmp(str, "qspi")) {
         mode = 1;
-    } else if (!strncasecmp(str, "sd", 2)) {
+    } else if (!g_ascii_strcasecmp(str, "sd")) {
         mode = 5;
-    } else if (!strncasecmp(str, "nor", 3)) {
+    } else if (!g_ascii_strcasecmp(str, "nor")) {
         mode = 2;
-    } else if (!strncasecmp(str, "jtag", 4)) {
+    } else if (!g_ascii_strcasecmp(str, "jtag")) {
         mode = 0;
     } else {
         error_setg(errp, "%s boot mode not supported", str);

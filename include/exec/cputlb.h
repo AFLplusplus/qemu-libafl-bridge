@@ -24,6 +24,7 @@
 #include "exec/hwaddr.h"
 #include "exec/memattrs.h"
 #include "exec/vaddr.h"
+#include "system/ram_addr.h"
 
 #if defined(CONFIG_TCG) && !defined(CONFIG_USER_ONLY)
 void tlb_protect_code(ram_addr_t ram_addr);
@@ -43,8 +44,8 @@ void tlb_reset_dirty_range_all(ram_addr_t start, ram_addr_t length);
  * @full: the details of the tlb entry
  *
  * Add an entry to @cpu tlb index @mmu_idx.  All of the fields of
- * @full must be filled, except for xlat_section, and constitute
- * the complete description of the translated page.
+ * @full must be filled, except for xlat_offset & section, and
+ * constitute the complete description of the translated page.
  *
  * This is generally called by the target tlb_fill function after
  * having performed a successful page table walk to find the physical

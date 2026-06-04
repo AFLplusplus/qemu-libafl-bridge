@@ -23,17 +23,17 @@
 #include "qemu/units.h"
 #include "qapi/error.h"
 #include "cpu.h"
-#include "hw/clock.h"
+#include "hw/core/clock.h"
 #include "net/net.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "hw/i2c/smbus_eeprom.h"
 #include "hw/block/flash.h"
 #include "hw/mips/mips.h"
 #include "hw/mips/bootloader.h"
 #include "hw/pci/pci.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "hw/ide/pci.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "elf.h"
 #include "hw/isa/vt82c686.h"
 #include "system/qtest.h"
@@ -316,6 +316,7 @@ static void mips_fuloong2e_init(MachineState *machine)
         dev = DEVICE(pci_dev);
         qdev_prop_set_uint32(dev, "vgamem_mb", 16);
         qdev_prop_set_uint16(dev, "x-device-id", 0x5159);
+        qdev_prop_set_uint64(dev, "x-linear-aper-size", 16 * MiB);
         pci_realize_and_unref(pci_dev, pci_bus, &error_fatal);
     }
 

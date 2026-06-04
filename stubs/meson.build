@@ -3,7 +3,6 @@
 # below, so that it is clear who needs the stubbed functionality.
 
 stub_ss.add(files('cpu-get-clock.c'))
-stub_ss.add(files('error-printf.c'))
 stub_ss.add(files('fdset.c'))
 stub_ss.add(files('iothread-lock.c'))
 stub_ss.add(files('is-daemonized.c'))
@@ -41,6 +40,8 @@ if have_block or have_ga
   stub_ss.add(files('monitor-internal.c'))
   stub_ss.add(files('qmp-command-available.c'))
   stub_ss.add(files('qmp-quit.c'))
+  stub_ss.add(files('async-run-on-cpu.c'))
+  stub_ss.add(files('cpus-queue.c'))
 endif
 
 if have_block or have_user
@@ -59,8 +60,6 @@ if have_user
   if not have_system
     stub_ss.add(files('qdev.c'))
   endif
-
-  stub_ss.add(files('monitor-internal.c'))
 endif
 
 if have_system
@@ -71,7 +70,10 @@ if have_system
   stub_ss.add(files('dump.c'))
   stub_ss.add(files('cmos.c'))
   stub_ss.add(files('fw_cfg.c'))
-  stub_ss.add(files('igvm.c'))
+  if igvm.found()
+    stub_ss.add(files('igvm.c'))
+  endif
+  stub_ss.add(files('kvm.c'))
   stub_ss.add(files('target-get-monitor-def.c'))
   stub_ss.add(files('target-monitor-defs.c'))
   stub_ss.add(files('win32-kbd-hook.c'))
@@ -87,8 +89,6 @@ if have_system
 endif
 
 if have_system or have_user
-  stub_ss.add(files('gdbstub.c'))
-
   # Also included in have_system for --disable-tcg builds
   stub_ss.add(files('replay.c'))
 

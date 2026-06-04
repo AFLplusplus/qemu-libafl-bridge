@@ -20,7 +20,7 @@
 #include "qemu/qemu-print.h"
 #include "exec/cputlb.h"
 #include "exec/translation-block.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "system/cpu-timers.h"
 #include "exec/icount.h"
 #include "system/kvm.h"
@@ -35,9 +35,6 @@
 #include "cpregs.h"
 #include "target/arm/gtimer.h"
 #include "qemu/plugin.h"
-
-#define HELPER_H "tcg/helper.h"
-#include "exec/helper-proto.h.inc"
 
 static void switch_mode(CPUARMState *env, int mode);
 
@@ -268,15 +265,10 @@ void arm_init_cpreg_list(ARMCPU *cpu)
     if (arraylen) {
         cpu->cpreg_indexes = g_new(uint64_t, arraylen);
         cpu->cpreg_values = g_new(uint64_t, arraylen);
-        cpu->cpreg_vmstate_indexes = g_new(uint64_t, arraylen);
-        cpu->cpreg_vmstate_values = g_new(uint64_t, arraylen);
     } else {
         cpu->cpreg_indexes = NULL;
         cpu->cpreg_values = NULL;
-        cpu->cpreg_vmstate_indexes = NULL;
-        cpu->cpreg_vmstate_values = NULL;
     }
-    cpu->cpreg_vmstate_array_len = arraylen;
     cpu->cpreg_array_len = 0;
 
     g_hash_table_foreach(cpu->cp_regs, add_cpreg_to_list, cpu);
@@ -426,6 +418,15 @@ int alle1_tlbmask(CPUARMState *env)
             ARMMMUIdxBit_E10_0_GCS |
             ARMMMUIdxBit_Stage2 |
             ARMMMUIdxBit_Stage2_S);
+}
+
+int alle2_tlbmask(void)
+{
+    return (ARMMMUIdxBit_E20_2 |
+            ARMMMUIdxBit_E20_2_PAN |
+            ARMMMUIdxBit_E20_2_GCS |
+            ARMMMUIdxBit_E20_0 |
+            ARMMMUIdxBit_E20_0_GCS);
 }
 
 static const ARMCPRegInfo cp_reginfo[] = {
@@ -924,21 +925,11 @@ static uint64_t isr_read(CPUARMState *env, const ARMCPRegInfo *ri)
     return ret;
 }
 
-static CPAccessResult access_aa64_tid1(CPUARMState *env, const ARMCPRegInfo *ri,
-                                       bool isread)
+static CPAccessResult access_tid1(CPUARMState *env, const ARMCPRegInfo *ri,
+                                  bool isread)
 {
     if (arm_current_el(env) == 1 && (arm_hcr_el2_eff(env) & HCR_TID1)) {
         return CP_ACCESS_TRAP_EL2;
-    }
-
-    return CP_ACCESS_OK;
-}
-
-static CPAccessResult access_aa32_tid1(CPUARMState *env, const ARMCPRegInfo *ri,
-                                       bool isread)
-{
-    if (arm_feature(env, ARM_FEATURE_V8)) {
-        return access_aa64_tid1(env, ri, isread);
     }
 
     return CP_ACCESS_OK;
@@ -969,7 +960,7 @@ static const ARMCPRegInfo v7_cp_reginfo[] = {
     { .name = "AIDR", .state = ARM_CP_STATE_BOTH,
       .opc0 = 3, .opc1 = 1, .crn = 0, .crm = 0, .opc2 = 7,
       .access = PL1_R, .type = ARM_CP_CONST,
-      .accessfn = access_aa64_tid1,
+      .accessfn = access_tid1,
       .fgt = FGT_AIDR_EL1,
       .resetvalue = 0 },
     /*
@@ -2802,12 +2793,7 @@ static void vmsa_tcr_ttbr_el2_write(CPUARMState *env, const ARMCPRegInfo *ri,
      */
     if (extract64(raw_read(env, ri) ^ value, 48, 16) &&
         (arm_hcr_el2_eff(env) & HCR_E2H)) {
-        uint16_t mask = ARMMMUIdxBit_E20_2 |
-                        ARMMMUIdxBit_E20_2_PAN |
-                        ARMMMUIdxBit_E20_2_GCS |
-                        ARMMMUIdxBit_E20_0 |
-                        ARMMMUIdxBit_E20_0_GCS;
-        tlb_flush_by_mmuidx(env_cpu(env), mask);
+        tlb_flush_by_mmuidx(env_cpu(env), alle2_tlbmask());
     }
     raw_write(env, ri, value);
 }
@@ -3320,11 +3306,14 @@ static uint64_t aa64_dczid_read(CPUARMState *env, const ARMCPRegInfo *ri)
     ARMCPU *cpu = env_archcpu(env);
     int dzp_bit = 1 << 4;
 
+    assert(!kvm_enabled());
+
     /* DZP indicates whether DC ZVA access is allowed */
     if (aa64_zva_access(env, NULL, false) == CP_ACCESS_OK) {
         dzp_bit = 0;
     }
-    return cpu->dcz_blocksize | dzp_bit;
+
+    return cpu->isar.idregs[DCZID_EL0_IDX] | dzp_bit;
 }
 
 static CPAccessResult sp_el0_access(CPUARMState *env, const ARMCPRegInfo *ri,
@@ -3779,7 +3768,8 @@ static void do_hcr_write(CPUARMState *env, uint64_t value, uint64_t valid_mask)
     }
 
     if (arm_feature(env, ARM_FEATURE_AARCH64)) {
-        if (cpu_isar_feature(aa64_vh, cpu)) {
+        if (cpu_isar_feature(aa64_vh, cpu) &&
+            cpu_isar_feature(aa64_e2h0, cpu)) {
             valid_mask |= HCR_E2H;
         }
         if (cpu_isar_feature(aa64_ras, cpu)) {
@@ -3804,7 +3794,10 @@ static void do_hcr_write(CPUARMState *env, uint64_t value, uint64_t valid_mask)
             valid_mask |= HCR_GPF;
         }
         if (cpu_isar_feature(aa64_nv, cpu)) {
-            valid_mask |= HCR_NV | HCR_NV1 | HCR_AT;
+            valid_mask |= HCR_NV | HCR_AT;
+            if (!cpu_isar_feature(aa64_nv1_res0, cpu)) {
+                valid_mask |= HCR_NV1;
+            }
         }
         if (cpu_isar_feature(aa64_nv2, cpu)) {
             valid_mask |= HCR_NV2;
@@ -3820,10 +3813,15 @@ static void do_hcr_write(CPUARMState *env, uint64_t value, uint64_t valid_mask)
     /* Clear RES0 bits.  */
     value &= valid_mask;
 
-    /* RW is RAO/WI if EL1 is AArch64 only */
-    if (arm_feature(env, ARM_FEATURE_AARCH64) &&
-        !cpu_isar_feature(aa64_aa32_el1, cpu)) {
-        value |= HCR_RW;
+    if (arm_feature(env, ARM_FEATURE_AARCH64)) {
+        /* RW is RAO/WI if EL1 is AArch64 only */
+        if (!cpu_isar_feature(aa64_aa32_el1, cpu)) {
+            value |= HCR_RW;
+        }
+        /* Strictly E2H is RES1 unless FEAT_E2H0 relaxes the requirement */
+        if (!cpu_isar_feature(aa64_e2h0, cpu)) {
+            value |= HCR_E2H;
+        }
     }
 
     /*
@@ -4769,7 +4767,7 @@ int sme_exception_el(CPUARMState *env, int el)
 }
 
 /*
- * Given that SVE is enabled, return the vector length for EL.
+ * Given that SVE or SME is enabled, return the vector length for EL.
  */
 uint32_t sve_vqm1_for_el_sm(CPUARMState *env, int el, bool sm)
 {
@@ -4781,6 +4779,12 @@ uint32_t sve_vqm1_for_el_sm(CPUARMState *env, int el, bool sm)
     if (sm) {
         cr = env->vfp.smcr_el;
         map = cpu->sme_vq.map;
+    } else if (map == 0) {
+        /*
+         * SME-only CPU not in streaming mode: effective VL
+         * is 128 bits, per R_KXKNK.
+         */
+        return 0;
     }
 
     if (el <= 1 && !el_is_in_host(env, el)) {
@@ -4997,7 +5001,7 @@ static const ARMCPRegInfo sme_reginfo[] = {
       .writefn = smcr_write, .raw_writefn = raw_write },
     { .name = "SMIDR_EL1", .state = ARM_CP_STATE_AA64,
       .opc0 = 3, .opc1 = 1, .crn = 0, .crm = 0, .opc2 = 6,
-      .access = PL1_R, .accessfn = access_aa64_tid1,
+      .access = PL1_R, .accessfn = access_tid1,
       /*
        * IMPLEMENTOR = 0 (software)
        * REVISION    = 0 (implementation defined)
@@ -5435,8 +5439,8 @@ static const ARMCPRegInfo dcpodp_reg[] = {
       .accessfn = aa64_cacheop_poc_access, .writefn = dccvap_writefn },
 };
 
-static CPAccessResult access_aa64_tid5(CPUARMState *env, const ARMCPRegInfo *ri,
-                                       bool isread)
+static CPAccessResult access_tid5(CPUARMState *env, const ARMCPRegInfo *ri,
+                                  bool isread)
 {
     if ((arm_current_el(env) < 2) && (arm_hcr_el2_eff(env) & HCR_TID5)) {
         return CP_ACCESS_TRAP_EL2;
@@ -5835,9 +5839,18 @@ static const ARMCPRegInfo ccsidr2_reginfo[] = {
       .readfn = ccsidr2_read, .type = ARM_CP_NO_RAW },
 };
 
-static CPAccessResult access_aa64_tid3(CPUARMState *env, const ARMCPRegInfo *ri,
-                                       bool isread)
+static CPAccessResult access_v7a_tid3(CPUARMState *env, const ARMCPRegInfo *ri,
+                                      bool isread)
 {
+    /*
+     * Trap on TID3 always. This should be used only for the fixed set of
+     * registers which are defined to trap on HCR.TID3 in v7A, which is:
+     *   ID_PFR{0,1}, ID_DFR0, ID_AFR0, ID_MMFR{0,1,2,3}, ID_ISAR{0,1,2,3,4,5}
+     * (MVFR0 and MVFR1 also trap in v7A, but this is not handled via
+     * this accessfn but in check_hcr_el2_trap.)
+     * Any other registers in the TID3 trap space should use access_tid3(),
+     * so that they trap on v8 and above, but not on v7.
+     */
     if ((arm_current_el(env) < 2) && (arm_hcr_el2_eff(env) & HCR_TID3)) {
         return CP_ACCESS_TRAP_EL2;
     }
@@ -5845,11 +5858,18 @@ static CPAccessResult access_aa64_tid3(CPUARMState *env, const ARMCPRegInfo *ri,
     return CP_ACCESS_OK;
 }
 
-static CPAccessResult access_aa32_tid3(CPUARMState *env, const ARMCPRegInfo *ri,
-                                       bool isread)
+static CPAccessResult access_tid3(CPUARMState *env, const ARMCPRegInfo *ri,
+                                  bool isread)
 {
+    /*
+     * Trap on TID3, if we implement at least v8. For v8 and above
+     * the ID register space is at least IMPDEF permitted to trap,
+     * and must trap if FEAT_FGT is implemented. We choose to trap
+     * always. Use this function for any new registers that should
+     * trap on TID3.
+     */
     if (arm_feature(env, ARM_FEATURE_V8)) {
-        return access_aa64_tid3(env, ri, isread);
+        return access_v7a_tid3(env, ri, isread);
     }
 
     return CP_ACCESS_OK;
@@ -6102,6 +6122,12 @@ static void tcr2_el1_write(CPUARMState *env, const ARMCPRegInfo *ri,
     if (cpu_isar_feature(aa64_aie, cpu)) {
         valid_mask |= TCR2_AIE;
     }
+    if (cpu_isar_feature(aa64_asid2, cpu)) {
+        valid_mask |= TCR2_FNG1 | TCR2_FNG0 | TCR2_A2;
+        if (((raw_read(env, ri) ^ value) & TCR2_A2) != 0) {
+            tlb_flush_by_mmuidx(CPU(cpu), alle1_tlbmask(env));
+        }
+    }
     value &= valid_mask;
     raw_write(env, ri, value);
 }
@@ -6120,6 +6146,12 @@ static void tcr2_el2_write(CPUARMState *env, const ARMCPRegInfo *ri,
     }
     if (cpu_isar_feature(aa64_mec, cpu)) {
         valid_mask |= TCR2_AMEC0 | TCR2_AMEC1;
+    }
+    if (cpu_isar_feature(aa64_asid2, cpu)) {
+        valid_mask |= TCR2_FNG1 | TCR2_FNG0 | TCR2_A2;
+        if (((raw_read(env, ri) ^ value) & TCR2_A2) != 0) {
+            tlb_flush_by_mmuidx(CPU(cpu), alle2_tlbmask());
+        }
     }
     value &= valid_mask;
     raw_write(env, ri, value);
@@ -6287,7 +6319,7 @@ void register_cp_regs_for_features(ARMCPU *cpu)
             { .name = "ID_PFR0", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 1, .opc2 = 0,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa32_tid3,
+              .accessfn = access_v7a_tid3,
               .resetvalue = GET_IDREG(isar, ID_PFR0)},
             /*
              * ID_PFR1 is not a plain ARM_CP_CONST because we don't know
@@ -6296,13 +6328,12 @@ void register_cp_regs_for_features(ARMCPU *cpu)
             { .name = "ID_PFR1", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 1, .opc2 = 1,
               .access = PL1_R, .type = ARM_CP_NO_RAW,
-              .accessfn = access_aa32_tid3,
 #ifdef CONFIG_USER_ONLY
               .type = ARM_CP_CONST,
               .resetvalue = GET_IDREG(isar, ID_PFR1),
 #else
               .type = ARM_CP_NO_RAW,
-              .accessfn = access_aa32_tid3,
+              .accessfn = access_v7a_tid3,
               .readfn = id_pfr1_read,
               .writefn = arm_cp_write_ignore
 #endif
@@ -6310,72 +6341,72 @@ void register_cp_regs_for_features(ARMCPU *cpu)
             { .name = "ID_DFR0", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 1, .opc2 = 2,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa32_tid3,
+              .accessfn = access_v7a_tid3,
               .resetvalue = GET_IDREG(isar, ID_DFR0)},
             { .name = "ID_AFR0", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 1, .opc2 = 3,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa32_tid3,
+              .accessfn = access_v7a_tid3,
               .resetvalue = GET_IDREG(isar, ID_AFR0)},
             { .name = "ID_MMFR0", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 1, .opc2 = 4,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa32_tid3,
+              .accessfn = access_v7a_tid3,
               .resetvalue = GET_IDREG(isar, ID_MMFR0)},
             { .name = "ID_MMFR1", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 1, .opc2 = 5,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa32_tid3,
+              .accessfn = access_v7a_tid3,
               .resetvalue = GET_IDREG(isar, ID_MMFR1)},
             { .name = "ID_MMFR2", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 1, .opc2 = 6,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa32_tid3,
+              .accessfn = access_v7a_tid3,
               .resetvalue = GET_IDREG(isar, ID_MMFR2)},
             { .name = "ID_MMFR3", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 1, .opc2 = 7,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa32_tid3,
+              .accessfn = access_v7a_tid3,
               .resetvalue = GET_IDREG(isar, ID_MMFR3)},
             { .name = "ID_ISAR0", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 2, .opc2 = 0,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa32_tid3,
+              .accessfn = access_v7a_tid3,
               .resetvalue = GET_IDREG(isar, ID_ISAR0)},
             { .name = "ID_ISAR1", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 2, .opc2 = 1,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa32_tid3,
+              .accessfn = access_v7a_tid3,
               .resetvalue = GET_IDREG(isar, ID_ISAR1)},
             { .name = "ID_ISAR2", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 2, .opc2 = 2,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa32_tid3,
+              .accessfn = access_v7a_tid3,
               .resetvalue = GET_IDREG(isar, ID_ISAR2)},
             { .name = "ID_ISAR3", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 2, .opc2 = 3,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa32_tid3,
+              .accessfn = access_v7a_tid3,
               .resetvalue = GET_IDREG(isar, ID_ISAR3) },
             { .name = "ID_ISAR4", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 2, .opc2 = 4,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa32_tid3,
+              .accessfn = access_v7a_tid3,
               .resetvalue = GET_IDREG(isar, ID_ISAR4) },
             { .name = "ID_ISAR5", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 2, .opc2 = 5,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa32_tid3,
+              .accessfn = access_v7a_tid3,
               .resetvalue = GET_IDREG(isar, ID_ISAR5) },
             { .name = "ID_MMFR4", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 2, .opc2 = 6,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa32_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_MMFR4)},
             { .name = "ID_ISAR6", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 2, .opc2 = 7,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa32_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_ISAR6) },
         };
         define_arm_cp_regs(cpu, v6_idregs);
@@ -6426,7 +6457,7 @@ void register_cp_regs_for_features(ARMCPU *cpu)
               .resetvalue = GET_IDREG(isar, ID_AA64PFR0)
 #else
               .type = ARM_CP_NO_RAW,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .readfn = id_aa64pfr0_read,
               .writefn = arm_cp_write_ignore
 #endif
@@ -6434,172 +6465,172 @@ void register_cp_regs_for_features(ARMCPU *cpu)
             { .name = "ID_AA64PFR1_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 4, .opc2 = 1,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_AA64PFR1)},
             { .name = "ID_AA64PFR2_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 4, .opc2 = 2,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_AA64PFR2)},
             { .name = "ID_AA64PFR3_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 4, .opc2 = 3,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "ID_AA64ZFR0_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 4, .opc2 = 4,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_AA64ZFR0)},
             { .name = "ID_AA64SMFR0_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 4, .opc2 = 5,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_AA64SMFR0)},
             { .name = "ID_AA64PFR6_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 4, .opc2 = 6,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "ID_AA64PFR7_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 4, .opc2 = 7,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "ID_AA64DFR0_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 5, .opc2 = 0,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_AA64DFR0) },
             { .name = "ID_AA64DFR1_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 5, .opc2 = 1,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_AA64DFR1) },
             { .name = "ID_AA64DFR2_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 5, .opc2 = 2,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "ID_AA64DFR3_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 5, .opc2 = 3,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "ID_AA64AFR0_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 5, .opc2 = 4,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_AA64AFR0) },
             { .name = "ID_AA64AFR1_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 5, .opc2 = 5,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_AA64AFR1) },
             { .name = "ID_AA64AFR2_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 5, .opc2 = 6,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "ID_AA64AFR3_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 5, .opc2 = 7,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "ID_AA64ISAR0_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 6, .opc2 = 0,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_AA64ISAR0)},
             { .name = "ID_AA64ISAR1_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 6, .opc2 = 1,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_AA64ISAR1)},
             { .name = "ID_AA64ISAR2_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 6, .opc2 = 2,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_AA64ISAR2)},
             { .name = "ID_AA64ISAR3_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 6, .opc2 = 3,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "ID_AA64ISAR4_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 6, .opc2 = 4,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "ID_AA64ISAR5_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 6, .opc2 = 5,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "ID_AA64ISAR6_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 6, .opc2 = 6,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "ID_AA64ISAR7_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 6, .opc2 = 7,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "ID_AA64MMFR0_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 7, .opc2 = 0,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_AA64MMFR0)},
             { .name = "ID_AA64MMFR1_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 7, .opc2 = 1,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_AA64MMFR1) },
             { .name = "ID_AA64MMFR2_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 7, .opc2 = 2,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_AA64MMFR2) },
             { .name = "ID_AA64MMFR3_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 7, .opc2 = 3,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_AA64MMFR3) },
-            { .name = "ID_AA64MMFR4_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
+            { .name = "ID_AA64MMFR4_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 7, .opc2 = 4,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
-              .resetvalue = 0 },
+              .accessfn = access_tid3,
+              .resetvalue = GET_IDREG(isar, ID_AA64MMFR4) },
             { .name = "ID_AA64MMFR5_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 7, .opc2 = 5,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "ID_AA64MMFR6_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 7, .opc2 = 6,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "ID_AA64MMFR7_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 7, .opc2 = 7,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "MVFR0_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 3, .opc2 = 0,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = cpu->isar.mvfr0 },
             { .name = "MVFR1_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 3, .opc2 = 1,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = cpu->isar.mvfr1 },
             { .name = "MVFR2_EL1", .state = ARM_CP_STATE_AA64,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 3, .opc2 = 2,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = cpu->isar.mvfr2 },
             /*
              * "0, c0, c3, {0,1,2}" are the encodings corresponding to
@@ -6610,17 +6641,17 @@ void register_cp_regs_for_features(ARMCPU *cpu)
             { .name = "RES_0_C0_C3_0", .state = ARM_CP_STATE_AA32,
               .cp = 15, .opc1 = 0, .crn = 0, .crm = 3, .opc2 = 0,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "RES_0_C0_C3_1", .state = ARM_CP_STATE_AA32,
               .cp = 15, .opc1 = 0, .crn = 0, .crm = 3, .opc2 = 1,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "RES_0_C0_C3_2", .state = ARM_CP_STATE_AA32,
               .cp = 15, .opc1 = 0, .crn = 0, .crm = 3, .opc2 = 2,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             /*
              * Other encodings in "0, c0, c3, ..." are STATE_BOTH because
@@ -6631,27 +6662,27 @@ void register_cp_regs_for_features(ARMCPU *cpu)
             { .name = "RES_0_C0_C3_3", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 3, .opc2 = 3,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
             { .name = "ID_PFR2", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 3, .opc2 = 4,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_PFR2)},
             { .name = "ID_DFR1", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 3, .opc2 = 5,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_DFR1)},
             { .name = "ID_MMFR5", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 3, .opc2 = 6,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = GET_IDREG(isar, ID_MMFR5)},
             { .name = "RES_0_C0_C3_7", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 3, .opc2 = 7,
               .access = PL1_R, .type = ARM_CP_CONST,
-              .accessfn = access_aa64_tid3,
+              .accessfn = access_tid3,
               .resetvalue = 0 },
         };
 #ifdef CONFIG_USER_ONLY
@@ -6705,6 +6736,8 @@ void register_cp_regs_for_features(ARMCPU *cpu)
             { .name = "ID_AA64MMFR2_EL1",
               .exported_bits = R_ID_AA64MMFR2_AT_MASK },
             { .name = "ID_AA64MMFR3_EL1",
+              .exported_bits = 0 },
+            { .name = "ID_AA64MMFR4_EL1",
               .exported_bits = 0 },
             { .name = "ID_AA64MMFR*_EL1_RESERVED",
               .is_glob = true },
@@ -6801,7 +6834,7 @@ void register_cp_regs_for_features(ARMCPU *cpu)
                 .state = ARM_CP_STATE_AA32,
                 .cp = 15, .opc1 = 0, .crn = 0, .crm = i, .opc2 = CP_ANY,
                 .access = PL1_R, .type = ARM_CP_CONST,
-                .accessfn = access_aa64_tid3,
+                .accessfn = access_tid3,
                 .resetvalue = 0 };
             define_one_arm_cp_reg(cpu, &v8_aa32_raz_idregs);
         }
@@ -7079,7 +7112,7 @@ void register_cp_regs_for_features(ARMCPU *cpu)
             { .name = "REVIDR_EL1", .state = ARM_CP_STATE_BOTH,
               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 0, .opc2 = 6,
               .access = PL1_R,
-              .accessfn = access_aa64_tid1,
+              .accessfn = access_tid1,
               .fgt = FGT_REVIDR_EL1,
               .type = ARM_CP_CONST, .resetvalue = cpu->revidr },
         };
@@ -7103,7 +7136,7 @@ void register_cp_regs_for_features(ARMCPU *cpu)
             { .name = "TCMTR",
               .cp = 15, .crn = 0, .crm = 0, .opc1 = 0, .opc2 = 2,
               .access = PL1_R,
-              .accessfn = access_aa32_tid1,
+              .accessfn = access_tid1,
               .type = ARM_CP_CONST, .resetvalue = 0 },
         };
         /* TLBTR is specific to VMSA */
@@ -7111,7 +7144,7 @@ void register_cp_regs_for_features(ARMCPU *cpu)
               .name = "TLBTR",
               .cp = 15, .crn = 0, .crm = 0, .opc1 = 0, .opc2 = 3,
               .access = PL1_R,
-              .accessfn = access_aa32_tid1,
+              .accessfn = access_tid1,
               .type = ARM_CP_CONST, .resetvalue = 0,
         };
         /* MPUIR is specific to PMSA V6+ */
@@ -7444,7 +7477,7 @@ void register_cp_regs_for_features(ARMCPU *cpu)
         ARMCPRegInfo gmid_reginfo = {
             .name = "GMID_EL1", .state = ARM_CP_STATE_AA64,
             .opc0 = 3, .opc1 = 1, .crn = 0, .crm = 0, .opc2 = 4,
-            .access = PL1_R, .accessfn = access_aa64_tid5,
+            .access = PL1_R, .accessfn = access_tid5,
             .type = ARM_CP_CONST, .resetvalue = cpu->gm_blocksize,
         };
         define_one_arm_cp_reg(cpu, &gmid_reginfo);
@@ -9438,7 +9471,7 @@ static void arm_cpu_do_interrupt_aarch64(CPUState *cs)
     aarch64_restore_sp(env, new_el);
 
     if (tcg_enabled()) {
-        helper_rebuild_hflags_a64(env, new_el);
+        arm_rebuild_hflags(env);
     }
 
     env->pc = addr;
@@ -10053,7 +10086,7 @@ void aarch64_sve_narrow_vq(CPUARMState *env, unsigned vq)
     uint64_t pmask;
 
     assert(vq >= 1 && vq <= ARM_MAX_VQ);
-    assert(vq <= env_archcpu(env)->sve_max_vq);
+    assert(vq <= arm_max_vq(env_archcpu(env)));
 
     /* Zap the high bits of the zregs.  */
     for (i = 0; i < 32; i++) {
@@ -10098,8 +10131,8 @@ void aarch64_sve_change_el(CPUARMState *env, int old_el,
     int old_len, new_len;
     bool old_a64, new_a64, sm;
 
-    /* Nothing to do if no SVE.  */
-    if (!cpu_isar_feature(aa64_sve, cpu)) {
+    /* Nothing to do if no SVE or SME.  */
+    if (!cpu_isar_feature(aa64_sve, cpu) && !cpu_isar_feature(aa64_sme, cpu)) {
         return;
     }
 

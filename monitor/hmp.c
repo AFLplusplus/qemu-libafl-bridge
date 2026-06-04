@@ -24,17 +24,21 @@
 
 #include "qemu/osdep.h"
 #include <dirent.h>
-#include "hw/qdev-core.h"
+#include "hw/core/qdev.h"
 #include "monitor-internal.h"
 #include "monitor/hmp.h"
+#include "monitor/hmp-target.h"
 #include "qobject/qdict.h"
 #include "qobject/qnum.h"
+#include "qemu/bswap.h"
 #include "qemu/config-file.h"
 #include "qemu/ctype.h"
 #include "qemu/cutils.h"
 #include "qemu/log.h"
 #include "qemu/option.h"
+#include "qemu/target-info.h"
 #include "qemu/units.h"
+#include "exec/gdbstub.h"
 #include "system/block-backend.h"
 #include "trace.h"
 
@@ -301,9 +305,49 @@ void hmp_help_cmd(Monitor *mon, const char *name)
     }
 
     /* 2. dump the contents according to parsed args */
-    help_cmd_dump(mon, hmp_cmds, args, nb_args, 0);
+    help_cmd_dump(mon, hmp_cmds_for_target(false), args, nb_args, 0);
 
     free_cmdline_args(args, nb_args);
+}
+
+/*
+ * Set @pval to the value in the register identified by @name.
+ * return %true if the register is found, %false otherwise.
+ */
+static bool gdb_get_register(Monitor *mon, int64_t *pval, const char *name)
+{
+    g_autoptr(GArray) regs = NULL;
+    CPUState *cs = mon_get_cpu(mon);
+
+    if (cs == NULL) {
+        return false;
+    }
+
+    regs = gdb_get_register_list(cs);
+
+    for (int i = 0; i < regs->len; i++) {
+        GDBRegDesc *reg = &g_array_index(regs, GDBRegDesc, i);
+        g_autoptr(GByteArray) buf = NULL;
+        int reg_size;
+
+        if (!reg->name || g_strcmp0(name, reg->name)) {
+            continue;
+        }
+
+        buf = g_byte_array_new();
+        reg_size = gdb_read_register(cs, buf, reg->gdb_reg);
+        if (reg_size > sizeof(*pval)) {
+            return false;
+        }
+
+        if (target_big_endian()) {
+            *pval = ldn_be_p(buf->data, reg_size);
+        } else {
+            *pval = ldn_le_p(buf->data, reg_size);
+        }
+        return true;
+    }
+    return false;
 }
 
 /*******************************************************************/
@@ -338,7 +382,6 @@ static int64_t expr_unary(Monitor *mon)
 {
     int64_t n;
     char *p;
-    int ret;
 
     switch (*pch) {
     case '+':
@@ -393,8 +436,8 @@ static int64_t expr_unary(Monitor *mon)
                 pch++;
             }
             *q = 0;
-            ret = get_monitor_def(mon, &reg, buf);
-            if (ret < 0) {
+            if (!gdb_get_register(mon, &reg, buf)
+                && get_monitor_def(mon, &reg, buf) < 0) {
                 expr_error(mon, "unknown register");
             }
             n = reg;
@@ -1131,7 +1174,8 @@ void handle_hmp_command(MonitorHMP *mon, const char *cmdline)
 
     trace_handle_hmp_command(mon, cmdline);
 
-    cmd = monitor_parse_command(mon, cmdline, &cmdline, hmp_cmds);
+    cmd = monitor_parse_command(mon, cmdline, &cmdline,
+                                hmp_cmds_for_target(false));
     if (!cmd) {
         return;
     }
@@ -1375,7 +1419,8 @@ static void monitor_find_completion(void *opaque,
     }
 
     /* 2. auto complete according to args */
-    monitor_find_completion_by_table(mon, hmp_cmds, args, nb_args);
+    monitor_find_completion_by_table(mon, hmp_cmds_for_target(false),
+                                     args, nb_args);
 
 cleanup:
     free_cmdline_args(args, nb_args);
@@ -1494,4 +1539,59 @@ void monitor_init_hmp(Chardev *chr, bool use_readline, Error **errp)
     qemu_chr_fe_set_handlers(&mon->common.chr, monitor_can_read, monitor_read,
                              monitor_event, NULL, &mon->common, NULL, true);
     monitor_list_append(&mon->common);
+}
+
+/**
+ * Is @name in the '|' separated list of names @list?
+ */
+int hmp_compare_cmd(const char *name, const char *list)
+{
+    const char *p, *pstart;
+    int len;
+    len = strlen(name);
+    p = list;
+    for (;;) {
+        pstart = p;
+        p = qemu_strchrnul(p, '|');
+        if ((p - pstart) == len && !memcmp(pstart, name, len)) {
+            return 1;
+        }
+        if (*p == '\0') {
+            break;
+        }
+        p++;
+    }
+    return 0;
+}
+
+void monitor_register_hmp(const char *name, bool info,
+                          void (*cmd)(Monitor *mon, const QDict *qdict))
+{
+    HMPCommand *table = hmp_cmds_for_target(info);
+
+    while (table->name != NULL) {
+        if (strcmp(table->name, name) == 0) {
+            g_assert(table->cmd == NULL && table->cmd_info_hrt == NULL);
+            table->cmd = cmd;
+            return;
+        }
+        table++;
+    }
+    g_assert_not_reached();
+}
+
+void monitor_register_hmp_info_hrt(const char *name,
+                                   HumanReadableText *(*handler)(Error **errp))
+{
+    HMPCommand *table = hmp_cmds_for_target(true);
+
+    while (table->name != NULL) {
+        if (strcmp(table->name, name) == 0) {
+            g_assert(table->cmd == NULL && table->cmd_info_hrt == NULL);
+            table->cmd_info_hrt = handler;
+            return;
+        }
+        table++;
+    }
+    g_assert_not_reached();
 }

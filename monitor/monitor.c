@@ -268,43 +268,6 @@ void monitor_printc(Monitor *mon, int c)
     monitor_printf(mon, "'");
 }
 
-/*
- * Print to current monitor if we have one, else to stderr.
- */
-int error_vprintf(const char *fmt, va_list ap)
-{
-    Monitor *cur_mon = monitor_cur();
-
-    if (cur_mon && !monitor_cur_is_qmp()) {
-        return monitor_vprintf(cur_mon, fmt, ap);
-    }
-    return vfprintf(stderr, fmt, ap);
-}
-
-int error_vprintf_unless_qmp(const char *fmt, va_list ap)
-{
-    Monitor *cur_mon = monitor_cur();
-
-    if (!cur_mon) {
-        return vfprintf(stderr, fmt, ap);
-    }
-    if (!monitor_cur_is_qmp()) {
-        return monitor_vprintf(cur_mon, fmt, ap);
-    }
-    return -1;
-}
-
-int error_printf_unless_qmp(const char *fmt, ...)
-{
-    va_list ap;
-    int ret;
-
-    va_start(ap, fmt);
-    ret = error_vprintf_unless_qmp(fmt, ap);
-    va_end(ap);
-    return ret;
-}
-
 static MonitorQAPIEventConf monitor_qapi_event_conf[QAPI_EVENT__MAX] = {
     /* Limit guest-triggerable events to 1 per second */
     [QAPI_EVENT_RTC_CHANGE]        = { 1000 * SCALE_MS },
@@ -346,9 +309,13 @@ static void monitor_qapi_event_emit(QAPIEvent event, QDict *qdict)
         }
 
         qmp_mon = container_of(mon, MonitorQMP, common);
-        if (qmp_mon->commands != &qmp_cap_negotiation_commands) {
-            qmp_send_response(qmp_mon, qdict);
+        {
+            QEMU_LOCK_GUARD(&mon->mon_lock);
+            if (qmp_mon->commands == &qmp_cap_negotiation_commands) {
+                continue;
+            }
         }
+        qmp_send_response(qmp_mon, qdict);
     }
 }
 
@@ -363,14 +330,33 @@ monitor_qapi_event_queue_no_reenter(QAPIEvent event, QDict *qdict)
 {
     MonitorQAPIEventConf *evconf;
     MonitorQAPIEventState *evstate;
+    bool throttled;
 
     assert(event < QAPI_EVENT__MAX);
     evconf = &monitor_qapi_event_conf[event];
     trace_monitor_protocol_event_queue(event, qdict, evconf->rate);
+    throttled = evconf->rate;
+
+    /*
+     * Rate limit BLOCK_IO_ERROR only for action != "stop".
+     *
+     * If the VM is stopped after an I/O error, this is important information
+     * for the management tool to keep track of the state of QEMU and we can't
+     * merge any events. At the same time, stopping the VM means that the guest
+     * can't send additional requests and the number of events is already
+     * limited, so we can do without rate limiting.
+     */
+    if (event == QAPI_EVENT_BLOCK_IO_ERROR) {
+        QDict *data = qobject_to(QDict, qdict_get(qdict, "data"));
+        const char *action = qdict_get_str(data, "action");
+        if (!strcmp(action, "stop")) {
+            throttled = false;
+        }
+    }
 
     QEMU_LOCK_GUARD(&monitor_lock);
 
-    if (!evconf->rate) {
+    if (!throttled) {
         /* Unthrottled event */
         monitor_qapi_event_emit(event, qdict);
     } else {
@@ -704,18 +690,22 @@ void monitor_cleanup(void)
     }
 }
 
-static void monitor_qapi_event_init(void)
+/*
+ * Initialize static vars that have no deps on external
+ * module initialization, and are required for external
+ * functions to call things like monitor_cur()
+ */
+static void __attribute__((__constructor__(QEMU_CONSTRUCTOR_EARLY)))
+monitor_init_static(void)
 {
+    qemu_mutex_init(&monitor_lock);
+    coroutine_mon = g_hash_table_new(NULL, NULL);
     monitor_qapi_event_state = g_hash_table_new(qapi_event_throttle_hash,
                                                 qapi_event_throttle_equal);
 }
 
 void monitor_init_globals(void)
 {
-    monitor_qapi_event_init();
-    qemu_mutex_init(&monitor_lock);
-    coroutine_mon = g_hash_table_new(NULL, NULL);
-
     /*
      * The dispatcher BH must run in the main loop thread, since we
      * have commands assuming that context.  It would be nice to get

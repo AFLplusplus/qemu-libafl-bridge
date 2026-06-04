@@ -9,7 +9,7 @@
 #define QEMU_SYSTEM_PHYSMEM_H
 
 #include "exec/hwaddr.h"
-#include "exec/ramlist.h"
+#include "system/ramlist.h"
 
 #define DIRTY_CLIENTS_ALL     ((1 << DIRTY_MEMORY_NUM) - 1)
 #define DIRTY_CLIENTS_NOCODE  (DIRTY_CLIENTS_ALL & ~(1 << DIRTY_MEMORY_CODE))
@@ -39,9 +39,10 @@ uint64_t physical_memory_set_dirty_lebitmap(unsigned long *bitmap,
 
 void physical_memory_dirty_bits_cleared(ram_addr_t start, ram_addr_t length);
 
-bool physical_memory_test_and_clear_dirty(ram_addr_t start,
-                                          ram_addr_t length,
-                                          unsigned client);
+uint64_t physical_memory_test_and_clear_dirty(ram_addr_t start,
+                                              ram_addr_t length,
+                                              unsigned client,
+                                              unsigned long *bmap);
 
 DirtyBitmapSnapshot *
 physical_memory_snapshot_and_clear_dirty(MemoryRegion *mr, hwaddr offset,
@@ -50,5 +51,6 @@ physical_memory_snapshot_and_clear_dirty(MemoryRegion *mr, hwaddr offset,
 bool physical_memory_snapshot_get_dirty(DirtyBitmapSnapshot *snap,
                                         ram_addr_t start,
                                         ram_addr_t length);
+int ram_block_rebind(Error **errp);
 
 #endif

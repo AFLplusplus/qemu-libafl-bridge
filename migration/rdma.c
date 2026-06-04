@@ -15,8 +15,10 @@
  */
 
 #include "qemu/osdep.h"
+#include "channel.h"
 #include "qapi/error.h"
 #include "qemu/cutils.h"
+#include "channel.h"
 #include "exec/target_page.h"
 #include "rdma.h"
 #include "migration.h"
@@ -384,7 +386,6 @@ struct QIOChannelRDMA {
     QIOChannel parent;
     RDMAContext *rdmain;
     RDMAContext *rdmaout;
-    QEMUFile *file;
     bool blocking; /* XXX we don't actually honour this yet */
 };
 
@@ -1936,8 +1937,8 @@ retry:
                  * would think that head.len would be the more similar
                  * thing to a correct value.
                  */
-                stat64_add(&mig_stats.zero_pages,
-                           sge.length / qemu_target_page_size());
+                qatomic_add(&mig_stats.zero_pages,
+                            sge.length / qemu_target_page_size());
                 return 1;
             }
 
@@ -2045,7 +2046,7 @@ retry:
     }
 
     set_bit(chunk, block->transit_bitmap);
-    stat64_add(&mig_stats.normal_pages, sge.length / qemu_target_page_size());
+    qatomic_add(&mig_stats.normal_pages, sge.length / qemu_target_page_size());
     /*
      * We are adding to transferred the amount of data written, but no
      * overhead at all.  I will assume that RDMA is magicaly and don't
@@ -2055,7 +2056,7 @@ retry:
      *     sizeof(send_wr) + sge.length
      * but this being RDMA, who knows.
      */
-    stat64_add(&mig_stats.rdma_bytes, sge.length);
+    qatomic_add(&mig_stats.rdma_bytes, sge.length);
     ram_transferred_add(sge.length);
     rdma->total_writes++;
 
@@ -2349,8 +2350,7 @@ static int qemu_get_cm_event_timeout(RDMAContext *rdma,
         error_setg(errp, "RDMA ERROR: poll cm event timeout");
         return -1;
     } else if (ret < 0) {
-        error_setg(errp, "RDMA ERROR: failed to poll cm event, errno=%i",
-                   errno);
+        error_setg_errno(errp, errno, "RDMA ERROR: failed to poll cm event");
         return -1;
     } else if (poll_fd.revents & POLLIN) {
         if (rdma_get_cm_event(rdma->channel, cm_event) < 0) {
@@ -3836,32 +3836,30 @@ static void qio_channel_rdma_register_types(void)
 
 type_init(qio_channel_rdma_register_types);
 
-static QEMUFile *rdma_new_input(RDMAContext *rdma)
+static QIOChannel *rdma_new_input(RDMAContext *rdma)
 {
     QIOChannelRDMA *rioc = QIO_CHANNEL_RDMA(object_new(TYPE_QIO_CHANNEL_RDMA));
 
-    rioc->file = qemu_file_new_input(QIO_CHANNEL(rioc));
     rioc->rdmain = rdma;
     rioc->rdmaout = rdma->return_path;
 
-    return rioc->file;
+    return QIO_CHANNEL(rioc);
 }
 
-static QEMUFile *rdma_new_output(RDMAContext *rdma)
+static QIOChannel *rdma_new_output(RDMAContext *rdma)
 {
     QIOChannelRDMA *rioc = QIO_CHANNEL_RDMA(object_new(TYPE_QIO_CHANNEL_RDMA));
 
-    rioc->file = qemu_file_new_output(QIO_CHANNEL(rioc));
     rioc->rdmaout = rdma;
     rioc->rdmain = rdma->return_path;
 
-    return rioc->file;
+    return QIO_CHANNEL(rioc);
 }
 
 static void rdma_accept_incoming_migration(void *opaque)
 {
     RDMAContext *rdma = opaque;
-    QEMUFile *f;
+    QIOChannel *ioc;
 
     trace_qemu_rdma_accept_incoming_migration();
     if (qemu_rdma_accept(rdma) < 0) {
@@ -3875,25 +3873,25 @@ static void rdma_accept_incoming_migration(void *opaque)
         return;
     }
 
-    f = rdma_new_input(rdma);
-    if (f == NULL) {
+    ioc = rdma_new_input(rdma);
+    if (ioc == NULL) {
         error_report("RDMA ERROR: could not open RDMA for input");
         qemu_rdma_cleanup(rdma);
         return;
     }
 
     rdma->migration_started_on_destination = 1;
-    migration_fd_process_incoming(f);
+    migration_incoming_setup(ioc, CH_MAIN, &error_abort);
+    migration_start_incoming();
 }
 
-void rdma_start_incoming_migration(InetSocketAddress *host_port,
-                                   Error **errp)
+void rdma_connect_incoming(InetSocketAddress *host_port, Error **errp)
 {
     MigrationState *s = migrate_get_current();
     int ret;
     RDMAContext *rdma;
 
-    trace_rdma_start_incoming_migration();
+    trace_rdma_connect_incoming();
 
     /* Avoid ram_block_discard_disable(), cannot change during migration. */
     if (ram_block_discard_is_required()) {
@@ -3911,7 +3909,7 @@ void rdma_start_incoming_migration(InetSocketAddress *host_port,
         goto err;
     }
 
-    trace_rdma_start_incoming_migration_after_dest_init();
+    trace_rdma_connect_incoming_after_dest_init();
 
     ret = rdma_listen(rdma->listen_id, 5);
 
@@ -3920,7 +3918,7 @@ void rdma_start_incoming_migration(InetSocketAddress *host_port,
         goto cleanup_rdma;
     }
 
-    trace_rdma_start_incoming_migration_after_rdma_listen();
+    trace_rdma_connect_incoming_after_rdma_listen();
     s->rdma_migration = true;
     qemu_set_fd_handler(rdma->channel->fd, rdma_accept_incoming_migration,
                         NULL, (void *)(intptr_t)rdma);
@@ -3935,8 +3933,8 @@ err:
     g_free(rdma);
 }
 
-void rdma_start_outgoing_migration(void *opaque,
-                            InetSocketAddress *host_port, Error **errp)
+QIOChannel *rdma_connect_outgoing(void *opaque,
+                                  InetSocketAddress *host_port, Error **errp)
 {
     MigrationState *s = opaque;
     RDMAContext *rdma_return_path = NULL;
@@ -3946,7 +3944,7 @@ void rdma_start_outgoing_migration(void *opaque,
     /* Avoid ram_block_discard_disable(), cannot change during migration. */
     if (ram_block_discard_is_required()) {
         error_setg(errp, "RDMA: cannot disable RAM discard");
-        return;
+        return NULL;
     }
 
     rdma = qemu_rdma_data_init(host_port, errp);
@@ -3960,7 +3958,7 @@ void rdma_start_outgoing_migration(void *opaque,
         goto err;
     }
 
-    trace_rdma_start_outgoing_migration_after_rdma_source_init();
+    trace_rdma_connect_outgoing_after_rdma_source_init();
     ret = qemu_rdma_connect(rdma, false, errp);
 
     if (ret < 0) {
@@ -3993,15 +3991,14 @@ void rdma_start_outgoing_migration(void *opaque,
         rdma_return_path->is_return_path = true;
     }
 
-    trace_rdma_start_outgoing_migration_after_rdma_connect();
+    trace_rdma_connect_outgoing_after_rdma_connect();
 
-    s->to_dst_file = rdma_new_output(rdma);
     s->rdma_migration = true;
-    migration_connect(s, NULL);
-    return;
+    return rdma_new_output(rdma);
 return_path_err:
     qemu_rdma_cleanup(rdma);
 err:
     g_free(rdma);
     g_free(rdma_return_path);
+    return NULL;
 }

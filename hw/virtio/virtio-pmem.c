@@ -17,12 +17,11 @@
 #include "qemu/iov.h"
 #include "qemu/main-loop.h"
 #include "hw/virtio/virtio-pmem.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/virtio/virtio-access.h"
 #include "standard-headers/linux/virtio_ids.h"
 #include "standard-headers/linux/virtio_pmem.h"
 #include "system/hostmem.h"
-#include "block/aio.h"
 #include "block/thread-pool.h"
 #include "trace.h"
 
@@ -74,7 +73,6 @@ static void virtio_pmem_flush(VirtIODevice *vdev, VirtQueue *vq)
     trace_virtio_pmem_flush_request();
     req_data = virtqueue_pop(vq, sizeof(VirtIODeviceRequest));
     if (!req_data) {
-        virtio_error(vdev, "virtio-pmem missing request data");
         return;
     }
 

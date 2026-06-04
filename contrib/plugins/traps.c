@@ -4,7 +4,7 @@
  *
  * Traps - count traps
  *
- * Count the number of interrupts (asyncronous events), exceptions (synchronous
+ * Count the number of interrupts (asynchronous events), exceptions (synchronous
  * events) and host calls (e.g. semihosting) per cpu and report those counts on
  * exit.
  */

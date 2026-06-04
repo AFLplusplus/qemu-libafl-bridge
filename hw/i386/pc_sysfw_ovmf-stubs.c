@@ -24,3 +24,8 @@ void pc_system_parse_ovmf_flash(uint8_t *flash_ptr, size_t flash_size)
 {
     g_assert_not_reached();
 }
+
+void x86_firmware_configure(hwaddr gpa, void *ptr, int size)
+{
+    g_assert_not_reached();
+}

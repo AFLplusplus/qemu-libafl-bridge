@@ -64,7 +64,7 @@ file_paio_submit(void *acb, void *opaque, int64_t offset, int count, int type) "
 # io_uring.c
 luring_cqe_handler(void *req, int ret) "req %p ret %d"
 luring_co_submit(void *bs, void *req, int fd, uint64_t offset, size_t nbytes, int type) "bs %p req %p fd %d offset %" PRId64 " nbytes %zd type %d"
-luring_resubmit_short_read(void *req, int nread) "req %p nread %d"
+luring_resubmit_short_io(void *req, int ndone) "req %p ndone %d"
 
 # qcow2.c
 qcow2_add_task(void *co, void *bs, void *pool, const char *action, int cluster_type, uint64_t host_offset, uint64_t offset, uint64_t bytes, void *qiov, size_t qiov_offset) "co %p bs %p pool %p: %s: cluster_type %d file_cluster_offset %" PRIu64 " offset %" PRIu64 " bytes %" PRIu64 " qiov %p qiov_offset %zu"
@@ -191,6 +191,7 @@ ssh_server_status(int status) "server status=%d"
 curl_timer_cb(long timeout_ms) "timer callback timeout_ms %ld"
 curl_sock_cb(int action, int fd) "sock action %d on fd %d"
 curl_read_cb(size_t realsize) "just reading %zu bytes"
+curl_header_cb(const char *key, const char *val) "looking at %s: %s"
 curl_open(const char *file) "opening %s"
 curl_open_size(uint64_t size) "size = %" PRIu64
 curl_setup_preadv(uint64_t bytes, uint64_t start, const char *range) "reading %" PRIu64 " at %" PRIu64 " (%s)"

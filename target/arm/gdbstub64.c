@@ -158,7 +158,7 @@ int aarch64_gdb_get_sve_reg(CPUState *cs, GByteArray *buf, int reg)
     case 0 ... 31:
     {
         int vq, len = 0;
-        for (vq = 0; vq < cpu->sve_max_vq; vq++) {
+        for (vq = 0; vq < arm_max_vq(cpu); vq++) {
             len += gdb_get_reg128(buf,
                                   env->vfp.zregs[reg].d[vq * 2 + 1],
                                   env->vfp.zregs[reg].d[vq * 2]);
@@ -174,7 +174,7 @@ int aarch64_gdb_get_sve_reg(CPUState *cs, GByteArray *buf, int reg)
     {
         int preg = reg - 34;
         int vq, len = 0;
-        for (vq = 0; vq < cpu->sve_max_vq; vq = vq + 4) {
+        for (vq = 0; vq < arm_max_vq(cpu); vq = vq + 4) {
             len += gdb_get_reg64(buf, env->vfp.pregs[preg].p[vq / 4]);
         }
         return len;
@@ -208,7 +208,7 @@ int aarch64_gdb_set_sve_reg(CPUState *cs, uint8_t *buf, int reg)
     case 0 ... 31:
     {
         int vq, len = 0;
-        for (vq = 0; vq < cpu->sve_max_vq; vq++) {
+        for (vq = 0; vq < arm_max_vq(cpu); vq++) {
             if (target_big_endian()) {
                 env->vfp.zregs[reg].d[vq * 2 + 1] = ldq_p(buf);
                 buf += 8;
@@ -233,7 +233,7 @@ int aarch64_gdb_set_sve_reg(CPUState *cs, uint8_t *buf, int reg)
     {
         int preg = reg - 34;
         int vq, len = 0;
-        for (vq = 0; vq < cpu->sve_max_vq; vq = vq + 4) {
+        for (vq = 0; vq < arm_max_vq(cpu); vq = vq + 4) {
             env->vfp.pregs[preg].p[vq / 4] = ldq_p(buf);
             buf += 8;
             len += 8;
@@ -540,8 +540,8 @@ static void output_vector_union_type(GDBFeatureBuilder *builder, int reg_width,
 GDBFeature *arm_gen_dynamic_svereg_feature(CPUState *cs, int base_reg)
 {
     ARMCPU *cpu = ARM_CPU(cs);
-    int reg_width = cpu->sve_max_vq * 128;
-    int pred_width = cpu->sve_max_vq * 16;
+    int reg_width = arm_max_vq(cpu) * 128;
+    int pred_width = arm_max_vq(cpu) * 16;
     GDBFeatureBuilder builder;
     char *name;
     int reg = 0;
@@ -878,4 +878,56 @@ void aarch64_cpu_register_gdb_commands(ARMCPU *cpu, GString *qsupported,
         g_ptr_array_add(stable, (gpointer) &cmd_handler_table[QMemTags]);
     }
 #endif
+}
+
+void aarch64_cpu_register_gdb_regs_for_features(ARMCPU *cpu)
+{
+    CPUState *cs = CPU(cpu);
+    if (isar_feature_aa64_sve(&cpu->isar) ||
+        isar_feature_aa64_sme(&cpu->isar)) {
+        GDBFeature *feature = arm_gen_dynamic_svereg_feature(cs, cs->gdb_num_regs);
+        gdb_register_coprocessor(cs, aarch64_gdb_get_sve_reg,
+                                 aarch64_gdb_set_sve_reg, feature);
+    } else {
+        gdb_register_coprocessor(cs, aarch64_gdb_get_fpu_reg,
+                                 aarch64_gdb_set_fpu_reg,
+                                 gdb_find_static_feature("aarch64-fpu.xml"));
+    }
+
+    if (isar_feature_aa64_sme(&cpu->isar)) {
+        GDBFeature *sme_feature =
+            arm_gen_dynamic_smereg_feature(cs, cs->gdb_num_regs);
+        gdb_register_coprocessor(cs, aarch64_gdb_get_sme_reg,
+                                 aarch64_gdb_set_sme_reg, sme_feature);
+        if (isar_feature_aa64_sme2(&cpu->isar)) {
+            gdb_register_coprocessor(cs, aarch64_gdb_get_sme2_reg,
+                                     aarch64_gdb_set_sme2_reg,
+                                     gdb_find_static_feature("aarch64-sme2.xml"));
+        }
+    }
+    /*
+     * Note that we report pauth information via the feature name
+     * org.gnu.gdb.aarch64.pauth_v2, not org.gnu.gdb.aarch64.pauth.
+     * GDB versions 9 through 12 have a bug where they will crash
+     * if they see the latter XML from QEMU.
+     */
+    if (isar_feature_aa64_pauth(&cpu->isar)) {
+        gdb_register_coprocessor(cs, aarch64_gdb_get_pauth_reg,
+                                 aarch64_gdb_set_pauth_reg,
+                                 gdb_find_static_feature("aarch64-pauth.xml"));
+    }
+
+#ifdef CONFIG_USER_ONLY
+    /* Memory Tagging Extension (MTE) 'tag_ctl' pseudo-register. */
+    if (cpu_isar_feature(aa64_mte, cpu)) {
+        gdb_register_coprocessor(cs, aarch64_gdb_get_tag_ctl_reg,
+                                 aarch64_gdb_set_tag_ctl_reg,
+                                 gdb_find_static_feature("aarch64-mte.xml"));
+    }
+#endif
+
+    /* All AArch64 CPUs have at least TPIDR */
+    gdb_register_coprocessor(cs, aarch64_gdb_get_tls_reg,
+                             aarch64_gdb_set_tls_reg,
+                             arm_gen_dynamic_tls_feature(cs, cs->gdb_num_regs));
 }

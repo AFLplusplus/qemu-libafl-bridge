@@ -47,18 +47,17 @@ target_ulong HELPER(vsetvl)(CPURISCVState *env, target_ulong s1,
     target_ulong reserved = s2 &
                             MAKE_64BIT_MASK(R_VTYPE_RESERVED_SHIFT,
                                             xlen - 1 - R_VTYPE_RESERVED_SHIFT);
-    uint16_t vlen = cpu->cfg.vlenb << 3;
     int8_t lmul;
 
     if (vlmul & 4) {
         /*
          * Fractional LMUL, check:
          *
-         * VLEN * LMUL >= SEW
-         * VLEN >> (8 - lmul) >= sew
-         * (vlenb << 3) >> (8 - lmul) >= sew
+         * ELEN * LMUL >= SEW
+         * ELEN >> (8 - vlmul) >= sew
          */
-        if (vlmul == 4 || (vlen >> (8 - vlmul)) < sew) {
+        if (vlmul == 4 ||
+            (cpu->cfg.elen >> (8 - vlmul)) < sew) {
             vill = true;
         }
     }
@@ -151,16 +150,15 @@ static void probe_pages(CPURISCVState *env, target_ulong addr, target_ulong len,
         addr += curlen;
         curlen = len - curlen;
         if (flags != NULL) {
-            *flags = probe_access_flags(env, adjust_addr(env, addr), curlen,
-                                        access_type, mmu_index, nonfault,
-                                        host, ra);
+            *flags |= probe_access_flags(env, adjust_addr(env, addr), curlen,
+                                         access_type, mmu_index, nonfault,
+                                         host, ra);
         } else {
             probe_access(env, adjust_addr(env, addr), curlen, access_type,
                          mmu_index, ra);
         }
     }
 }
-
 
 static inline void vext_set_elem_mask(void *v0, int index,
                                       uint8_t value)
@@ -193,9 +191,9 @@ void NAME##_host(void *vd, uint32_t idx, void *host)        \
 }
 
 GEN_VEXT_LD_ELEM(lde_b, uint8_t,  H1, ldub)
-GEN_VEXT_LD_ELEM(lde_h, uint16_t, H2, lduw)
-GEN_VEXT_LD_ELEM(lde_w, uint32_t, H4, ldl)
-GEN_VEXT_LD_ELEM(lde_d, uint64_t, H8, ldq)
+GEN_VEXT_LD_ELEM(lde_h, uint16_t, H2, lduw_le)
+GEN_VEXT_LD_ELEM(lde_w, uint32_t, H4, ldl_le)
+GEN_VEXT_LD_ELEM(lde_d, uint64_t, H8, ldq_le)
 
 #define GEN_VEXT_ST_ELEM(NAME, ETYPE, H, STSUF)             \
 static inline QEMU_ALWAYS_INLINE                            \
@@ -214,9 +212,9 @@ void NAME##_host(void *vd, uint32_t idx, void *host)        \
 }
 
 GEN_VEXT_ST_ELEM(ste_b, uint8_t,  H1, stb)
-GEN_VEXT_ST_ELEM(ste_h, uint16_t, H2, stw)
-GEN_VEXT_ST_ELEM(ste_w, uint32_t, H4, stl)
-GEN_VEXT_ST_ELEM(ste_d, uint64_t, H8, stq)
+GEN_VEXT_ST_ELEM(ste_h, uint16_t, H2, stw_le)
+GEN_VEXT_ST_ELEM(ste_w, uint32_t, H4, stl_le)
+GEN_VEXT_ST_ELEM(ste_d, uint64_t, H8, stq_le)
 
 static inline QEMU_ALWAYS_INLINE void
 vext_continuous_ldst_tlb(CPURISCVState *env, vext_ldst_elem_fn_tlb *ldst_tlb,
@@ -659,9 +657,9 @@ vext_ldff(void *vd, void *v0, target_ulong base, CPURISCVState *env,
     uint32_t esz = 1 << log2_esz;
     uint32_t msize = nf * esz;
     uint32_t vma = vext_vma(desc);
-    target_ulong addr, addr_probe, addr_i, offset, remain, page_split, elems;
+    target_ulong addr, addr_i, offset, remain, page_split, elems;
     int mmu_index = riscv_env_mmu_index(env, false);
-    int flags, probe_flags;
+    int flags;
     void *host;
 
     VSTART_CHECK_EARLY_EXIT(env, env->vl);
@@ -675,16 +673,8 @@ vext_ldff(void *vd, void *v0, target_ulong base, CPURISCVState *env,
     }
 
     /* Check page permission/pmp/watchpoint/etc. */
-    probe_pages(env, addr, elems * msize, ra, MMU_DATA_LOAD, mmu_index, &host,
-                &flags, true);
-
-    /* If we are crossing a page check also the second page. */
-    if (env->vl > elems) {
-        addr_probe = addr + (elems << log2_esz);
-        probe_pages(env, addr_probe, elems * msize, ra, MMU_DATA_LOAD,
-                    mmu_index, &host, &probe_flags, true);
-        flags |= probe_flags;
-    }
+    probe_pages(env, addr, (env->vl - env->vstart) * msize, ra, MMU_DATA_LOAD,
+                mmu_index, &host, &flags, true);
 
     if (flags & ~TLB_WATCHPOINT) {
         /* probe every access */

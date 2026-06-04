@@ -710,7 +710,7 @@ static void char_hub_test(void)
         /*
          * Now we are good to go, first repeat "lost" sequence, which
          * was already consumed and drained by the ring buffers, but
-         * pipe have not recieved that yet.
+         * the pipe has not received it yet.
          */
         ret = qemu_chr_fe_write(&chr_fe, (void *)"thisisit", 8);
         g_assert_cmpint(ret, ==, 8);
@@ -1011,6 +1011,8 @@ static void char_udp_test_internal(Chardev *reuse_chr, int sock)
 
         qemu_chr_fe_init(fe, chr, &error_abort);
     }
+
+    g_assert(chr->be_open);
 
     d.chr = chr;
     qemu_chr_fe_set_handlers(fe, socket_can_read_hello, socket_read_hello,

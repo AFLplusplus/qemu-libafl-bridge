@@ -13,13 +13,14 @@
 #include "qapi/error.h"
 #include "hw/acpi/acpi.h"
 #include "hw/acpi/pcihp.h"
+#include "hw/acpi/cpu.h"
 #include "hw/acpi/generic_event_device.h"
 #include "hw/pci/pci.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/mem/pc-dimm.h"
 #include "hw/mem/nvdimm.h"
 #include "hw/pci/pci_device.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qemu/error-report.h"
 #include "system/runstate.h"
@@ -505,6 +506,9 @@ static void acpi_ged_realize(DeviceState *dev, Error **errp)
     uint32_t ged_events;
     int i;
 
+    acpi_memory_hotplug_init(&s->container_memhp, OBJECT(dev),
+                             &s->memhp_state, 0);
+
     if (pcihp_state->use_acpi_hotplug_bridge) {
         s->ged_event_bitmap |= ACPI_GED_PCI_HOTPLUG_EVT;
     }
@@ -567,8 +571,6 @@ static void acpi_ged_initfn(Object *obj)
     memory_region_init(&s->container_memhp, OBJECT(dev), "memhp container",
                        MEMORY_HOTPLUG_IO_LEN);
     sysbus_init_mmio(sbd, &s->container_memhp);
-    acpi_memory_hotplug_init(&s->container_memhp, OBJECT(dev),
-                             &s->memhp_state, 0);
 
     memory_region_init_io(&ged_st->regs, obj, &ged_regs_ops, ged_st,
                           TYPE_ACPI_GED "-regs", ACPI_GED_REG_COUNT);

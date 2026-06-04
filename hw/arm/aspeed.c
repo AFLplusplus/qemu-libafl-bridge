@@ -21,7 +21,7 @@
 #include "system/block-backend.h"
 #include "qemu/error-report.h"
 #include "qemu/units.h"
-#include "hw/qdev-clock.h"
+#include "hw/core/qdev-clock.h"
 #include "system/system.h"
 
 static struct arm_boot_info aspeed_board_binfo = {
@@ -77,8 +77,8 @@ static void aspeed_reset_secondary(ARMCPU *cpu,
     CPUState *cs = CPU(cpu);
 
     /* info->smp_bootreg_addr */
-    address_space_stl_notdirty(as, AST_SMP_MBOX_FIELD_GOSIGN, 0,
-                               MEMTXATTRS_UNSPECIFIED, NULL);
+    address_space_stl(as, AST_SMP_MBOX_FIELD_GOSIGN, 0,
+                         MEMTXATTRS_UNSPECIFIED, NULL);
     cpu_set_pc(cs, info->smp_loader_start);
 }
 

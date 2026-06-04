@@ -37,13 +37,13 @@
 #include "hw/misc/unimp.h"
 #include "hw/intc/i8259.h"
 #include "hw/intc/loongson_ipi.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "hw/isa/superio.h"
 #include "hw/pci/msi.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_host.h"
 #include "hw/pci-host/gpex.h"
-#include "hw/usb.h"
+#include "hw/usb/usb.h"
 #include "net/net.h"
 #include "system/kvm.h"
 #include "system/qtest.h"
@@ -287,7 +287,7 @@ static void fw_conf_init(void)
     FWCfgState *fw_cfg;
     hwaddr cfg_addr = virt_memmap[VIRT_FW_CFG].base;
 
-    fw_cfg = fw_cfg_init_mem_wide(cfg_addr, cfg_addr + 8, 8, 0, NULL);
+    fw_cfg = fw_cfg_init_mem_nodma(cfg_addr, cfg_addr + 8, 8);
     fw_cfg_add_i16(fw_cfg, FW_CFG_NB_CPUS, (uint16_t)current_machine->smp.cpus);
     fw_cfg_add_i16(fw_cfg, FW_CFG_MAX_CPUS, (uint16_t)current_machine->smp.max_cpus);
     fw_cfg_add_i64(fw_cfg, FW_CFG_RAM_SIZE, loaderparams.ram_size);

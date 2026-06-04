@@ -16,7 +16,7 @@ struct hv_input_set_partition_property {
     uint32_t property_code; /* enum hv_partition_property_code */
     uint32_t padding;
     uint64_t property_value;
-};
+} QEMU_PACKED;
 
 union hv_partition_synthetic_processor_features {
     uint64_t as_uint64[HV_PARTITION_SYNTHETIC_PROCESSOR_FEATURES_BANKS];
@@ -201,12 +201,12 @@ typedef struct hv_input_translate_virtual_address {
     uint32_t padding;
     uint64_t control_flags;
     uint64_t gva_page;
-} hv_input_translate_virtual_address;
+} QEMU_PACKED hv_input_translate_virtual_address;
 
 typedef struct hv_output_translate_virtual_address {
     union hv_translate_gva_result translation_result;
     uint64_t gpa_page;
-} hv_output_translate_virtual_address;
+} QEMU_PACKED hv_output_translate_virtual_address;
 
 typedef struct hv_register_x64_cpuid_result_parameters {
     struct {
@@ -226,13 +226,13 @@ typedef struct hv_register_x64_cpuid_result_parameters {
         uint32_t edx;
         uint32_t edx_mask;
     } result;
-} hv_register_x64_cpuid_result_parameters;
+} QEMU_PACKED hv_register_x64_cpuid_result_parameters;
 
 typedef struct hv_register_x64_msr_result_parameters {
     uint32_t msr_index;
     uint32_t access_type;
     uint32_t action; /* enum hv_unimplemented_msr_action */
-} hv_register_x64_msr_result_parameters;
+} QEMU_PACKED hv_register_x64_msr_result_parameters;
 
 union hv_register_intercept_result_parameters {
     struct hv_register_x64_cpuid_result_parameters cpuid;
@@ -244,6 +244,6 @@ typedef struct hv_input_register_intercept_result {
     uint32_t vp_index;
     uint32_t intercept_type; /* enum hv_intercept_type */
     union hv_register_intercept_result_parameters parameters;
-} hv_input_register_intercept_result;
+} QEMU_PACKED hv_input_register_intercept_result;
 
 #endif /* HW_HYPERV_HVHDK_H */

@@ -24,7 +24,7 @@
 #ifndef HW_ARM_GICV3_COMMON_H
 #define HW_ARM_GICV3_COMMON_H
 
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/intc/arm_gic_common.h"
 #include "qom/object.h"
 #include "qemu/notify.h"
@@ -312,6 +312,9 @@ GICV3_BITMAP_ACCESSORS(nmi)
 typedef struct ARMGICv3CommonClass ARMGICv3CommonClass;
 DECLARE_OBJ_CHECKERS(GICv3State, ARMGICv3CommonClass,
                      ARM_GICV3_COMMON, TYPE_ARM_GICV3_COMMON)
+
+/* Types for GICv3 kernel-irqchip */
+#define TYPE_WHPX_GICV3 "whpx-arm-gicv3"
 
 struct ARMGICv3CommonClass {
     /*< private >*/

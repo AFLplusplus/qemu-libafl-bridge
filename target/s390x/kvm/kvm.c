@@ -41,7 +41,7 @@
 #include "system/runstate.h"
 #include "system/device_tree.h"
 #include "gdbstub/enums.h"
-#include "system/ram_addr.h"
+#include "system/ramblock.h"
 #include "trace.h"
 #include "hw/s390x/s390-pci-inst.h"
 #include "hw/s390x/s390-pci-bus.h"
@@ -1667,10 +1667,10 @@ static int handle_oper_loop(S390CPU *cpu, struct kvm_run *run)
     CPUState *cs = CPU(cpu);
     PSW oldpsw, newpsw;
 
-    newpsw.mask = ldq_phys(cs->as, cpu->env.psa +
-                           offsetof(LowCore, program_new_psw));
-    newpsw.addr = ldq_phys(cs->as, cpu->env.psa +
-                           offsetof(LowCore, program_new_psw) + 8);
+    newpsw.mask = ldq_be_phys(cs->as, cpu->env.psa +
+                              offsetof(LowCore, program_new_psw));
+    newpsw.addr = ldq_be_phys(cs->as, cpu->env.psa +
+                              offsetof(LowCore, program_new_psw) + 8);
     oldpsw.mask  = run->psw_mask;
     oldpsw.addr  = run->psw_addr;
     /*
@@ -2081,6 +2081,8 @@ int kvm_s390_vcpu_interrupt_post_load(S390CPU *cpu)
     }
     return r;
 }
+
+QEMU_BUILD_BUG_ON(S390_ADAPTER_SUPPRESSIBLE != KVM_S390_ADAPTER_SUPPRESSIBLE);
 
 int kvm_arch_fixup_msi_route(struct kvm_irq_routing_entry *route,
                              uint64_t address, uint32_t data, PCIDevice *dev)

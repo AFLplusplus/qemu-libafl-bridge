@@ -19,9 +19,9 @@
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "qemu/cutils.h"
-#include "hw/qdev-core.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "hw/virtio/vhost.h"
 #include "hw/virtio/virtio.h"
 #include "hw/virtio/virtio-bus.h"
@@ -41,8 +41,8 @@ vhost_vdpa_device_get_u32(int fd, unsigned long int cmd, Error **errp)
     uint32_t val = (uint32_t)-1;
 
     if (ioctl(fd, cmd, &val) < 0) {
-        error_setg(errp, "vhost-vdpa-device: cmd 0x%lx failed: %s",
-                   cmd, strerror(errno));
+        error_setg_errno(errp, errno, "vhost-vdpa-device: cmd 0x%lx failed",
+                         cmd);
     }
 
     return val;

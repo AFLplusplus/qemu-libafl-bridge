@@ -219,8 +219,8 @@ test_dbus_vmstate(Test *test)
 
     dstaddr = g_strsplit(g_test_dbus_get_bus_address(dstbus), ",", 2);
     dst_qemu_args =
-        g_strdup_printf("-object dbus-vmstate,id=dv,addr=%s -incoming %s",
-                        dstaddr[0], uri);
+        g_strdup_printf("-object dbus-vmstate,id=dv,addr=%s -incoming defer",
+                        dstaddr[0]);
 
     src_qemu = qtest_init(src_qemu_args);
     dst_qemu = qtest_init(dst_qemu_args);
@@ -229,6 +229,7 @@ test_dbus_vmstate(Test *test)
 
     thread = g_thread_new("dbus-vmstate-thread", dbus_vmstate_thread, loop);
 
+    migrate_incoming_qmp(dst_qemu, uri, NULL, "{}");
     migrate_qmp(src_qemu, uri, "{}");
     test->src_qemu = src_qemu;
     if (test->migrate_fail) {

@@ -190,6 +190,20 @@ float128 uint64_to_float128(uint64_t, float_status *status);
 float128 uint128_to_float128(Int128, float_status *status);
 
 /*----------------------------------------------------------------------------
+| OCP FP{4,8} conversion routines.
+*----------------------------------------------------------------------------*/
+
+float8_e4m3 float4_e2m1_to_float8_e4m3(float4_e2m1, float_status *status);
+
+bfloat16 float8_e4m3_to_bfloat16(float8_e4m3, float_status *status);
+float8_e4m3 bfloat16_to_float8_e4m3(bfloat16, bool sat, float_status *status);
+float8_e4m3 float32_to_float8_e4m3(float32, bool sat, float_status *status);
+
+bfloat16 float8_e5m2_to_bfloat16(float8_e5m2, float_status *status);
+float8_e5m2 bfloat16_to_float8_e5m2(bfloat16, bool sat, float_status *status);
+float8_e5m2 float32_to_float8_e5m2(float32, bool sat, float_status *status);
+
+/*----------------------------------------------------------------------------
 | Software half-precision conversion routines.
 *----------------------------------------------------------------------------*/
 
@@ -978,8 +992,8 @@ floatx80 floatx80_rem(floatx80, floatx80, float_status *status);
 floatx80 floatx80_sqrt(floatx80, float_status *status);
 FloatRelation floatx80_compare(floatx80, floatx80, float_status *status);
 FloatRelation floatx80_compare_quiet(floatx80, floatx80, float_status *status);
-int floatx80_is_quiet_nan(floatx80, float_status *status);
-int floatx80_is_signaling_nan(floatx80, float_status *status);
+bool floatx80_is_quiet_nan(floatx80, float_status *status);
+bool floatx80_is_signaling_nan(floatx80, float_status *status);
 floatx80 floatx80_silence_nan(floatx80, float_status *status);
 floatx80 floatx80_scalbn(floatx80, int, float_status *status);
 
@@ -1371,5 +1385,16 @@ static inline bool float128_unordered_quiet(float128 a, float128 b,
 | The pattern for a default generated quadruple-precision NaN.
 *----------------------------------------------------------------------------*/
 float128 float128_default_nan(float_status *status);
+
+#define DECLARE_S390_DIVIDE_TO_INTEGER(floatN)                                 \
+void floatN ## _s390_divide_to_integer(floatN a, floatN b,                     \
+                                       int final_quotient_rounding_mode,       \
+                                       bool mask_underflow, bool mask_inexact, \
+                                       floatN *r, floatN *n,                   \
+                                       uint32_t *cc, int *dxc,                 \
+                                       float_status *status)
+DECLARE_S390_DIVIDE_TO_INTEGER(float32);
+DECLARE_S390_DIVIDE_TO_INTEGER(float64);
+
 
 #endif /* SOFTFLOAT_H */

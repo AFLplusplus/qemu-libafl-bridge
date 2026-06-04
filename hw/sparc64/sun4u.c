@@ -29,11 +29,11 @@
 #include "qemu/datadir.h"
 #include "cpu.h"
 #include "exec/target_page.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_bridge.h"
 #include "hw/pci/pci_host.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/pci-host/sabre.h"
 #include "hw/char/serial-isa.h"
 #include "hw/char/serial-mm.h"
@@ -46,15 +46,15 @@
 #include "qemu/timer.h"
 #include "system/runstate.h"
 #include "system/system.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "hw/nvram/sun_nvram.h"
 #include "hw/nvram/chrp_nvram.h"
 #include "hw/sparc/sparc64.h"
 #include "hw/nvram/fw_cfg.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/ide/pci.h"
-#include "hw/loader.h"
-#include "hw/fw-path-provider.h"
+#include "hw/core/loader.h"
+#include "hw/core/fw-path-provider.h"
 #include "elf.h"
 #include "trace.h"
 #include "qom/object.h"
@@ -206,9 +206,9 @@ static uint64_t sun4u_load_kernel(const char *kernel_filename,
         if (*initrd_size > 0) {
             for (i = 0; i < 64 * TARGET_PAGE_SIZE; i += TARGET_PAGE_SIZE) {
                 ptr = rom_ptr(*kernel_addr + i, 32);
-                if (ptr && ldl_p(ptr + 8) == 0x48647253) { /* HdrS */
-                    stl_p(ptr + 24, *initrd_addr + *kernel_addr);
-                    stl_p(ptr + 28, *initrd_size);
+                if (ptr && ldl_be_p(ptr + 8) == 0x48647253) { /* HdrS */
+                    stl_be_p(ptr + 24, *initrd_addr + *kernel_addr);
+                    stl_be_p(ptr + 28, *initrd_size);
                     break;
                 }
             }
@@ -455,13 +455,10 @@ static void prom_realize(DeviceState *ds, Error **errp)
     PROMState *s = OPENPROM(ds);
     SysBusDevice *dev = SYS_BUS_DEVICE(ds);
 
-    if (!memory_region_init_ram_nomigrate(&s->prom, OBJECT(ds), "sun4u.prom",
-                                          PROM_SIZE_MAX, errp)) {
+    if (!memory_region_init_rom(&s->prom, OBJECT(ds), "sun4u.prom",
+                                PROM_SIZE_MAX, errp)) {
         return;
     }
-
-    vmstate_register_ram_global(&s->prom);
-    memory_region_set_readonly(&s->prom, true);
     sysbus_init_mmio(dev, &s->prom);
 }
 
@@ -498,9 +495,8 @@ static void ram_realize(DeviceState *dev, Error **errp)
     RamDevice *d = SUN4U_RAM(dev);
     SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
 
-    memory_region_init_ram_nomigrate(&d->ram, OBJECT(d), "sun4u.ram", d->size,
+    memory_region_init_ram(&d->ram, OBJECT(d), "sun4u.ram", d->size,
                            &error_fatal);
-    vmstate_register_ram_global(&d->ram);
     sysbus_init_mmio(sbd, &d->ram);
 }
 
@@ -666,6 +662,16 @@ static void sun4uv_init(MemoryRegion *address_space_mem,
                                 sysbus_mmio_get_region(s, 0));
     nvram = NVRAM(dev);
  
+    if (!graphic_width) {
+        graphic_width = 1024;
+    }
+    if (!graphic_height) {
+        graphic_height = 768;
+    }
+    if (!graphic_depth) {
+        graphic_depth = 8;
+    }
+
     initrd_size = 0;
     initrd_addr = 0;
     kernel_size = sun4u_load_kernel(machine->kernel_filename,

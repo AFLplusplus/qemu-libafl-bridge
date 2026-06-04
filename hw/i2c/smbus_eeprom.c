@@ -25,10 +25,10 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "hw/i2c/i2c.h"
 #include "hw/i2c/smbus_slave.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "hw/i2c/smbus_eeprom.h"
 #include "qom/object.h"
@@ -88,11 +88,9 @@ static int eeprom_write_data(SMBusDevice *dev, uint8_t *buf, uint8_t len)
 
 static bool smbus_eeprom_vmstate_needed(void *opaque)
 {
-    MachineClass *mc = MACHINE_GET_CLASS(qdev_get_machine());
     SMBusEEPROMDevice *eeprom = opaque;
 
-    return (eeprom->accessed || smbus_vmstate_needed(&eeprom->smbusdev)) &&
-        !mc->smbus_no_migration_support;
+    return eeprom->accessed || smbus_vmstate_needed(&eeprom->smbusdev);
 }
 
 static const VMStateDescription vmstate_smbus_eeprom = {

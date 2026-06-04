@@ -4,7 +4,6 @@
 #include "cpu.h"
 
 #include "system/ramblock.h"
-#include "exec/ramlist.h"
 #include "exec/target_page.h"
 
 #include "libafl/syx-snapshot/syx-snapshot.h"

@@ -22,6 +22,7 @@
 #include "qemu.h"
 #include "user-internals.h"
 #include "qemu/plugin.h"
+#include "libafl/afl/afl.h"
 
 #ifdef CONFIG_GCOV
 extern void __gcov_dump(void);
@@ -29,6 +30,11 @@ extern void __gcov_dump(void);
 
 void preexit_cleanup(CPUArchState *env, int code)
 {
+#ifdef CONFIG_AFL
+        if (afl_fork_child) {
+            return;
+        }
+#endif
 #ifdef CONFIG_GCOV
         __gcov_dump();
 #endif

@@ -56,6 +56,26 @@
 
 //// --- End LibAFL code ---
 
+#if defined(CONFIG_AFL) && defined(CONFIG_USER_ONLY)
+#include "user/page-protection.h"
+#include "libafl/afl/afl.h"
+
+struct afl_tsl {
+    uint8_t is_chain;
+    uint64_t pc;
+    uint64_t cs_base;
+    uint32_t flags;
+    uint32_t cflags;
+    uint64_t last_pc;
+    uint64_t last_cs_base;
+    uint32_t last_flags;
+    uint32_t last_cflags;
+    int32_t tb_exit;
+};
+
+int afl_fork_child;
+#endif
+
 
 /* -icount align implementation. */
 
@@ -660,6 +680,98 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
     qemu_spin_unlock(&tb_next->jmp_lock);
 }
 
+#if defined(CONFIG_AFL) && defined(CONFIG_USER_ONLY)
+static void afl_request_tsl(TCGTBCPUState s)
+{
+    struct afl_tsl t;
+
+    if (!afl_fork_child) {
+        return;
+    }
+    t.is_chain = 0;
+    t.pc = s.pc;
+    t.cs_base = s.cs_base;
+    t.flags = s.flags;
+    t.cflags = s.cflags;
+    if (write(AFL_TSL_FD, &t, sizeof(t)) != sizeof(t)) {
+        return;
+    }
+}
+
+static void afl_request_tsl_chain(TranslationBlock *last_tb, TCGTBCPUState s,
+                                  int tb_exit)
+{
+    struct afl_tsl t;
+
+    if (!afl_fork_child) {
+        return;
+    }
+    t.is_chain = 1;
+    t.pc = s.pc;
+    t.cs_base = s.cs_base;
+    t.flags = s.flags;
+    t.cflags = s.cflags;
+    t.last_pc = last_tb->pc;
+    t.last_cs_base = last_tb->cs_base;
+    t.last_flags = last_tb->flags;
+    t.last_cflags = last_tb->cflags;
+    t.tb_exit = tb_exit;
+    if (write(AFL_TSL_FD, &t, sizeof(t)) != sizeof(t)) {
+        return;
+    }
+}
+
+void afl_wait_tsl(int fd)
+{
+    CPUState *cpu = current_cpu;
+    struct afl_tsl t;
+
+    while (read(fd, &t, sizeof(t)) == sizeof(t)) {
+        TCGTBCPUState s = {
+            .pc = t.pc,
+            .cs_base = t.cs_base,
+            .flags = t.flags,
+            .cflags = t.cflags,
+        };
+
+        if (t.is_chain) {
+            TCGTBCPUState ls = {
+                .pc = t.last_pc,
+                .cs_base = t.last_cs_base,
+                .flags = t.last_flags,
+                .cflags = t.last_cflags,
+            };
+            TranslationBlock *dst = tb_lookup(cpu, s);
+            TranslationBlock *last = tb_lookup(cpu, ls);
+            if (dst && last) {
+                tb_add_jump(last, t.tb_exit, dst);
+            }
+            continue;
+        }
+
+        if (tb_lookup(cpu, s)) {
+            continue;
+        }
+        if (!page_check_range(s.pc, 1, PAGE_READ)) {
+            continue;
+        }
+
+        mmap_lock();
+        TranslationBlock *tb = tb_gen_code(cpu, s);
+        mmap_unlock();
+
+        if (tb) {
+            uint32_t h = tb_jmp_cache_hash_func(s.pc);
+            CPUJumpCache *jc = cpu->tb_jmp_cache;
+            jc->array[h].pc = s.pc;
+            qatomic_set(&jc->array[h].tb, tb);
+        }
+    }
+
+    close(fd);
+}
+#endif
+
 static inline bool cpu_handle_halt(CPUState *cpu)
 {
 #ifndef CONFIG_USER_ONLY
@@ -1000,6 +1112,10 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 jc = cpu->tb_jmp_cache;
                 jc->array[h].pc = s.pc;
                 qatomic_set(&jc->array[h].tb, tb);
+
+#if defined(CONFIG_AFL) && defined(CONFIG_USER_ONLY)
+                afl_request_tsl(s);
+#endif
             }
 
 #ifndef CONFIG_USER_ONLY
@@ -1034,9 +1150,15 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                         libafl_edge_generated = true;
                     } else {
                         tb_add_jump(last_tb, tb_exit, tb);
+#if defined(CONFIG_AFL) && defined(CONFIG_USER_ONLY)
+                        afl_request_tsl_chain(last_tb, s, tb_exit);
+#endif
                     }
                 } else {
                     tb_add_jump(last_tb, tb_exit, tb);
+#if defined(CONFIG_AFL) && defined(CONFIG_USER_ONLY)
+                    afl_request_tsl_chain(last_tb, s, tb_exit);
+#endif
                 }
             }
 

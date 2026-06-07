@@ -31,6 +31,7 @@
 #include "target_elf.h"
 #include "target_signal.h"
 #include "tcg/debuginfo.h"
+#include "libafl/afl/afl.h"
 
 #ifdef TARGET_ARM
 #include "target/arm/cpu-features.h"
@@ -1253,6 +1254,15 @@ static bool parse_elf_properties(const ImageSource *src,
     }
 }
 
+#ifdef CONFIG_AFL
+abi_ulong afl_exec_entry;
+
+uint64_t afl_get_exec_entry(void)
+{
+    return (uint64_t)afl_exec_entry;
+}
+#endif
+
 /**
  * load_elf_image: Load an ELF image into the address space.
  * @image_name: the filename of the image, to use in error messages.
@@ -1578,6 +1588,25 @@ static void load_elf_image(const char *image_name, const ImageSource *src,
         info->start_data = info->end_code;
         info->end_data = info->end_code;
     }
+
+#ifdef CONFIG_AFL
+    if (!afl_exec_entry) {
+#if defined(TARGET_PPC64) && !defined(TARGET_ABI32)
+        if (get_ppc64_abi(info) < 2) {
+            uint64_t val;
+            get_user_u64(val, info->entry);
+            afl_exec_entry = val + info->load_bias;
+        } else {
+            afl_exec_entry = info->entry;
+        }
+#else
+        afl_exec_entry = info->entry;
+#endif
+#ifdef TARGET_ARM
+        afl_exec_entry &= ~(abi_ulong)1;
+#endif
+    }
+#endif
 
     if (qemu_log_enabled()) {
         load_symbols(ehdr, src, load_bias);

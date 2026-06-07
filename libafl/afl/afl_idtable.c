@@ -64,11 +64,16 @@ uint64_t afl_idtable_lookup(uint64_t src, uint64_t dst)
                                             __ATOMIC_ACQUIRE)) {
                 s->src = src;
                 s->dst = dst;
-                uint32_t id = __atomic_fetch_add(&afl_id_hdr->next_id, 1,
-                                                 __ATOMIC_ACQ_REL);
-                if (id >= afl_id_hdr->map_size) {
-                    id %= afl_id_hdr->map_size;
+                uint32_t raw = __atomic_fetch_add(&afl_id_hdr->next_id, 1,
+                                                  __ATOMIC_ACQ_REL);
+                uint32_t slot = raw % (afl_id_hdr->map_size - 5);
+                if (slot == 0 && raw != 0) {
+                    fprintf(stderr,
+                            "[AFL] WARNING: QEMU edge id table wrapped after "
+                            "%u edges (map_size %u), edge IDs now colliding\n",
+                            raw, afl_id_hdr->map_size);
                 }
+                uint32_t id = slot + 5;
                 s->id = id;
                 __atomic_store_n(&s->used, 2, __ATOMIC_RELEASE);
                 return id;
@@ -83,7 +88,7 @@ uint64_t afl_idtable_lookup(uint64_t src, uint64_t dst)
         }
         pos = (pos + 1) & mask;
     }
-    return afl_id_hash(src, dst) % afl_id_hdr->map_size;
+    return 5 + afl_id_hash(src, dst) % (afl_id_hdr->map_size - 5);
 }
 
 uint32_t afl_idtable_count(void)

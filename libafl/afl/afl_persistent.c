@@ -14,8 +14,6 @@
 
 #ifdef CONFIG_AFL
 
-IntervalTreeRoot *pageflags_get_root(void);
-
 #include <sys/shm.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>

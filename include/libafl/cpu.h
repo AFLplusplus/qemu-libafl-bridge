@@ -9,7 +9,13 @@
 #include "exec/hwaddr.h"
 #endif
 
-#ifndef CONFIG_USER_ONLY
+#ifdef CONFIG_USER_ONLY
+// usermode only
+int libafl_qemu_main(void);
+int libafl_qemu_run(void);
+void libafl_set_qemu_env(CPUArchState* env);
+#else
+// systemmode only
 uint8_t* libafl_paddr2host(CPUState* cpu, hwaddr addr, bool is_write);
 hwaddr libafl_qemu_current_paging_id(CPUState* cpu);
 #endif
@@ -26,8 +32,3 @@ int libafl_qemu_num_regs(CPUState* cpu);
 void libafl_flush_jit(void);
 void libafl_breakpoint_invalidate(CPUState* cpu, vaddr pc);
 
-#ifdef CONFIG_USER_ONLY
-int libafl_qemu_main(void);
-int libafl_qemu_run(void);
-void libafl_set_qemu_env(CPUArchState* env);
-#endif

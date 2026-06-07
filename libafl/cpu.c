@@ -23,6 +23,11 @@ static __thread int num_regs = 0;
 static __thread CPUArchState* libafl_qemu_env;
 #endif
 
+G_NORETURN void libafl_qemu_set_pc(CPUState* cpu, vaddr pc) {
+    cpu_set_pc(cpu, pc);
+    cpu_loop_exit_noexc(cpu);
+}
+
 #ifndef CONFIG_USER_ONLY
 uint8_t* libafl_paddr2host(CPUState* cpu, hwaddr addr, bool is_write)
 {
@@ -57,11 +62,6 @@ void libafl_breakpoint_invalidate(CPUState* cpu, vaddr pc)
     queue_tb_flush(cpu);
 }
 #else
-
-G_NORETURN void libafl_qemu_set_pc(CPUState* cpu, vaddr pc) {
-    cpu_set_pc(cpu, pc);
-    cpu_loop_exit_noexc(cpu);
-}
 
 void libafl_breakpoint_invalidate(CPUState* cpu, vaddr pc)
 {

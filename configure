@@ -585,6 +585,7 @@ fi
 #### --- Begin LibAFL code ---
 as_shared_lib="no"
 as_static_lib="no"
+afl="no"
 #### --- end LibAFL code ---
 
 meson_option_build_array() {
@@ -790,6 +791,11 @@ for opt do
       as_static_lib="yes"
       CFLAGS="$CFLAGS -fPIC -DAS_LIB=1"
       CXXFLAGS="$CXXFLAGS -fPIC -DAS_LIB=1"
+  ;;
+  --afl)
+      afl="yes"
+      CFLAGS="$CFLAGS -DCONFIG_AFL=1"
+      CXXFLAGS="$CXXFLAGS -DCONFIG_AFL=1"
   ;;
 #### --- End LibAFL code ---
   # everything else has the same name in configure and meson
@@ -1815,6 +1821,9 @@ if test "$as_shared_lib" = "yes" ; then
 fi
 if test "$as_static_lib" = "yes" ; then
   echo "AS_STATIC_LIB=y" >> $config_host_mak
+fi
+if test "$afl" = "yes" ; then
+  echo "CONFIG_AFL=y" >> $config_host_mak
 fi
 #### --- End LibAFL code ---
 

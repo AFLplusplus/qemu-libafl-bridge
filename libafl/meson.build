@@ -37,3 +37,7 @@ specific_ss.add(when : 'CONFIG_USER_ONLY', if_false: [files(
   'qemu_snapshot.c',
 )])
 
+if 'CONFIG_AFL' in config_host
+  subdir('afl')
+endif
+

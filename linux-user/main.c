@@ -757,7 +757,7 @@ int main(int argc, char **argv, char **envp)
         char *afl_path = getenv("AFL_PATH");
         if (afl_path) {
             libqasan = g_strdup_printf("%s/libqasan.so", afl_path);
-            if (access(libqasan, X_OK)) {
+            if (access(libqasan, R_OK)) {
                 g_free(libqasan);
                 libqasan = NULL;
             }
@@ -768,14 +768,14 @@ int main(int argc, char **argv, char **envp)
             if (rsl) {
                 *rsl = 0;
                 libqasan = g_strdup_printf("%s/libqasan.so", own_copy);
-                if (access(libqasan, X_OK)) {
+                if (access(libqasan, R_OK)) {
                     g_free(libqasan);
                     libqasan = NULL;
                 }
             }
             g_free(own_copy);
         }
-        if (!libqasan && access("./libqasan.so", X_OK) == 0) {
+        if (!libqasan && access("./libqasan.so", R_OK) == 0) {
             libqasan = g_strdup("./libqasan.so");
         }
         if (libqasan) {

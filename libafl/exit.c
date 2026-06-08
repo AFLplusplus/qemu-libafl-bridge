@@ -56,15 +56,15 @@ int libafl_qemu_remove_breakpoint(vaddr pc)
 static THREAD_MODIFIER struct libafl_exit_reason last_exit_reason;
 static THREAD_MODIFIER bool expected_exit = false;
 
-typedef struct LibAFLThreadInformation {
+typedef struct libafl_thread_information {
     int id;
     struct libafl_exit_reason *exit_reason;
     bool *expected_exit;
-    QTAILQ_ENTRY(LibAFLThreadInformation) next;
+    QTAILQ_ENTRY(libafl_thread_information) next;
 } LibAFLThreadInformation;
 
-QTAILQ_HEAD(LibAflThreadInformationList, LibAFLThreadInformation);
-static union LibAflThreadInformationList libafl_thread_info_list_head;
+QTAILQ_HEAD(libafl_thread_information_list, libafl_thread_information);
+static union libafl_thread_information_list libafl_thread_info_list_head;
 
 #if defined(TARGET_ARM)
 #define THUMB_MASK(cpu, value) (value | cpu_env(cpu)->thumb)

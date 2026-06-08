@@ -16,7 +16,9 @@
 
 #include "libafl/cpu.h"
 #include "libafl/exit.h"
-#include "linux-user/thread_cpu.h"
+#ifdef CONFIG_USER_ONLY
+#include "libafl/user.h"
+#endif
 
 static __thread GByteArray* libafl_qemu_mem_buf = NULL;
 static __thread int num_regs = 0;

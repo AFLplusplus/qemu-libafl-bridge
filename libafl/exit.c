@@ -3,15 +3,20 @@
 #include "tcg/tcg.h"
 #include "tcg/tcg-op-common.h"
 #include "exec/cpu-common.h"
+#ifdef CONFIG_USER_ONLY
+#include "qemu.h"
+#endif
 
 #include "libafl/exit.h"
 #include "libafl/defs.h"
 #include "libafl/cpu.h"
+#ifdef CONFIG_USER_ONLY
+#include "libafl/user.h"
+#endif
 
 #if !defined(CONFIG_USER_ONLY) && defined(AS_LIB)
 #include "system/runstate.h"
 #endif
-#include "linux-user/thread_cpu.h"
 
 #ifdef CONFIG_USER_ONLY
 #define THREAD_MODIFIER __thread

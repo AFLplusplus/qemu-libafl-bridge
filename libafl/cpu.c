@@ -180,21 +180,14 @@ int libafl_qemu_run(void)
 
 void libafl_set_qemu_env(CPUArchState* env) { libafl_qemu_env = env; }
 
-int libafl_qemu_run_single_cpu(int cpu_index) {
-    CPUState *cpu;
-    CPU_FOREACH(cpu) {
-        if (cpu->cpu_index == cpu_index) {
-            CPUArchState *env = cpu_env(cpu);
+int libafl_qemu_run_single_cpu(CPUState *cpu) {
+    CPUArchState *env = cpu_env(cpu);
 
-            current_cpu = cpu;
-            thread_cpu = cpu;
-            libafl_qemu_env = env;
+    current_cpu = cpu;
+    thread_cpu = cpu;
+    libafl_qemu_env = env;
 
-            cpu_loop(env);
-
-            return 1;
-        }
-    }
-    return 0;
+    cpu_loop(env);
+    return 1;
 }
 #endif

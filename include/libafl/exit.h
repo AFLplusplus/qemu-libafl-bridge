@@ -67,7 +67,7 @@ int libafl_qemu_remove_breakpoint(vaddr pc);
 void libafl_qemu_trigger_breakpoint(CPUState* cpu);
 void libafl_qemu_breakpoint_run(vaddr pc_next);
 #ifdef CONFIG_USER_ONLY
-int libafl_qemu_run_single_cpu(int cpu_index);
+int libafl_qemu_run_single_cpu(CPUState* cpu);
 
 void libafl_thread_info_list_init(void);
 void libafl_thread_info_list_add(void);

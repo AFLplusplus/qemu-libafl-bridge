@@ -31,7 +31,9 @@
 #include "target_elf.h"
 #include "target_signal.h"
 #include "tcg/debuginfo.h"
+#ifdef CONFIG_AFL
 #include "libafl/afl/afl.h"
+#endif
 
 #ifdef TARGET_ARM
 #include "target/arm/cpu-features.h"

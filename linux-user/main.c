@@ -61,7 +61,9 @@
 //// --- End LibAFL code ---
 #include "libafl/cpu.h"
 #include "libafl/user.h"
+#ifdef CONFIG_AFL
 #include "libafl/afl/afl.h"
+#endif
 //// --- Begin LibAFL code ---
 
 #ifdef CONFIG_SEMIHOSTING

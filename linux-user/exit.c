@@ -34,11 +34,13 @@ extern void __gcov_dump(void);
 
 void preexit_cleanup(CPUArchState *env, int code)
 {
+        //// --- Begin AFL++ code ---
 #ifdef CONFIG_AFL
         if (afl_fork_child) {
             return;
         }
 #endif
+        //// --- End AFL++ code ---
 #ifdef CONFIG_GCOV
         __gcov_dump();
 #endif

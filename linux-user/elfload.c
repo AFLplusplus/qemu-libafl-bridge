@@ -1258,6 +1258,7 @@ static bool parse_elf_properties(const ImageSource *src,
     }
 }
 
+//// --- Begin AFL++ code ---
 #ifdef CONFIG_AFL
 abi_ulong afl_exec_entry;
 
@@ -1266,6 +1267,7 @@ uint64_t afl_get_exec_entry(void)
     return (uint64_t)afl_exec_entry;
 }
 #endif
+//// --- End AFL++ code ---
 
 /**
  * load_elf_image: Load an ELF image into the address space.
@@ -1593,6 +1595,7 @@ static void load_elf_image(const char *image_name, const ImageSource *src,
         info->end_data = info->end_code;
     }
 
+    //// --- Begin AFL++ code ---
 #ifdef CONFIG_AFL
     if (!afl_exec_entry) {
 #if defined(TARGET_PPC64) && !defined(TARGET_ABI32)
@@ -1611,6 +1614,7 @@ static void load_elf_image(const char *image_name, const ImageSource *src,
 #endif
     }
 #endif
+    //// --- End AFL++ code ---
 
     if (qemu_log_enabled()) {
         load_symbols(ehdr, src, load_bias);

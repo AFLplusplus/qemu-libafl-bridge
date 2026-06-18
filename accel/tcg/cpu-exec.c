@@ -668,6 +668,7 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
     qemu_spin_unlock(&tb_next->jmp_lock);
 }
 
+//// --- Begin AFL++ code ---
 #if defined(CONFIG_AFL) && defined(CONFIG_USER_ONLY)
 void afl_wait_tsl(int fd)
 {
@@ -719,6 +720,7 @@ void afl_wait_tsl(int fd)
     close(fd);
 }
 #endif
+//// --- End AFL++ code ---
 
 static inline bool cpu_handle_halt(CPUState *cpu)
 {
@@ -1061,11 +1063,13 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 jc->array[h].pc = s.pc;
                 qatomic_set(&jc->array[h].tb, tb);
 
+                //// --- Begin AFL++ code ---
 #if defined(CONFIG_AFL) && defined(CONFIG_USER_ONLY)
                 if (afl_fork_child) {
                     afl_request_tsl(s);
                 }
 #endif
+                //// --- End AFL++ code ---
             }
 
 #ifndef CONFIG_USER_ONLY
@@ -1100,19 +1104,23 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                         libafl_edge_generated = true;
                     } else {
                         tb_add_jump(last_tb, tb_exit, tb);
+                        //// --- Begin AFL++ code ---
 #if defined(CONFIG_AFL) && defined(CONFIG_USER_ONLY)
                         if (afl_fork_child) {
                             afl_request_tsl_chain(last_tb, s, tb_exit);
                         }
 #endif
+                        //// --- End AFL++ code ---
                     }
                 } else {
                     tb_add_jump(last_tb, tb_exit, tb);
+                    //// --- Begin AFL++ code ---
 #if defined(CONFIG_AFL) && defined(CONFIG_USER_ONLY)
                     if (afl_fork_child) {
                         afl_request_tsl_chain(last_tb, s, tb_exit);
                     }
 #endif
+                    //// --- End AFL++ code ---
                 }
             }
 

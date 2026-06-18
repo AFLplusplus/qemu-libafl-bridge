@@ -61,6 +61,11 @@
 //// --- End LibAFL code ---
 #include "libafl/cpu.h"
 #include "libafl/user.h"
+//// --- Begin AFL++ code ---
+#ifdef CONFIG_AFL
+#include "libaflqemubridge/afl.h"
+#endif
+//// --- End AFL++ code ---
 //// --- Begin LibAFL code ---
 
 #ifdef CONFIG_SEMIHOSTING
@@ -750,6 +755,58 @@ int main(int argc, char **argv, char **envp)
         (void) envlist_setenv(envlist, *wrk);
     }
 
+    //// --- Begin AFL++ code ---
+#ifdef CONFIG_AFL
+    if (getenv("AFL_USE_QASAN")) {
+        char *libqasan = NULL;
+        char *afl_path = getenv("AFL_PATH");
+        if (afl_path) {
+            libqasan = g_strdup_printf("%s/libqasan.so", afl_path);
+            if (access(libqasan, R_OK)) {
+                g_free(libqasan);
+                libqasan = NULL;
+            }
+        }
+        if (!libqasan && argv[0]) {
+            char *own_copy = g_strdup(argv[0]);
+            char *rsl = strrchr(own_copy, '/');
+            if (rsl) {
+                *rsl = 0;
+                libqasan = g_strdup_printf("%s/libqasan.so", own_copy);
+                if (access(libqasan, R_OK)) {
+                    g_free(libqasan);
+                    libqasan = NULL;
+                }
+            }
+            g_free(own_copy);
+        }
+        if (!libqasan && access("./libqasan.so", R_OK) == 0) {
+            libqasan = g_strdup("./libqasan.so");
+        }
+        if (libqasan) {
+            char *preload = getenv("AFL_PRELOAD");
+            char *merged = NULL;
+            if (!preload || !*preload) {
+                merged = g_strdup(libqasan);
+            } else if (strchr(preload, ' ')) {
+                merged = g_strdup_printf("%s %s", libqasan, preload);
+            } else {
+                merged = g_strdup_printf("%s:%s", libqasan, preload);
+            }
+            char *ld_preload = g_strdup_printf("LD_PRELOAD=%s", merged);
+            envlist_setenv(envlist, ld_preload);
+            g_free(ld_preload);
+            g_free(merged);
+            g_free(libqasan);
+        } else {
+            fprintf(stderr,
+                    "AFL_USE_QASAN set but libqasan.so not found "
+                    "(set AFL_PATH or place it next to afl-qemu-trace)\n");
+        }
+    }
+#endif
+    //// --- End AFL++ code ---
+
     /* Read the stack limit from the kernel.  If it's "unlimited",
        then we can do little else besides use the default.  */
     {
@@ -1068,13 +1125,19 @@ int main(int argc, char **argv, char **envp)
     // cpu_loop(env);
 
     //// --- Begin LibAFL code ---
-
     libafl_set_qemu_env(env);
+    //// --- End LibAFL code ---
 
+    //// --- Begin AFL++ code ---
+#ifdef CONFIG_AFL
+    afl_initialize(argc, argv, envp);
+#endif
+    //// --- End AFL++ code ---
+
+    //// --- Begin LibAFL code ---
 #ifndef AS_LIB
     return libafl_qemu_main();
 #endif
-
     //// --- End LibAFL code ---
 
     /* never exits */

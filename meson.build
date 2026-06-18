@@ -800,6 +800,11 @@ add_project_arguments('-iquote', '.',
                       '-iquote', meson.current_source_dir() / 'include',
                       language: all_languages)
 
+#### --- Begin AFL++ code ---
+add_project_arguments('-iquote', meson.current_source_dir() / '..',
+                      language: all_languages)
+#### --- End AFL++ code ---
+
 # If a host-specific include directory exists, list that first...
 host_include = meson.current_source_dir() / 'host/include/'
 if fs.is_dir(host_include / host_arch)

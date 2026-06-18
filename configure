@@ -585,6 +585,7 @@ fi
 #### --- Begin LibAFL code ---
 as_shared_lib="no"
 as_static_lib="no"
+afl="no"
 #### --- end LibAFL code ---
 
 meson_option_build_array() {
@@ -791,6 +792,13 @@ for opt do
       CFLAGS="$CFLAGS -fPIC -DAS_LIB=1"
       CXXFLAGS="$CXXFLAGS -fPIC -DAS_LIB=1"
   ;;
+#### --- Begin AFL++ code ---
+  --afl)
+      afl="yes"
+      CFLAGS="$CFLAGS -DCONFIG_AFL=1"
+      CXXFLAGS="$CXXFLAGS -DCONFIG_AFL=1"
+  ;;
+#### --- End AFL++ code ---
 #### --- End LibAFL code ---
   # everything else has the same name in configure and meson
   --*) meson_option_parse "$opt" "$optarg"
@@ -1817,6 +1825,11 @@ if test "$as_static_lib" = "yes" ; then
   echo "AS_STATIC_LIB=y" >> $config_host_mak
 fi
 #### --- End LibAFL code ---
+#### --- Begin AFL++ code ---
+if test "$afl" = "yes" ; then
+  echo "CONFIG_AFL=y" >> $config_host_mak
+fi
+#### --- End AFL++ code ---
 
 # tests/tcg configuration
 mkdir -p tests/tcg

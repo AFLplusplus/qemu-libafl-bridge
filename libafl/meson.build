@@ -37,3 +37,21 @@ specific_ss.add(when : 'CONFIG_USER_ONLY', if_false: [files(
   'qemu_snapshot.c',
 )])
 
+#### --- Begin AFL++ code ---
+if 'CONFIG_AFL' in config_host
+  specific_ss.add(when : 'CONFIG_USER_ONLY', if_true: [files(
+    '../../libaflqemubridge/afl_setup.c',
+    '../../libaflqemubridge/afl_idtable.c',
+    '../../libaflqemubridge/afl_coverage.c',
+    '../../libaflqemubridge/afl_forkserver.c',
+    '../../libaflqemubridge/afl_ranges.c',
+    '../../libaflqemubridge/afl_persistent.c',
+    '../../libaflqemubridge/afl_compcov.c',
+    '../../libaflqemubridge/afl_cmplog.c',
+    '../../libaflqemubridge/afl_qasan.c',
+    '../../libaflqemubridge/afl_ijon.c',
+    '../../libaflqemubridge/afl_tsl.c',
+  )])
+endif
+#### --- End AFL++ code ---
+

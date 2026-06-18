@@ -31,9 +31,11 @@
 #include "target_elf.h"
 #include "target_signal.h"
 #include "tcg/debuginfo.h"
+//// --- Begin AFL++ code ---
 #ifdef CONFIG_AFL
-#include "libafl/afl/afl.h"
+#include "libaflqemubridge/afl.h"
 #endif
+//// --- End AFL++ code ---
 
 #ifdef TARGET_ARM
 #include "target/arm/cpu-features.h"

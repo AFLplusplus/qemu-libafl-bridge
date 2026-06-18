@@ -56,11 +56,13 @@
 
 //// --- End LibAFL code ---
 
+//// --- Begin AFL++ code ---
 #if defined(CONFIG_AFL) && defined(CONFIG_USER_ONLY)
 #include "user/page-protection.h"
-#include "libafl/afl/afl.h"
-#include "libafl/afl/afl_tsl.h"
+#include "libaflqemubridge/afl.h"
+#include "libaflqemubridge/afl_tsl.h"
 #endif
+//// --- End AFL++ code ---
 
 
 /* -icount align implementation. */

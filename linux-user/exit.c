@@ -22,9 +22,11 @@
 #include "qemu.h"
 #include "user-internals.h"
 #include "qemu/plugin.h"
+//// --- Begin AFL++ code ---
 #ifdef CONFIG_AFL
-#include "libafl/afl/afl.h"
+#include "libaflqemubridge/afl.h"
 #endif
+//// --- End AFL++ code ---
 
 #ifdef CONFIG_GCOV
 extern void __gcov_dump(void);

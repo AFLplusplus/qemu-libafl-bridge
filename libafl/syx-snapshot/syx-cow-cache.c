@@ -1,4 +1,5 @@
 #include "qemu/osdep.h"
+#include <inttypes.h>
 
 #include "libafl/syx-snapshot/syx-cow-cache.h"
 #include "system/block-backend-io.h"
@@ -172,7 +173,7 @@ static bool write_to_cache_layer(SyxCowCacheLayer* sccl, BlockBackend* blk,
     if (qiov->size % sccl->chunk_size) {
         // todo: determine if it is worth developing an unaligned access
         // version.
-        printf("error: 0x%zx %% 0x%lx == 0x%lx\n", qiov->size, sccl->chunk_size,
+        printf("error: 0x%zx %% 0x%" PRIx64 " == 0x%" PRIx64 "\n", qiov->size, sccl->chunk_size,
                qiov->size % sccl->chunk_size);
         exit(1);
     }
@@ -218,7 +219,7 @@ void syx_cow_cache_read_entry(SyxCowCache* scc, BlockBackend* blk,
     size_t qiov_offset = 0;
     uint64_t chunk_size = 0;
 
-    // printf("[%s] Read 0x%zx bytes @addr %lx\n", blk_name(blk), qiov->size,
+    // printf("[%s] Read 0x%zx bytes @addr %" PRIx64 "\n", blk_name(blk), qiov->size,
     // offset);
 
     // First read the backing block device normally.
@@ -247,7 +248,7 @@ bool syx_cow_cache_write_entry(SyxCowCache* scc, BlockBackend* blk,
 {
     SyxCowCacheLayer* layer;
 
-    // printf("[%s] Write 0x%zx bytes @addr %lx\n", blk_name(blk), qiov->size,
+    // printf("[%s] Write 0x%zx bytes @addr %" PRIx64 "\n", blk_name(blk), qiov->size,
     // offset);
 
     layer = QTAILQ_FIRST(&scc->layers);

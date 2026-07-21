@@ -1,5 +1,6 @@
 #include "qemu/osdep.h"
 #include "qemu/main-loop.h"
+#include <inttypes.h>
 
 #include "cpu.h"
 
@@ -513,7 +514,7 @@ static inline void syx_snapshot_dirty_list_add_internal(RAMBlock* rb,
 
         if (g_hash_table_add(rb_dirty_list, GINT_TO_POINTER(offset))) {
 #ifdef SYX_SNAPSHOT_DEBUG
-            SYX_PRINTF("[%s] Marking offset 0x%lx as dirty\n", rb->idstr,
+            SYX_PRINTF("[%s] Marking offset 0x" RAM_ADDR_FMT " as dirty\n", rb->idstr,
                        offset);
 #endif
         }
@@ -557,7 +558,7 @@ void syx_snapshot_dirty_list_add_hostaddr(void* host_addr)
     RAMBlock* rb = qemu_ram_block_from_host((void*)host_addr, true, &offset);
 
 #ifdef SYX_SNAPSHOT_DEBUG
-    SYX_PRINTF("Should mark offset 0x%lx as dirty\n", offset);
+    SYX_PRINTF("Should mark offset 0x" RAM_ADDR_FMT " as dirty\n", offset);
 #endif
 
     if (!rb) {
@@ -617,7 +618,7 @@ static void root_restore_rb_page(gpointer offset_within_rb, gpointer _unused,
         (gpointer)snapshot_rb->ram + (ram_addr_t)offset_within_rb;
 
 #ifdef SYX_SNAPSHOT_DEBUG
-    SYX_PRINTF("\t[%s] Restore at offset 0x%lx of size %lu...\n", rb->idstr,
+    SYX_PRINTF("\t[%s] Restore at offset 0x%" PRIx64 " of size %" PRIu64 "...\n", rb->idstr,
                (uint64_t)offset_within_rb, syx_snapshot_state.page_size);
 #endif
 
@@ -669,10 +670,10 @@ static void root_restore_check_memory_rb(gpointer rb_idstr_hash,
              i += syx_snapshot_state.page_size) {
             if (memcmp(rb->host + i, rb_snapshot->ram + i,
                        syx_snapshot_state.page_size) != 0) {
-                SYX_ERROR("\nFound incorrect page at offset 0x%lx\n", i);
+                SYX_ERROR("\nFound incorrect page at offset 0x%" PRIx64 "\n", i);
                 for (uint64_t j = 0; j < syx_snapshot_state.page_size; j++) {
                     if (*(rb->host + i + j) != *(rb_snapshot->ram + i + j)) {
-                        SYX_ERROR("\t- byte at address 0x%lx differs\n", i + j);
+                        SYX_ERROR("\t- byte at address 0x%" PRIx64 " differs\n", i + j);
                     }
                 }
                 args->nb_inconsistent_pages++;
@@ -680,7 +681,7 @@ static void root_restore_check_memory_rb(gpointer rb_idstr_hash,
         }
 
         if (args->nb_inconsistent_pages > 0) {
-            SYX_ERROR("[%s] Found %lu page %s.\n", rb->idstr,
+            SYX_ERROR("[%s] Found %" PRIu64 " page %s.\n", rb->idstr,
                       args->nb_inconsistent_pages,
                       args->nb_inconsistent_pages > 1 ? "inconsistencies"
                                                       : "inconsistency");

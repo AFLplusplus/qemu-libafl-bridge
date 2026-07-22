@@ -9,6 +9,17 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  QEMU_TARGETS: |-
+    x86_64-softmmu,x86_64-linux-user
+    i386-softmmu,i386-linux-user
+    arm-softmmu,arm-linux-user
+    aarch64-softmmu,aarch64-linux-user
+    mipsel-softmmu,mipsel-linux-user
+    mips-softmmu,mips-linux-user
+    ppc-softmmu,ppc-linux-user
+    riscv32-softmmu,riscv32-linux-user
+    riscv64-softmmu,riscv64-linux-user
+    hexagon-linux-user
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,13 +27,65 @@ concurrency:
 
 jobs:
   build:
+    name: build (${{ matrix.name }})
     runs-on: ubuntu-24.04
-    container: registry.gitlab.com/qemu-project/qemu/qemu/ubuntu2204:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # QEMU binary builds + tests
+          - name: gcc
+            cc: gcc
+            cxx: g++
+            llvm: ""
+            configure_extra: ""
+            test: true
+          - name: clang-22
+            cc: clang
+            cxx: clang++
+            llvm: "22"
+            configure_extra: ""
+            test: true
+
+          # LibAFL QEMU builds
+          - name: gcc-static-lib
+            cc: gcc
+            cxx: g++
+            llvm: ""
+            configure_extra: "--as-static-lib"
+            test: false
+          - name: gcc-shared-lib
+            cc: gcc
+            cxx: g++
+            llvm: ""
+            configure_extra: "--as-shared-lib"
+            test: false
     steps:
       - uses: actions/checkout@v4
       - name: check submodules
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git submodule status
+      - name: Install QEMU dependencies
+        uses: ./.github/actions/apt
+      - name: Install LLVM
+        if: ${{ matrix.llvm != '' }}
+        uses: ./.github/actions/setup-llvm
+        with:
+          version: ${{ matrix.llvm }}
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ matrix.name }}
+          max-size: 2G
       - name: Build QEMU
-        run: mkdir -p build && cd build && ../configure --enable-werror --disable-docs --enable-fdt=system && make -j $(expr $(nproc) + 1)
+        run: |
+          targets=$(echo "$QEMU_TARGETS" | paste -sd,)
+          mkdir -p build && cd build
+          ../configure --cc="ccache ${{ matrix.cc }}" --cxx="ccache ${{ matrix.cxx }}" \
+            --target-list="$targets" ${{ matrix.configure_extra }} \
+            --enable-werror --disable-docs --enable-fdt=system
+          make -j $(expr $(nproc) + 1)
+      - name: Test QEMU
+        if: ${{ matrix.test }}
+        run: make -C build check

@@ -1041,7 +1041,6 @@ static bool qtest_qom_has_concrete_type(const char *parent_typename,
     QObject *qobj;
     QString *qstr;
     QDict *devinfo;
-    int idx;
 
     if (!list) {
         QDict *resp;
@@ -1066,7 +1065,7 @@ static bool qtest_qom_has_concrete_type(const char *parent_typename,
         }
     }
 
-    for (p = qlist_first(list), idx = 0; p; p = qlist_next(p), idx++) {
+    for (p = qlist_first(list); p; p = qlist_next(p)) {
         devinfo = qobject_to(QDict, qlist_entry_obj(p));
         g_assert(devinfo);
 

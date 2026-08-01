@@ -49,7 +49,7 @@ bool s390_cpu_has_work(CPUState *cs)
         return false;
     }
 
-    if (!(cs->interrupt_request & CPU_INTERRUPT_HARD)) {
+    if (!cpu_test_interrupt(cs, CPU_INTERRUPT_HARD)) {
         return false;
     }
 
@@ -196,7 +196,7 @@ static bool disabled_wait(CPUState *cpu)
                             (PSW_MASK_IO | PSW_MASK_EXT | PSW_MASK_MCHECK));
 }
 
-static unsigned s390_count_running_cpus(void)
+unsigned s390_count_running_cpus(void)
 {
     CPUState *cpu;
     int nr_running = 0;
@@ -214,7 +214,7 @@ static unsigned s390_count_running_cpus(void)
     return nr_running;
 }
 
-unsigned int s390_cpu_halt(S390CPU *cpu)
+void s390_cpu_halt(S390CPU *cpu)
 {
     CPUState *cs = CPU(cpu);
     trace_cpu_halt(cs->cpu_index);
@@ -223,8 +223,6 @@ unsigned int s390_cpu_halt(S390CPU *cpu)
         cs->halted = 1;
         cs->exception_index = EXCP_HLT;
     }
-
-    return s390_count_running_cpus();
 }
 
 void s390_cpu_unhalt(S390CPU *cpu)

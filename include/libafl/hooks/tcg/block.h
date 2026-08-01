@@ -1,18 +1,13 @@
 #pragma once
 
 #include "qemu/osdep.h"
-
-#include "qapi/error.h"
-
-#include "exec/exec-all.h"
-#include "exec/tb-flush.h"
+#include "tcg/helper-info.h"
 
 #include "libafl/exit.h"
-#include "libafl/hook.h"
 
-typedef uint64_t (*libafl_block_pre_gen_cb)(uint64_t data, target_ulong pc);
-typedef void (*libafl_block_post_gen_cb)(uint64_t data, target_ulong pc,
-                                         target_ulong block_length);
+typedef uint64_t (*libafl_block_pre_gen_cb)(uint64_t data, vaddr pc);
+typedef void (*libafl_block_post_gen_cb)(uint64_t data, vaddr pc,
+                                         vaddr block_length);
 
 typedef void (*libafl_block_exec_cb)(uint64_t data, uint64_t id);
 
@@ -46,5 +41,5 @@ bool libafl_qemu_block_hook_set_jit(
 
 int libafl_qemu_remove_block_hook(size_t num, int invalidate);
 
-void libafl_qemu_hook_block_pre_run(target_ulong pc);
+void libafl_qemu_hook_block_pre_run(vaddr pc);
 void libafl_qemu_hook_block_post_run(TranslationBlock* tb, vaddr pc);

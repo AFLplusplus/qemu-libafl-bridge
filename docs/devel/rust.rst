@@ -1,4 +1,4 @@
-.. |msrv| replace:: 1.63.0
+.. |msrv| replace:: 1.83.0
 
 Rust in QEMU
 ============
@@ -37,11 +37,15 @@ output directory (typically ``rust/target/``).  A vanilla invocation
 of Cargo will complain that it cannot find the generated sources,
 which can be fixed in different ways:
 
-* by using special shorthand targets in the QEMU build directory::
+* by using Makefile targets, provided by Meson, that run ``clippy`` or
+  ``rustdoc``:
 
     make clippy
-    make rustfmt
     make rustdoc
+
+A target for ``rustfmt`` is also declared in ``rust/meson.build``:
+
+    make rustfmt
 
 * by invoking ``cargo`` through the Meson `development environment`__
   feature::
@@ -50,7 +54,7 @@ which can be fixed in different ways:
     pyvenv/bin/meson devenv -w ../rust cargo fmt
 
   If you are going to use ``cargo`` repeatedly, ``pyvenv/bin/meson devenv``
-  will enter a shell where commands like ``cargo clippy`` just work.
+  will enter a shell where commands like ``cargo fmt`` just work.
 
 __ https://mesonbuild.com/Commands.html#devenv
 
@@ -62,74 +66,34 @@ __ https://mesonbuild.com/Commands.html#devenv
 As shown above, you can use the ``--tests`` option as usual to operate on test
 code.  Note however that you cannot *build* or run tests via ``cargo``, because
 they need support C code from QEMU that Cargo does not know about.  Tests can
-be run via ``meson test`` or ``make``::
+be run via Meson (``pyvenv/bin/meson test``) or ``make``::
 
    make check-rust
 
-Building Rust code with ``--enable-modules`` is not supported yet.
+Note that doctests require all ``.o`` files from the build to be available.
 
 Supported tools
 '''''''''''''''
 
-QEMU supports rustc version 1.63.0 and newer.  Notably, the following features
-are missing:
+QEMU supports rustc version 1.83.0 and newer.  The following features
+from relatively new versions of Rust are not used for historical reasons;
+patches are welcome:
 
-* ``core::ffi`` (1.64.0).  Use ``std::os::raw`` and ``std::ffi`` instead.
-
-* ``cast_mut()``/``cast_const()`` (1.65.0).  Use ``as`` instead.
-
-* "let ... else" (1.65.0).  Use ``if let`` instead.  This is currently patched
-  in QEMU's vendored copy of the bilge crate.
-
-* Generic Associated Types (1.65.0)
-
-* ``CStr::from_bytes_with_nul()`` as a ``const`` function (1.72.0).
-
-* "Return position ``impl Trait`` in Traits" (1.75.0, blocker for including
-  the pinned-init create).
-
-* ``MaybeUninit::zeroed()`` as a ``const`` function (1.75.0).  QEMU's
-  ``Zeroable`` trait can be implemented without ``MaybeUninit::zeroed()``,
-  so this would be just a cleanup.
-
-* ``c"" literals`` (stable in 1.77.0).  QEMU provides a ``c_str!()`` macro
-  to define ``CStr`` constants easily
-
-* ``offset_of!`` (stable in 1.77.0).  QEMU uses ``offset_of!()`` heavily; it
-  provides a replacement in the ``qemu_api`` crate, but it does not support
-  lifetime parameters and therefore ``&'a Something`` fields in the struct
-  may have to be replaced by ``NonNull<Something>``.  *Nested* ``offset_of!``
-  was only stabilized in Rust 1.82.0, but it is not used.
-
-* inline const expression (stable in 1.79.0), currently worked around with
-  associated constants in the ``FnCall`` trait.
-
-* associated constants have to be explicitly marked ``'static`` (`changed in
+* associated constants are still explicitly marked ``'static`` (`changed in
   1.81.0`__)
 
-* ``&raw`` (stable in 1.82.0).  Use ``addr_of!`` and ``addr_of_mut!`` instead,
-  though hopefully the need for raw pointers will go down over time.
+* ``&raw`` (stable in 1.82.0).
 
-* ``new_uninit`` (stable in 1.82.0).  This is used internally by the ``pinned_init``
-  crate, which is planned for inclusion in QEMU, but it can be easily patched
-  out.
+* NUL-terminated file names with ``#[track_caller]`` are scheduled for
+  inclusion as ``#![feature(location_file_nul)]``, but it will be a while
+  before QEMU can use them.  For now, there is special code in
+  ``util/error.c`` to support non-NUL-terminated file names.
 
-* referencing statics in constants (stable in 1.83.0).  For now use a const
-  function; this is an important limitation for QEMU's migration stream
-  architecture (VMState).  Right now, VMState lacks type safety because
-  it is hard to place the ``VMStateField`` definitions in traits.
-
-* associated const equality would be nice to have for some users of
-  ``callbacks::FnCall``, but is still experimental.  ``ASSERT_IS_SOME``
-  replaces it.
+Associated const equality would be nice to have for some users of
+``callbacks::FnCall``, but is still experimental.  Const assertions
+are used instead.
 
 __ https://github.com/rust-lang/rust/pull/125258
-
-It is expected that QEMU will advance its minimum supported version of
-rustc to 1.77.0 as soon as possible; as of January 2025, blockers
-for that right now are Debian bookworm and 32-bit MIPS processors.
-This unfortunately means that references to statics in constants will
-remain an issue.
 
 QEMU also supports version 0.60.x of bindgen, which is missing option
 ``--generate-cstr``.  This option requires version 0.66.x and will
@@ -139,29 +103,31 @@ anymore.
 Writing Rust code in QEMU
 -------------------------
 
-QEMU includes four crates:
+QEMU includes several crates:
 
-* ``qemu_api`` for bindings to C code and useful functionality
+* ``common`` provides Rust-only utilities
 
-* ``qemu_api_macros`` defines several procedural macros that are useful when
+* ``bql``, ``chardev``, ``hw/core``, ``migration``, ``qom``, ``system``,
+  ``util`` for bindings to respective QEMU C library APIs
+
+* ``qemu_macros`` defines several procedural macros that are useful when
   writing C code
 
 * ``pl011`` (under ``rust/hw/char/pl011``) and ``hpet`` (under ``rust/hw/timer/hpet``)
-  are sample devices that demonstrate ``qemu_api`` and ``qemu_api_macros``, and are
+  are sample devices that demonstrate Rust binding usage and ``qemu_macros``, and are
   used to further develop them.  These two crates are functional\ [#issues]_ replacements
   for the ``hw/char/pl011.c`` and ``hw/timer/hpet.c`` files.
 
 .. [#issues] The ``pl011`` crate is synchronized with ``hw/char/pl011.c``
-   as of commit 02b1f7f61928.  The ``hpet`` crate is synchronized as of
-   commit f32352ff9e.  Both are lacking tracing functionality; ``hpet``
-   is also lacking support for migration.
+   as of commit 3e0f118f82.  The ``hpet`` crate is synchronized as of
+   commit 1433e38cc8.  Both are lacking tracing functionality.
 
 This section explains how to work with them.
 
 Status
 ''''''
 
-Modules of ``qemu_api`` can be defined as:
+The stability of the modules can be defined as:
 
 - *complete*: ready for use in new devices; if applicable, the API supports the
   full functionality available in C
@@ -177,26 +143,27 @@ Modules of ``qemu_api`` can be defined as:
 
 The status of the modules is as follows:
 
-================ ======================
-module           status
-================ ======================
-``assertions``   stable
-``bitops``       complete
-``callbacks``    complete
-``cell``         stable
-``c_str``        complete
-``errno``        complete
-``irq``          complete
-``memory``       stable
-``module``       complete
-``offset_of``    stable
-``qdev``         stable
-``qom``          stable
-``sysbus``       stable
-``timer``        stable
-``vmstate``      proof of concept
-``zeroable``     stable
-================ ======================
+========================== ======================
+module                     status
+========================== ======================
+``bql::cell``              stable
+``common::assertions``     stable
+``common::bitops``         complete
+``common::callbacks``      complete
+``common::errno``          complete
+``common::zeroable``       stable
+``hwcore::irq``            complete
+``hwcore::qdev``           stable
+``hwcore::sysbus``         stable
+``migration::migratable``  proof of concept
+``migration::vmstate``     stable
+``qom``                    stable
+``system::memory``         stable
+``util::error``            stable
+``util::log``              proof of concept
+``util::module``           complete
+``util::timer``            stable
+========================== ======================
 
 .. note::
   API stability is not a promise, if anything because the C APIs are not a stable
@@ -297,7 +264,7 @@ to go from a shared reference to a ``&mut``.
 
 Whenever C code provides you with an opaque ``void *``, avoid converting it
 to a Rust mutable reference, and use a shared reference instead.  The
-``qemu_api::cell`` module provides wrappers that can be used to tell the
+``bql::cell`` module provides wrappers that can be used to tell the
 Rust compiler about interior mutability, and optionally to enforce locking
 rules for the "Big QEMU Lock".  In the future, similar cell types might
 also be provided for ``AioContext``-based locking as well.
@@ -315,7 +282,7 @@ a raw pointer, for use in calls to C functions.  It can be used for
 example as follows::
 
     #[repr(transparent)]
-    #[derive(Debug, qemu_api_macros::Wrapper)]
+    #[derive(Debug, common::Wrapper)]
     pub struct Object(Opaque<bindings::Object>);
 
 where the special ``derive`` macro provides useful methods such as
@@ -329,7 +296,7 @@ the wrapper to be declared thread-safe::
 Writing bindings to C code
 ''''''''''''''''''''''''''
 
-Here are some things to keep in mind when working on the ``qemu_api`` crate.
+Here are some things to keep in mind when working on the QEMU Rust crate.
 
 **Look at existing code**
   Very often, similar idioms in C code correspond to similar tricks in
@@ -376,7 +343,7 @@ Writing procedural macros
 '''''''''''''''''''''''''
 
 By conventions, procedural macros are split in two functions, one
-returning ``Result<proc_macro2::TokenStream, MacroError>`` with the body of
+returning ``Result<proc_macro2::TokenStream, syn::Error>`` with the body of
 the procedural macro, and the second returning ``proc_macro::TokenStream``
 which is the actual procedural macro.  The former's name is the same as
 the latter with the ``_or_error`` suffix.  The code for the latter is more
@@ -386,18 +353,19 @@ from the type after ``as`` in the invocation of ``parse_macro_input!``::
     #[proc_macro_derive(Object)]
     pub fn derive_object(input: TokenStream) -> TokenStream {
         let input = parse_macro_input!(input as DeriveInput);
-        let expanded = derive_object_or_error(input).unwrap_or_else(Into::into);
 
-        TokenStream::from(expanded)
+        derive_object_or_error(input)
+            .unwrap_or_else(syn::Error::into_compile_error)
+            .into()
     }
 
-The ``qemu_api_macros`` crate has utility functions to examine a
+The ``qemu_macros`` crate has utility functions to examine a
 ``DeriveInput`` and perform common checks (e.g. looking for a struct
-with named fields).  These functions return ``Result<..., MacroError>``
+with named fields).  These functions return ``Result<..., syn::Error>``
 and can be used easily in the procedural macro function::
 
     fn derive_object_or_error(input: DeriveInput) ->
-        Result<proc_macro2::TokenStream, MacroError>
+        Result<proc_macro2::TokenStream, Error>
     {
         is_c_repr(&input, "#[derive(Object)]")?;
 
@@ -432,7 +400,7 @@ Right now, only the nightly version of ``rustfmt`` is supported.  This
 might change in the future.  While CI checks for correct formatting via
 ``cargo fmt --check``, maintainers can fix this for you when applying patches.
 
-It is expected that ``qemu_api`` provides full ``rustdoc`` documentation for
+It is expected that QEMU Rust crates provides full ``rustdoc`` documentation for
 bindings that are in their final shape or close.
 
 Adding dependencies
@@ -441,7 +409,7 @@ Adding dependencies
 Generally, the set of dependent crates is kept small.  Think twice before
 adding a new external crate, especially if it comes with a large set of
 dependencies itself.  Sometimes QEMU only needs a small subset of the
-functionality; see for example QEMU's ``assertions`` or ``c_str`` modules.
+functionality; see for example QEMU's ``assertions`` module.
 
 On top of this recommendation, adding external crates to QEMU is a
 slightly complicated process, mostly due to the need to teach Meson how

@@ -72,13 +72,13 @@ static void csr_call(char *cmd, uint64_t cpu_num, int csrno, uint64_t *val)
         ret = riscv_csrr(env, csrno, (target_ulong *)val);
     } else if (strcmp(cmd, "set_csr") == 0) {
         ret = riscv_csrrw(env, csrno, NULL, *(target_ulong *)val,
-                MAKE_64BIT_MASK(0, TARGET_LONG_BITS));
+                          MAKE_64BIT_MASK(0, TARGET_LONG_BITS), 0);
     }
 
     g_assert(ret == RISCV_EXCP_NONE);
 }
 
-static bool csr_qtest_callback(CharBackend *chr, gchar **words)
+static bool csr_qtest_callback(CharFrontend *chr, gchar **words)
 {
     if (strcmp(words[0], "csr") == 0) {
 
@@ -94,7 +94,7 @@ static bool csr_qtest_callback(CharBackend *chr, gchar **words)
         g_assert(rc == 0);
         csr_call(words[1], cpu, csr, &val);
 
-        qtest_sendf(chr, "OK 0 "TARGET_FMT_lx"\n", (target_ulong)val);
+        qtest_sendf(chr, "OK 0 %"PRIx64"\n", val);
 
         return true;
     }
@@ -163,7 +163,7 @@ static void riscv_harts_realize(DeviceState *dev, Error **errp)
     }
 }
 
-static void riscv_harts_class_init(ObjectClass *klass, void *data)
+static void riscv_harts_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

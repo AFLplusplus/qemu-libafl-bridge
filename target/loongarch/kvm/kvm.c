@@ -18,7 +18,7 @@
 #include "system/kvm_int.h"
 #include "hw/pci/pci.h"
 #include "exec/memattrs.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "hw/boards.h"
 #include "hw/irq.h"
 #include "hw/loongarch/virt.h"
@@ -325,7 +325,7 @@ static int kvm_loongarch_get_csr(CPUState *cs)
     return ret;
 }
 
-static int kvm_loongarch_put_csr(CPUState *cs, int level)
+static int kvm_loongarch_put_csr(CPUState *cs, KvmPutState level)
 {
     int ret = 0;
     CPULoongArchState *env = cpu_env(cs);
@@ -763,7 +763,7 @@ int kvm_arch_get_registers(CPUState *cs, Error **errp)
     return ret;
 }
 
-int kvm_arch_put_registers(CPUState *cs, int level, Error **errp)
+int kvm_arch_put_registers(CPUState *cs, KvmPutState level, Error **errp)
 {
     int ret;
     static int once;
@@ -931,6 +931,12 @@ static bool kvm_feature_supported(CPUState *cs, enum loongarch_features feature)
         ret = kvm_vm_ioctl(kvm_state, KVM_HAS_DEVICE_ATTR, &attr);
         return (ret == 0);
 
+    case LOONGARCH_FEATURE_PTW:
+        attr.group = KVM_LOONGARCH_VM_FEAT_CTRL;
+        attr.attr = KVM_LOONGARCH_VM_FEAT_PTW;
+        ret = kvm_vm_ioctl(kvm_state, KVM_HAS_DEVICE_ATTR, &attr);
+        return (ret == 0);
+
     default:
         return false;
     }
@@ -1029,6 +1035,29 @@ static int kvm_cpu_check_pmu(CPUState *cs, Error **errp)
     return 0;
 }
 
+static int kvm_cpu_check_ptw(CPUState *cs, Error **errp)
+{
+    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
+    CPULoongArchState *env = cpu_env(cs);
+    bool kvm_supported;
+
+    kvm_supported = kvm_feature_supported(cs, LOONGARCH_FEATURE_PTW);
+    if (cpu->ptw == ON_OFF_AUTO_ON) {
+        if (!kvm_supported) {
+            error_setg(errp, "'ptw' feature not supported by KVM on the host");
+            return -ENOTSUP;
+        }
+    } else if (cpu->ptw != ON_OFF_AUTO_AUTO) {
+        /* disable pmu if ON_OFF_AUTO_OFF is set */
+        kvm_supported = false;
+    }
+
+    if (kvm_supported) {
+        env->cpucfg[2] = FIELD_DP32(env->cpucfg[2], CPUCFG2, HPTW, 1);
+    }
+    return 0;
+}
+
 static int kvm_cpu_check_pv_features(CPUState *cs, Error **errp)
 {
     MachineState *ms = MACHINE(qdev_get_machine());
@@ -1071,7 +1100,11 @@ static int kvm_cpu_check_pv_features(CPUState *cs, Error **errp)
             env->pv_features |= BIT(KVM_FEATURE_VIRT_EXTIOI);
         }
     }
+    return 0;
+}
 
+int kvm_arch_pre_create_vcpu(CPUState *cpu, Error **errp)
+{
     return 0;
 }
 
@@ -1114,6 +1147,12 @@ int kvm_arch_init_vcpu(CPUState *cs)
     }
 
     ret = kvm_cpu_check_pv_features(cs, &local_err);
+    if (ret < 0) {
+        error_report_err(local_err);
+        return ret;
+    }
+
+    ret = kvm_cpu_check_ptw(cs, &local_err);
     if (ret < 0) {
         error_report_err(local_err);
         return ret;
@@ -1236,6 +1275,22 @@ void kvm_arch_init_irq_routing(KVMState *s)
 {
 }
 
+void kvm_loongarch_init_irq_routing(void)
+{
+    int i;
+
+    kvm_async_interrupts_allowed = true;
+    kvm_msi_via_irqfd_allowed = kvm_irqfds_enabled();
+    if (kvm_has_gsi_routing()) {
+        for (i = 0; i < KVM_IRQCHIP_NUM_PINS; ++i) {
+            kvm_irqchip_add_irq_route(kvm_state, i, 0, i);
+        }
+
+        kvm_gsi_routing_allowed = true;
+        kvm_irqchip_commit_routes(kvm_state);
+    }
+}
+
 int kvm_arch_get_default_type(MachineState *ms)
 {
     return 0;
@@ -1249,7 +1304,12 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
 
 int kvm_arch_irqchip_create(KVMState *s)
 {
-    return 0;
+    if (kvm_kernel_irqchip_split()) {
+        error_report("kernel_irqchip=split is not supported on LoongArch");
+        exit(1);
+    }
+
+    return kvm_check_extension(s, KVM_CAP_DEVICE_CTRL);
 }
 
 void kvm_arch_pre_run(CPUState *cs, struct kvm_run *run)

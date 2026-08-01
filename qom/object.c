@@ -54,10 +54,10 @@ struct TypeImpl
     size_t instance_size;
     size_t instance_align;
 
-    void (*class_init)(ObjectClass *klass, void *data);
-    void (*class_base_init)(ObjectClass *klass, void *data);
+    void (*class_init)(ObjectClass *klass, const void *data);
+    void (*class_base_init)(ObjectClass *klass, const void *data);
 
-    void *class_data;
+    const void *class_data;
 
     void (*instance_init)(Object *obj);
     void (*instance_post_init)(Object *obj);
@@ -431,12 +431,12 @@ static void object_init_with_type(Object *obj, TypeImpl *ti)
 
 static void object_post_init_with_type(Object *obj, TypeImpl *ti)
 {
-    if (ti->instance_post_init) {
-        ti->instance_post_init(obj);
-    }
-
     if (type_has_parent(ti)) {
         object_post_init_with_type(obj, type_get_parent(ti));
+    }
+
+    if (ti->instance_post_init) {
+        ti->instance_post_init(obj);
     }
 }
 
@@ -485,7 +485,7 @@ bool object_apply_global_props(Object *obj, const GPtrArray *props,
  * Slot 0: accelerator's global property defaults
  * Slot 1: machine's global property defaults
  * Slot 2: global properties from legacy command line option
- * Each is a GPtrArray of of GlobalProperty.
+ * Each is a GPtrArray of GlobalProperty.
  * Applied in order, later entries override earlier ones.
  */
 static GPtrArray *object_compat_props[3];
@@ -1191,7 +1191,7 @@ GSList *object_class_get_list(const char *implements_type,
     return list;
 }
 
-static gint object_class_cmp(gconstpointer a, gconstpointer b)
+static gint object_class_cmp(gconstpointer a, gconstpointer b, gpointer d)
 {
     return strcasecmp(object_class_get_name((ObjectClass *)a),
                       object_class_get_name((ObjectClass *)b));
@@ -1200,8 +1200,9 @@ static gint object_class_cmp(gconstpointer a, gconstpointer b)
 GSList *object_class_get_list_sorted(const char *implements_type,
                                      bool include_abstract)
 {
-    return g_slist_sort(object_class_get_list(implements_type, include_abstract),
-                        object_class_cmp);
+    return g_slist_sort_with_data(
+        object_class_get_list(implements_type, include_abstract),
+        object_class_cmp, NULL);
 }
 
 Object *object_ref(void *objptr)
@@ -1729,6 +1730,7 @@ const char *object_property_get_type(Object *obj, const char *name, Error **errp
 }
 
 static const char *const root_containers[] = {
+    "audiodevs",
     "chardevs",
     "objects",
     "backend"
@@ -2891,7 +2893,7 @@ void object_class_property_set_description(ObjectClass *klass,
     op->description = g_strdup(description);
 }
 
-static void object_class_init(ObjectClass *klass, void *data)
+static void object_class_init(ObjectClass *klass, const void *data)
 {
     object_class_property_add_str(klass, "type", object_get_type,
                                   NULL);

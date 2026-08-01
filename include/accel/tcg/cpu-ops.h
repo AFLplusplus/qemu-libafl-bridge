@@ -16,8 +16,32 @@
 #include "exec/memop.h"
 #include "exec/mmu-access-type.h"
 #include "exec/vaddr.h"
+#include "accel/tcg/tb-cpu-state.h"
+#include "tcg/tcg-mo.h"
 
 struct TCGCPUOps {
+    /**
+     * mttcg_supported: multi-threaded TCG is supported
+     *
+     * Target (TCG frontend) supports:
+     *   - atomic instructions
+     *   - memory ordering primitives (barriers)
+     */
+    bool mttcg_supported;
+
+    /**
+     * @precise_smc: Stores which modify code within the current TB force
+     *               the TB to exit; the next executed instruction will see
+     *               the result of the store.
+     */
+    bool precise_smc;
+
+    /**
+     * @guest_default_memory_order: default barrier that is required
+     *                              for the guest memory ordering.
+     */
+    TCGBar guest_default_memory_order;
+
     /**
      * @initialize: Initialize TCG state
      *
@@ -37,6 +61,12 @@ struct TCGCPUOps {
      */
     void (*translate_code)(CPUState *cpu, TranslationBlock *tb,
                            int *max_insns, vaddr pc, void *host_pc);
+    /**
+     * @get_tb_cpu_state: Extract CPU state for a TCG #TranslationBlock
+     *
+     * Fill in all data required to select or compile a TranslationBlock.
+     */
+    TCGTBCPUState (*get_tb_cpu_state)(CPUState *cs);
     /**
      * @synchronize_from_tb: Synchronize state from a TCG #TranslationBlock
      *
@@ -66,6 +96,9 @@ struct TCGCPUOps {
     void (*cpu_exec_exit)(CPUState *cpu);
     /** @debug_excp_handler: Callback for handling debug exceptions */
     void (*debug_excp_handler)(CPUState *cpu);
+
+    /** @mmu_index: Callback for choosing softmmu mmu index */
+    int (*mmu_index)(CPUState *cpu, bool ifetch);
 
 #ifdef CONFIG_USER_ONLY
     /**
@@ -124,11 +157,20 @@ struct TCGCPUOps {
      */
     void (*record_sigbus)(CPUState *cpu, vaddr addr,
                           MMUAccessType access_type, uintptr_t ra);
+
+    /**
+     * untagged_addr: Remove an ignored tag from an address
+     * @cpu: cpu context
+     * @addr: tagged guest address
+     */
+    vaddr (*untagged_addr)(CPUState *cs, vaddr addr);
 #else
     /** @do_interrupt: Callback for interrupt handling.  */
     void (*do_interrupt)(CPUState *cpu);
     /** @cpu_exec_interrupt: Callback for processing interrupts in cpu_exec */
     bool (*cpu_exec_interrupt)(CPUState *cpu, int interrupt_request);
+    /** @cpu_exec_reset: Callback for reset in cpu_exec.  */
+    void (*cpu_exec_reset)(CPUState *cpu);
     /**
      * @cpu_exec_halt: Callback for handling halt in cpu_exec.
      *
@@ -180,6 +222,13 @@ struct TCGCPUOps {
     bool (*tlb_fill)(CPUState *cpu, vaddr address, int size,
                      MMUAccessType access_type, int mmu_idx,
                      bool probe, uintptr_t retaddr);
+    /**
+     * @pointer_wrap:
+     *
+     * We have incremented @base to @result, resulting in a page change.
+     * For the current cpu state, adjust @result for possible overflow.
+     */
+    vaddr (*pointer_wrap)(CPUState *cpu, int mmu_idx, vaddr result, vaddr base);
     /**
      * @do_transaction_failed: Callback for handling failed memory transactions
      * (ie bus faults or external aborts; not MMU faults)
@@ -272,6 +321,12 @@ void cpu_check_watchpoint(CPUState *cpu, vaddr addr, vaddr len,
  * If no watchpoint is registered for the range, the result is 0.
  */
 int cpu_watchpoint_address_matches(CPUState *cpu, vaddr addr, vaddr len);
+
+/*
+ * Common pointer_wrap implementations.
+ */
+vaddr cpu_pointer_wrap_notreached(CPUState *, int, vaddr, vaddr);
+vaddr cpu_pointer_wrap_uint32(CPUState *, int, vaddr, vaddr);
 
 #endif
 

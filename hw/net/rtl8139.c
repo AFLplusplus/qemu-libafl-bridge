@@ -57,6 +57,7 @@
 #include "system/dma.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
+#include "qemu/bswap.h"
 #include "net/net.h"
 #include "net/eth.h"
 #include "system/system.h"
@@ -1816,7 +1817,7 @@ static int rtl8139_transmit_one(RTL8139State *s, int descriptor)
 
     PCIDevice *d = PCI_DEVICE(s);
     int txsize = s->TxStatus[descriptor] & 0x1fff;
-    uint8_t txbuffer[0x2000];
+    QEMU_UNINITIALIZED uint8_t txbuffer[0x2000];
 
     DPRINTF("+++ transmit reading %d bytes from host memory at 0x%08x\n",
         txsize, s->TxAddr[descriptor]);
@@ -3414,7 +3415,7 @@ static const Property rtl8139_properties[] = {
     DEFINE_NIC_PROPERTIES(RTL8139State, conf),
 };
 
-static void rtl8139_class_init(ObjectClass *klass, void *data)
+static void rtl8139_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -3438,7 +3439,7 @@ static const TypeInfo rtl8139_info = {
     .instance_size = sizeof(RTL8139State),
     .class_init    = rtl8139_class_init,
     .instance_init = rtl8139_instance_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },
     },

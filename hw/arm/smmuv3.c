@@ -25,6 +25,7 @@
 #include "hw/qdev-core.h"
 #include "hw/pci/pci.h"
 #include "cpu.h"
+#include "exec/target_page.h"
 #include "trace.h"
 #include "qemu/log.h"
 #include "qemu/error-report.h"
@@ -1983,7 +1984,7 @@ static void smmuv3_instance_init(Object *obj)
     /* Nothing much to do here as of now */
 }
 
-static void smmuv3_class_init(ObjectClass *klass, void *data)
+static void smmuv3_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     ResettableClass *rc = RESETTABLE_CLASS(klass);
@@ -1995,6 +1996,8 @@ static void smmuv3_class_init(ObjectClass *klass, void *data)
     device_class_set_parent_realize(dc, smmu_realize,
                                     &c->parent_realize);
     device_class_set_props(dc, smmuv3_properties);
+    dc->hotpluggable = false;
+    dc->user_creatable = true;
 }
 
 static int smmuv3_notify_flag_changed(IOMMUMemoryRegion *iommu,
@@ -2030,7 +2033,7 @@ static int smmuv3_notify_flag_changed(IOMMUMemoryRegion *iommu,
 }
 
 static void smmuv3_iommu_memory_region_class_init(ObjectClass *klass,
-                                                  void *data)
+                                                  const void *data)
 {
     IOMMUMemoryRegionClass *imrc = IOMMU_MEMORY_REGION_CLASS(klass);
 

@@ -21,11 +21,17 @@ configure it as if it was a real ethernet card.
 Linux host
 ^^^^^^^^^^
 
-As an example, you can download the ``linux-test-xxx.tar.gz`` archive
-and copy the script ``qemu-ifup`` in ``/etc`` and configure properly
-``sudo`` so that the command ``ifconfig`` contained in ``qemu-ifup`` can
-be executed as root. You must verify that your host kernel supports the
-TAP network interfaces: the device ``/dev/net/tun`` must be present.
+A distribution will generally provide specific helper scripts when it
+packages QEMU. By default these are found at ``/etc/qemu-ifup`` and
+``/etc/qemu-ifdown`` and are called appropriately when QEMU wants to
+change the network state.
+
+If QEMU is being run as a non-privileged user you may need properly
+configure ``sudo`` so that network commands in the scripts can be
+executed as root.
+
+You must verify that your host kernel supports the TAP network
+interfaces: the device ``/dev/net/tun`` must be present.
 
 See :ref:`sec_005finvocation` to have examples of command
 lines using the TAP network interfaces.
@@ -73,7 +79,7 @@ those sockets. To allow ping for GID 100 (usually users group)::
 
 When using the built-in TFTP server, the router is also the TFTP server.
 
-When using the ``'-netdev user,hostfwd=...'`` option, TCP or UDP
+When using the ``'-netdev user,hostfwd=...'`` option, TCP, UDP or UNIX
 connections can be redirected from the host to the guest. It allows for
 example to redirect X11, telnet or SSH connections.
 
@@ -85,12 +91,58 @@ passt doesn't require any capability or privilege. passt has
 better performance than ``-net user``, full IPv6 support and better security
 as it's a daemon that is not executed in QEMU context.
 
-passt can be connected to QEMU either by using a socket
-(``-netdev stream``) or using the vhost-user interface (``-netdev vhost-user``).
+passt_ can be used in the same way as the user backend (using ``-net passt``,
+``-netdev passt`` or ``-nic passt``) or it can be launched manually and
+connected to QEMU either by using a socket (``-netdev stream``) or by using
+the vhost-user interface (``-netdev vhost-user``).
+
+Using ``-netdev stream`` or ``-netdev vhost-user`` will allow the user to
+enable functionalities not available through the passt backend interface
+(like migration).
+
 See `passt(1)`_ for more details on passt.
 
 .. _passt: https://passt.top/
 .. _passt(1): https://passt.top/builds/latest/web/passt.1.html
+
+To use the passt backend interface
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+There is no need to start the daemon as QEMU will do it for you.
+
+By default, passt will be started in the socket-based mode.
+
+.. parsed-literal::
+   |qemu_system| [...OPTIONS...] -nic passt
+
+   (qemu) info network
+   e1000e.0: index=0,type=nic,model=e1000e,macaddr=52:54:00:12:34:56
+    \ #net071: index=0,type=passt,stream,connected to pid 24846
+
+.. parsed-literal::
+   |qemu_system| [...OPTIONS...] -net nic -net passt,tcp-ports=10001,udp-ports=10001
+
+   (qemu) info network
+   hub 0
+    \ hub0port1: #net136: index=0,type=passt,stream,connected to pid 25204
+    \ hub0port0: e1000e.0: index=0,type=nic,model=e1000e,macaddr=52:54:00:12:34:56
+
+.. parsed-literal::
+   |qemu_system| [...OPTIONS...] -netdev passt,id=netdev0 -device virtio-net,mac=9a:2b:2c:2d:2e:2f,id=virtio0,netdev=netdev0
+
+   (qemu) info network
+   virtio0: index=0,type=nic,model=virtio-net-pci,macaddr=9a:2b:2c:2d:2e:2f
+    \ netdev0: index=0,type=passt,stream,connected to pid 25428
+
+To use the vhost-based interface, add the ``vhost-user=on`` parameter and
+select the virtio-net device:
+
+.. parsed-literal::
+   |qemu_system| [...OPTIONS...] -nic passt,model=virtio,vhost-user=on
+
+   (qemu) info network
+   virtio-net-pci.0: index=0,type=nic,model=virtio-net-pci,macaddr=52:54:00:12:34:56
+    \ #net006: index=0,type=passt,vhost-user,connected to pid 25731
 
 To use socket based passt interface:
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

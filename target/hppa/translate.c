@@ -20,7 +20,6 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "qemu/host-utils.h"
-#include "exec/exec-all.h"
 #include "exec/page-protection.h"
 #include "tcg/tcg-op.h"
 #include "tcg/tcg-op-gvec.h"
@@ -28,6 +27,7 @@
 #include "exec/helper-gen.h"
 #include "exec/translator.h"
 #include "exec/translation-block.h"
+#include "exec/target_page.h"
 #include "exec/log.h"
 
 #define HELPER_H "helper.h"
@@ -103,6 +103,12 @@ typedef struct DisasContext {
 #define UNALIGN(C)       MO_ALIGN
 #define MMU_DISABLED(C)  MMU_IDX_MMU_DISABLED((C)->mmu_idx)
 #endif
+
+static inline MemOp mo_endian(DisasContext *ctx)
+{
+   /* The PSW_E bit sets the (little) endianness, but we don't implement it. */
+   return MO_BE;
+}
 
 /* Note that ssm/rsm instructions number PSW_W and PSW_E differently.  */
 static int expand_sm_imm(DisasContext *ctx, int val)
@@ -1208,10 +1214,10 @@ static void do_add(DisasContext *ctx, unsigned rt, TCGv_i64 orig_in1,
         cb_msb = tcg_temp_new_i64();
         cb = tcg_temp_new_i64();
 
-        tcg_gen_add2_i64(dest, cb_msb, in1, ctx->zero, in2, ctx->zero);
         if (is_c) {
-            tcg_gen_add2_i64(dest, cb_msb, dest, cb_msb,
-                             get_psw_carry(ctx, d), ctx->zero);
+            tcg_gen_addcio_i64(dest, cb_msb, in1, in2, get_psw_carry(ctx, d));
+        } else {
+            tcg_gen_add2_i64(dest, cb_msb, in1, ctx->zero, in2, ctx->zero);
         }
         tcg_gen_xor_i64(cb, in1, in2);
         tcg_gen_xor_i64(cb, cb, dest);
@@ -1307,9 +1313,7 @@ static void do_sub(DisasContext *ctx, unsigned rt, TCGv_i64 in1,
     if (is_b) {
         /* DEST,C = IN1 + ~IN2 + C.  */
         tcg_gen_not_i64(cb, in2);
-        tcg_gen_add2_i64(dest, cb_msb, in1, ctx->zero,
-                         get_psw_carry(ctx, d), ctx->zero);
-        tcg_gen_add2_i64(dest, cb_msb, dest, cb_msb, cb, ctx->zero);
+        tcg_gen_addcio_i64(dest, cb_msb, in1, cb, get_psw_carry(ctx, d));
         tcg_gen_xor_i64(cb, cb, in1);
         tcg_gen_xor_i64(cb, cb, dest);
     } else {
@@ -1601,6 +1605,7 @@ static void do_load_32(DisasContext *ctx, TCGv_i32 dest, unsigned rb,
     /* Caller uses nullify_over/nullify_end.  */
     assert(ctx->null_cond.c == TCG_COND_NEVER);
 
+    mop |= mo_endian(ctx);
     form_gva(ctx, &addr, &ofs, rb, rx, scale, disp, sp, modify,
              MMU_DISABLED(ctx));
     tcg_gen_qemu_ld_i32(dest, addr, ctx->mmu_idx, mop | UNALIGN(ctx));
@@ -1619,6 +1624,7 @@ static void do_load_64(DisasContext *ctx, TCGv_i64 dest, unsigned rb,
     /* Caller uses nullify_over/nullify_end.  */
     assert(ctx->null_cond.c == TCG_COND_NEVER);
 
+    mop |= mo_endian(ctx);
     form_gva(ctx, &addr, &ofs, rb, rx, scale, disp, sp, modify,
              MMU_DISABLED(ctx));
     tcg_gen_qemu_ld_i64(dest, addr, ctx->mmu_idx, mop | UNALIGN(ctx));
@@ -1637,6 +1643,7 @@ static void do_store_32(DisasContext *ctx, TCGv_i32 src, unsigned rb,
     /* Caller uses nullify_over/nullify_end.  */
     assert(ctx->null_cond.c == TCG_COND_NEVER);
 
+    mop |= mo_endian(ctx);
     form_gva(ctx, &addr, &ofs, rb, rx, scale, disp, sp, modify,
              MMU_DISABLED(ctx));
     tcg_gen_qemu_st_i32(src, addr, ctx->mmu_idx, mop | UNALIGN(ctx));
@@ -1655,6 +1662,7 @@ static void do_store_64(DisasContext *ctx, TCGv_i64 src, unsigned rb,
     /* Caller uses nullify_over/nullify_end.  */
     assert(ctx->null_cond.c == TCG_COND_NEVER);
 
+    mop |= mo_endian(ctx);
     form_gva(ctx, &addr, &ofs, rb, rx, scale, disp, sp, modify,
              MMU_DISABLED(ctx));
     tcg_gen_qemu_st_i64(src, addr, ctx->mmu_idx, mop | UNALIGN(ctx));
@@ -1693,7 +1701,7 @@ static bool do_floadw(DisasContext *ctx, unsigned rt, unsigned rb,
     nullify_over(ctx);
 
     tmp = tcg_temp_new_i32();
-    do_load_32(ctx, tmp, rb, rx, scale, disp, sp, modify, MO_TEUL);
+    do_load_32(ctx, tmp, rb, rx, scale, disp, sp, modify, MO_UL);
     save_frw_i32(rt, tmp);
 
     if (rt == 0) {
@@ -1718,7 +1726,7 @@ static bool do_floadd(DisasContext *ctx, unsigned rt, unsigned rb,
     nullify_over(ctx);
 
     tmp = tcg_temp_new_i64();
-    do_load_64(ctx, tmp, rb, rx, scale, disp, sp, modify, MO_TEUQ);
+    do_load_64(ctx, tmp, rb, rx, scale, disp, sp, modify, MO_UQ);
     save_frd(rt, tmp);
 
     if (rt == 0) {
@@ -1752,7 +1760,7 @@ static bool do_fstorew(DisasContext *ctx, unsigned rt, unsigned rb,
     nullify_over(ctx);
 
     tmp = load_frw_i32(rt);
-    do_store_32(ctx, tmp, rb, rx, scale, disp, sp, modify, MO_TEUL);
+    do_store_32(ctx, tmp, rb, rx, scale, disp, sp, modify, MO_UL);
 
     return nullify_end(ctx);
 }
@@ -1772,7 +1780,7 @@ static bool do_fstored(DisasContext *ctx, unsigned rt, unsigned rb,
     nullify_over(ctx);
 
     tmp = load_frd(rt);
-    do_store_64(ctx, tmp, rb, rx, scale, disp, sp, modify, MO_TEUQ);
+    do_store_64(ctx, tmp, rb, rx, scale, disp, sp, modify, MO_UQ);
 
     return nullify_end(ctx);
 }
@@ -3007,9 +3015,7 @@ static bool trans_ds(DisasContext *ctx, arg_rrr_cf *a)
     tcg_gen_xor_i64(add2, in2, addc);
     tcg_gen_andi_i64(addc, addc, 1);
 
-    tcg_gen_add2_i64(dest, cpu_psw_cb_msb, add1, ctx->zero, add2, ctx->zero);
-    tcg_gen_add2_i64(dest, cpu_psw_cb_msb, dest, cpu_psw_cb_msb,
-                     addc, ctx->zero);
+    tcg_gen_addcio_i64(dest, cpu_psw_cb_msb, add1, add2, addc);
 
     /* Write back the result register.  */
     save_gpr(ctx, a->t, dest);
@@ -3306,7 +3312,7 @@ static bool trans_ld(DisasContext *ctx, arg_ldst *a)
         return gen_illegal(ctx);
     }
     return do_load(ctx, a->t, a->b, a->x, a->scale ? a->size : 0,
-                   a->disp, a->sp, a->m, a->size | MO_TE);
+                   a->disp, a->sp, a->m, a->size);
 }
 
 static bool trans_st(DisasContext *ctx, arg_ldst *a)
@@ -3315,12 +3321,12 @@ static bool trans_st(DisasContext *ctx, arg_ldst *a)
     if (!ctx->is_pa20 && a->size > MO_32) {
         return gen_illegal(ctx);
     }
-    return do_store(ctx, a->t, a->b, a->disp, a->sp, a->m, a->size | MO_TE);
+    return do_store(ctx, a->t, a->b, a->disp, a->sp, a->m, a->size);
 }
 
 static bool trans_ldc(DisasContext *ctx, arg_ldst *a)
 {
-    MemOp mop = MO_TE | MO_ALIGN | a->size;
+    MemOp mop = mo_endian(ctx) | MO_ALIGN | a->size;
     TCGv_i64 dest, ofs;
     TCGv_i64 addr;
 
@@ -3552,8 +3558,7 @@ static bool do_addb(DisasContext *ctx, unsigned r, TCGv_i64 in1,
         TCGv_i64 cb = tcg_temp_new_i64();
         TCGv_i64 cb_msb = tcg_temp_new_i64();
 
-        tcg_gen_movi_i64(cb_msb, 0);
-        tcg_gen_add2_i64(dest, cb_msb, in1, cb_msb, in2, cb_msb);
+        tcg_gen_add2_i64(dest, cb_msb, in1, ctx->zero, in2, ctx->zero);
         tcg_gen_xor_i64(cb, in1, in2);
         tcg_gen_xor_i64(cb, cb, dest);
         cb_cond = get_carry(ctx, d, cb, cb_msb);

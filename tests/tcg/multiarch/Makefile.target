@@ -29,6 +29,7 @@ run-float_%: float_%
 	$(call run-test,$<, $(QEMU) $(QEMU_OPTS) $<)
 	$(call conditional-diff-out,$<,$(SRC_PATH)/tests/tcg/$(TARGET_NAME)/$<.ref)
 
+fnmsub: LDFLAGS+=-lm
 
 testthread: LDFLAGS+=-lpthread
 
@@ -44,6 +45,8 @@ vma-pthread: LDFLAGS+=-pthread
 
 sigreturn-sigmask: CFLAGS+=-pthread
 sigreturn-sigmask: LDFLAGS+=-pthread
+
+tb-link: LDFLAGS+=-lpthread
 
 # GCC versions 12/13/14/15 at least incorrectly complain about
 # "'SHA1Transform' reading 64 bytes from a region of size 0"; see the gcc bug
@@ -188,6 +191,10 @@ run-plugin-semiconsole-with-%:
 TESTS += semihosting semiconsole
 endif
 
+test-plugin-mem-access: CFLAGS+=-pthread -O0
+test-plugin-mem-access: LDFLAGS+=-pthread -O0
+
+ifeq ($(CONFIG_PLUGIN),y)
 # Test plugin memory access instrumentation
 run-plugin-test-plugin-mem-access-with-libmem.so: \
 	PLUGIN_ARGS=$(COMMA)print-accesses=true
@@ -196,8 +203,8 @@ run-plugin-test-plugin-mem-access-with-libmem.so: \
 	$(SRC_PATH)/tests/tcg/multiarch/check-plugin-output.sh \
 	$(QEMU) $<
 
-test-plugin-mem-access: CFLAGS+=-pthread -O0
-test-plugin-mem-access: LDFLAGS+=-pthread -O0
+EXTRA_RUNS_WITH_PLUGIN += run-plugin-test-plugin-mem-access-with-libmem.so
+endif
 
 # Update TESTS
 TESTS += $(MULTIARCH_TESTS)

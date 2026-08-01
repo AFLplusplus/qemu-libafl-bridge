@@ -28,7 +28,6 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
-#include "qemu/bswap.h"
 #include "qemu/bitops.h"
 #include "hw/irq.h"
 #include "migration/vmstate.h"
@@ -400,8 +399,6 @@ void ctucan_mem_write(CtuCanCoreState *s, hwaddr addr, uint64_t val,
 
         ctucan_update_irq(s);
     }
-
-    return;
 }
 
 uint64_t ctucan_mem_read(CtuCanCoreState *s, hwaddr addr, unsigned size)

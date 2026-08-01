@@ -20,11 +20,10 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "exec/cputlb.h"
-#include "exec/memory.h"
-#include "exec/tb-flush.h"
-#include "exec/tswap.h"
+#include "system/memory.h"
+#include "qemu/target-info.h"
 #include "hw/qdev-core.h"
 #include "hw/qdev-properties.h"
 #include "hw/core/sysemu-cpu-ops.h"
@@ -141,7 +140,7 @@ bool cpu_virtio_is_big_endian(CPUState *cpu)
     if (cpu->cc->sysemu_ops->virtio_is_big_endian) {
         return cpu->cc->sysemu_ops->virtio_is_big_endian(cpu);
     }
-    return target_words_bigendian();
+    return target_big_endian();
 }
 
 GuestPanicInformation *cpu_get_crash_info(CPUState *cpu)
@@ -212,24 +211,17 @@ static int cpu_common_post_load(void *opaque, int version_id)
          * 0x01 was CPU_INTERRUPT_EXIT. This line can be removed when the
          * version_id is increased.
          */
-        cpu->interrupt_request &= ~0x01;
+        cpu_reset_interrupt(cpu, 0x01);
 
         tlb_flush(cpu);
 
-        /*
-         * loadvm has just updated the content of RAM, bypassing the
-         * usual mechanisms that ensure we flush TBs for writes to
-         * memory we've translated code from. So we must flush all TBs,
-         * which will now be stale.
-         */
-        //tb_flush(cpu);
         //// --- Begin LibAFL code ---
 
-        // flushing the TBs every restore makes it really slow
-        // TODO handle writes to X code with specific calls to tb_invalidate_phys_addr
-        if (!libafl_devices_is_restoring()) {
-            tb_flush(cpu);
-        }
+        // // flushing the TBs every restore makes it really slow
+        // // TODO handle writes to X code with specific calls to tb_invalidate_phys_addr
+        // if (!libafl_devices_is_restoring()) {
+        //     tb_flush(cpu);
+        // }
 
         //// --- End LibAFL code ---
     }

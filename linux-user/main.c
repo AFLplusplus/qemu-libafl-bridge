@@ -40,16 +40,15 @@
 #include "qemu/plugin.h"
 #include "user/guest-base.h"
 #include "user/page-protection.h"
-#include "exec/exec-all.h"
 #include "exec/gdbstub.h"
 #include "gdbstub/user.h"
+#include "accel/accel-ops.h"
 #include "tcg/startup.h"
 #include "qemu/timer.h"
 #include "qemu/envlist.h"
 #include "qemu/guest-random.h"
 #include "elf.h"
 #include "trace/control.h"
-#include "target_elf.h"
 #include "user/cpu_loop.h"
 #include "crypto/init.h"
 #include "fd-trans.h"
@@ -128,6 +127,7 @@ static const char *last_log_filename;
 #endif
 
 unsigned long reserved_va;
+unsigned long guest_addr_max;
 
 static void usage(int exitcode);
 
@@ -194,11 +194,6 @@ bool qemu_cpu_is_self(CPUState *cpu)
     return thread_cpu == cpu;
 }
 
-void qemu_cpu_kick(CPUState *cpu)
-{
-    cpu_exit(cpu);
-}
-
 void task_settid(TaskState *ts)
 {
     if (ts->ts_tid == 0) {
@@ -238,6 +233,8 @@ void init_task_state(TaskState *ts)
         ts->start_boottime += bt.tv_nsec * (uint64_t) ticks_per_sec /
                               NANOSECONDS_PER_SECOND;
     }
+
+    ts->sys_dispatch_len = -1;
 }
 
 CPUArchState *cpu_copy(CPUArchState *env)
@@ -343,16 +340,6 @@ static void handle_arg_stack_size(const char *arg)
 static void handle_arg_ld_prefix(const char *arg)
 {
     interp_prefix = strdup(arg);
-}
-
-static void handle_arg_pagesize(const char *arg)
-{
-    unsigned size, want = qemu_real_host_page_size();
-
-    if (qemu_strtoui(arg, NULL, 10, &size) || size != want) {
-        warn_report("Deprecated page size option cannot "
-                    "change host page size (%u)", want);
-    }
 }
 
 static void handle_arg_seed(const char *arg)
@@ -527,8 +514,6 @@ static const struct qemu_argument arg_table[] = {
      "range[,...]","filter logging based on address range"},
     {"D",          "QEMU_LOG_FILENAME", true, handle_arg_log_filename,
      "logfile",     "write logs to 'logfile' (default stderr)"},
-    {"p",          "QEMU_PAGESIZE",    true,  handle_arg_pagesize,
-     "pagesize",   "deprecated change to host page size"},
     {"one-insn-per-tb",
                    "QEMU_ONE_INSN_PER_TB",  false, handle_arg_one_insn_per_tb,
      "",           "run with one guest instruction per emulated TB"},
@@ -706,9 +691,10 @@ static int parse_args(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
-//// --- Begin LibAFL code ---
+    //exec_path = argv[optind];
+    //// --- Begin LibAFL code ---
     exec_path = strdup(argv[optind]);
-//// --- End LibAFL code ---
+    //// --- End LibAFL code ---
 
     return optind;
 }
@@ -725,12 +711,11 @@ int main(int argc, char **argv, char **envp)
 #endif
 //// --- End LibAFL code ---
 {
-    struct target_pt_regs regs1, *regs = &regs1;
-//// --- Begin LibAFL code ---
     //struct image_info info1, *info = &info1;
+    //// --- Begin LibAFL code ---
     struct image_info *info = libafl_get_image_info();
+    //// --- End LibAFL code ---
     // struct linux_binprm bprm;
-//// --- End LibAFL code ---
     TaskState *ts;
     CPUArchState *env;
     CPUState *cpu;
@@ -794,9 +779,6 @@ int main(int argc, char **argv, char **envp)
     trace_init_file();
     qemu_plugin_load_list(&plugins, &error_fatal);
 
-    /* Zero out regs */
-    memset(regs, 0, sizeof(struct target_pt_regs));
-
     /* Zero out image_info */
     memset(info, 0, sizeof(struct image_info));
 
@@ -840,7 +822,7 @@ int main(int argc, char **argv, char **envp)
     }
 
     if (cpu_model == NULL) {
-        cpu_model = cpu_get_model(get_elf_eflags(execfd));
+        cpu_model = get_elf_cpu_model(get_elf_eflags(execfd));
     }
     cpu_type = parse_cpu_option(cpu_model);
 
@@ -854,7 +836,7 @@ int main(int argc, char **argv, char **envp)
                                  opt_one_insn_per_tb, &error_abort);
         object_property_set_int(OBJECT(accel), "tb-size",
                                 opt_tb_size, &error_abort);
-        ac->init_machine(NULL);
+        ac->init_machine(accel, NULL);
     }
 
     /*
@@ -892,6 +874,13 @@ int main(int argc, char **argv, char **envp)
     } else if (HOST_LONG_BITS == 64 && TARGET_VIRT_ADDR_SPACE_BITS <= 32) {
         /* MAX_RESERVED_VA + 1 is a large power of 2, so is aligned. */
         reserved_va = max_reserved_va;
+    }
+    if (reserved_va != 0) {
+        guest_addr_max = reserved_va;
+    } else if (MIN(TARGET_VIRT_ADDR_SPACE_BITS, TARGET_ABI_BITS) <= 32) {
+        guest_addr_max = UINT32_MAX;
+    } else {
+        guest_addr_max = ~0ul;
     }
 
     /*
@@ -1013,8 +1002,8 @@ int main(int argc, char **argv, char **envp)
 
     fd_trans_init();
 
-    ret = loader_exec(execfd, exec_path, target_argv, target_environ, regs,
-        info, &bprm);
+    ret = loader_exec(execfd, exec_path, target_argv, target_environ,
+                      info, &bprm);
     if (ret != 0) {
         printf("Error while loading %s: %s\n", exec_path, strerror(-ret));
         _exit(EXIT_FAILURE);
@@ -1066,7 +1055,7 @@ int main(int argc, char **argv, char **envp)
        the real value of GUEST_BASE into account.  */
     tcg_prologue_init();
 
-    target_cpu_copy_regs(env, regs);
+    init_main_thread(cpu, info);
 
     if (gdbstub) {
         gdbserver_start(gdbstub, &error_fatal);
@@ -1085,7 +1074,7 @@ int main(int argc, char **argv, char **envp)
 #ifndef AS_LIB
     return libafl_qemu_main();
 #endif
-    
+
     //// --- End LibAFL code ---
 
     /* never exits */

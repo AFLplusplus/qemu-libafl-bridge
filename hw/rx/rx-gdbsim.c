@@ -63,7 +63,7 @@ static void rx_load_image(RXCPU *cpu, const char *filename,
     long kernel_size;
     int i;
 
-    kernel_size = load_image_targphys(filename, start, size);
+    kernel_size = load_image_targphys(filename, start, size, NULL);
     if (kernel_size < 0) {
         fprintf(stderr, "qemu: could not load kernel '%s'\n", filename);
         exit(1);
@@ -155,7 +155,7 @@ static void rx_gdbsim_init(MachineState *machine)
     }
 }
 
-static void rx_gdbsim_class_init(ObjectClass *oc, void *data)
+static void rx_gdbsim_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 
@@ -165,7 +165,7 @@ static void rx_gdbsim_class_init(ObjectClass *oc, void *data)
     mc->default_ram_id = "ext-sdram";
 }
 
-static void rx62n7_class_init(ObjectClass *oc, void *data)
+static void rx62n7_class_init(ObjectClass *oc, const void *data)
 {
     RxGdbSimMachineClass *rxc = RX_GDBSIM_MACHINE_CLASS(oc);
     MachineClass *mc = MACHINE_CLASS(oc);
@@ -175,7 +175,7 @@ static void rx62n7_class_init(ObjectClass *oc, void *data)
     mc->desc = "gdb simulator (R5F562N7 MCU and external RAM)";
 };
 
-static void rx62n8_class_init(ObjectClass *oc, void *data)
+static void rx62n8_class_init(ObjectClass *oc, const void *data)
 {
     RxGdbSimMachineClass *rxc = RX_GDBSIM_MACHINE_CLASS(oc);
     MachineClass *mc = MACHINE_CLASS(oc);

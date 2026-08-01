@@ -8,6 +8,7 @@
  */
 #include "qemu/osdep.h"
 #include "qemu/log.h"
+#include "qemu/bswap.h"
 #include "qapi/visitor.h"
 #include "qapi/error.h"
 #include "hw/pci-host/pnv_phb3_regs.h"
@@ -888,7 +889,7 @@ DECLARE_INSTANCE_CHECKER(IOMMUMemoryRegion, PNV_PHB3_IOMMU_MEMORY_REGION,
                          TYPE_PNV_PHB3_IOMMU_MEMORY_REGION)
 
 static void pnv_phb3_iommu_memory_region_class_init(ObjectClass *klass,
-                                                    void *data)
+                                                    const void *data)
 {
     IOMMUMemoryRegionClass *imrc = IOMMU_MEMORY_REGION_CLASS(klass);
 
@@ -1097,7 +1098,7 @@ static const Property pnv_phb3_properties[] = {
     DEFINE_PROP_LINK("phb-base", PnvPHB3, phb_base, TYPE_PNV_PHB, PnvPHB *),
 };
 
-static void pnv_phb3_class_init(ObjectClass *klass, void *data)
+static void pnv_phb3_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -1149,7 +1150,7 @@ static void pnv_phb3_root_bus_set_prop(Object *obj, Visitor *v,
     }
 }
 
-static void pnv_phb3_root_bus_class_init(ObjectClass *klass, void *data)
+static void pnv_phb3_root_bus_class_init(ObjectClass *klass, const void *data)
 {
     BusClass *k = BUS_CLASS(klass);
 

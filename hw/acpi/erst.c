@@ -12,7 +12,7 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "hw/qdev-core.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "qom/object.h"
 #include "hw/pci/pci_device.h"
 #include "qom/object_interfaces.h"
@@ -23,7 +23,7 @@
 #include "hw/acpi/acpi-defs.h"
 #include "hw/acpi/aml-build.h"
 #include "hw/acpi/bios-linker-loader.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "system/hostmem.h"
 #include "hw/acpi/erst.h"
 #include "trace.h"
@@ -1018,7 +1018,7 @@ static const Property erst_properties[] = {
                      default_record_size, ERST_RECORD_SIZE),
 };
 
-static void erst_class_init(ObjectClass *klass, void *data)
+static void erst_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -1044,7 +1044,7 @@ static const TypeInfo erst_type_info = {
     .parent        = TYPE_PCI_DEVICE,
     .class_init    = erst_class_init,
     .instance_size = sizeof(ERSTDeviceState),
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { }
     }

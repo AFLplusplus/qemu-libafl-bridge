@@ -579,11 +579,11 @@ static void mptsas_process_ioc_init(MPTSASState *s, MPIMsgIOCInit *req)
     }
 
     memset(&reply, 0, sizeof(reply));
-    reply.WhoInit    = s->who_init;
+    reply.WhoInit    = req->WhoInit;
     reply.MsgLength  = sizeof(reply) / 4;
     reply.Function   = req->Function;
-    reply.MaxDevices = s->max_devices;
-    reply.MaxBuses   = s->max_buses;
+    reply.MaxDevices = req->MaxDevices;
+    reply.MaxBuses   = req->MaxBuses;
     reply.MsgContext = req->MsgContext;
 
     mptsas_fix_ioc_init_reply_endianness(&reply);
@@ -1416,7 +1416,7 @@ static const Property mptsas_properties[] = {
     DEFINE_PROP_ON_OFF_AUTO("msi", MPTSASState, msi, ON_OFF_AUTO_AUTO),
 };
 
-static void mptsas1068_class_init(ObjectClass *oc, void *data)
+static void mptsas1068_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     PCIDeviceClass *pc = PCI_DEVICE_CLASS(oc);
@@ -1441,7 +1441,7 @@ static const TypeInfo mptsas_info = {
     .parent = TYPE_PCI_DEVICE,
     .instance_size = sizeof(MPTSASState),
     .class_init = mptsas1068_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },
     },

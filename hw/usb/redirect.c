@@ -113,7 +113,7 @@ struct PacketIdQueue {
 struct USBRedirDevice {
     USBDevice dev;
     /* Properties */
-    CharBackend cs;
+    CharFrontend cs;
     bool enable_streams;
     bool suppress_remote_wake;
     bool in_write;
@@ -2582,7 +2582,7 @@ static const Property usbredir_properties[] = {
                      suppress_remote_wake, true),
 };
 
-static void usbredir_class_initfn(ObjectClass *klass, void *data)
+static void usbredir_class_initfn(ObjectClass *klass, const void *data)
 {
     USBDeviceClass *uc = USB_DEVICE_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);

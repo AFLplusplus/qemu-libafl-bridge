@@ -1,6 +1,8 @@
 #include "libafl/hooks/tcg/read_write.h"
 #include "cpu.h"
-#include "exec/tb-flush.h"
+#include "tcg/helper-info.h"
+#include "tcg/tcg-op-common.h"
+#include "tcg/tcg-op.h"
 
 #include "libafl/tcg.h"
 #include "libafl/cpu.h"
@@ -100,8 +102,7 @@ libafl_add_rw_hook(struct libafl_rw_hook** hooks, size_t* hooks_num,
                    TCGHelperInfo* exec8_info, libafl_rw_execN_cb execN_cb,
                    TCGHelperInfo* execN_info, uint64_t data)
 {
-    CPUState* cpu;
-    CPU_FOREACH(cpu) { tb_flush(cpu); }
+    libafl_flush_jit();
 
     struct libafl_rw_hook* hook = calloc(sizeof(struct libafl_rw_hook), 1);
     hook->gen_cb = gen_cb;

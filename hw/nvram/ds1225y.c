@@ -126,7 +126,7 @@ static void nvram_sysbus_realize(DeviceState *dev, Error **errp)
 
     s->contents = g_malloc0(s->chip_size);
 
-    memory_region_init_io(&s->iomem, OBJECT(s), &nvram_ops, s,
+    memory_region_init_io(&s->iomem, OBJECT(dev), &nvram_ops, s,
                           "nvram", s->chip_size);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 
@@ -147,7 +147,7 @@ static const Property nvram_sysbus_properties[] = {
     DEFINE_PROP_STRING("filename", SysBusNvRamState, nvram.filename),
 };
 
-static void nvram_sysbus_class_init(ObjectClass *klass, void *data)
+static void nvram_sysbus_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

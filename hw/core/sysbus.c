@@ -21,7 +21,7 @@
 #include "qapi/error.h"
 #include "hw/sysbus.h"
 #include "monitor/monitor.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 
 static void sysbus_dev_print(Monitor *mon, DeviceState *dev, int indent);
 static char *sysbus_get_fw_dev_path(DeviceState *dev);
@@ -71,7 +71,7 @@ void foreach_dynamic_sysbus_device(FindSysbusDeviceFunc *func, void *opaque)
 }
 
 
-static void system_bus_class_init(ObjectClass *klass, void *data)
+static void system_bus_class_init(ObjectClass *klass, const void *data)
 {
     BusClass *k = BUS_CLASS(klass);
 
@@ -80,7 +80,7 @@ static void system_bus_class_init(ObjectClass *klass, void *data)
 }
 
 /* Check whether an IRQ source exists */
-bool sysbus_has_irq(SysBusDevice *dev, int n)
+bool sysbus_has_irq(const SysBusDevice *dev, int n)
 {
     char *prop = g_strdup_printf("%s[%d]", SYSBUS_DEVICE_GPIO_IRQ, n);
     ObjectProperty *r;
@@ -91,12 +91,12 @@ bool sysbus_has_irq(SysBusDevice *dev, int n)
     return (r != NULL);
 }
 
-bool sysbus_is_irq_connected(SysBusDevice *dev, int n)
+bool sysbus_is_irq_connected(const SysBusDevice *dev, int n)
 {
     return !!sysbus_get_connected_irq(dev, n);
 }
 
-qemu_irq sysbus_get_connected_irq(SysBusDevice *dev, int n)
+qemu_irq sysbus_get_connected_irq(const SysBusDevice *dev, int n)
 {
     DeviceState *d = DEVICE(dev);
     return qdev_get_gpio_out_connector(d, SYSBUS_DEVICE_GPIO_IRQ, n);
@@ -114,7 +114,7 @@ void sysbus_connect_irq(SysBusDevice *dev, int n, qemu_irq irq)
 }
 
 /* Check whether an MMIO region exists */
-bool sysbus_has_mmio(SysBusDevice *dev, unsigned int n)
+bool sysbus_has_mmio(const SysBusDevice *dev, unsigned int n)
 {
     return (n < dev->num_mmio);
 }
@@ -151,6 +151,17 @@ void sysbus_mmio_map(SysBusDevice *dev, int n, hwaddr addr)
     sysbus_mmio_map_common(dev, n, addr, false, 0);
 }
 
+int sysbus_mmio_map_name(SysBusDevice *dev, const char *name, hwaddr addr)
+{
+    for (int i = 0; i < dev->num_mmio; i++) {
+        if (!strcmp(dev->mmio[i].memory->name, name)) {
+            sysbus_mmio_map(dev, i, addr);
+            return i;
+        }
+    }
+    return -1;
+}
+
 void sysbus_mmio_map_overlap(SysBusDevice *dev, int n, hwaddr addr,
                              int priority)
 {
@@ -179,7 +190,7 @@ void sysbus_init_mmio(SysBusDevice *dev, MemoryRegion *memory)
     dev->mmio[n].memory = memory;
 }
 
-MemoryRegion *sysbus_mmio_get_region(SysBusDevice *dev, int n)
+MemoryRegion *sysbus_mmio_get_region(const SysBusDevice *dev, int n)
 {
     assert(n >= 0 && n < QDEV_MAX_MMIO);
     return dev->mmio[n].memory;
@@ -280,7 +291,7 @@ static char *sysbus_get_fw_dev_path(DeviceState *dev)
     return g_strdup(qdev_fw_name(dev));
 }
 
-static void sysbus_device_class_init(ObjectClass *klass, void *data)
+static void sysbus_device_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *k = DEVICE_CLASS(klass);
     k->realize = sysbus_device_realize;
@@ -320,7 +331,8 @@ BusState *sysbus_get_default(void)
     return main_system_bus;
 }
 
-static void dynamic_sysbus_device_class_init(ObjectClass *klass, void *data)
+static void dynamic_sysbus_device_class_init(ObjectClass *klass,
+                                             const void *data)
 {
     DeviceClass *k = DEVICE_CLASS(klass);
 

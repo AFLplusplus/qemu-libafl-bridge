@@ -48,6 +48,31 @@ QTestState *qtest_initf(const char *fmt, ...) G_GNUC_PRINTF(1, 2);
 QTestState *qtest_vinitf(const char *fmt, va_list ap) G_GNUC_PRINTF(1, 0);
 
 /**
+ * qtest_qemu_binary:
+ * @var: environment variable name
+ *
+ * Look up @var and return its value as the qemu binary path.
+ * If @var is NULL, look up  the default var name.
+ */
+const char *qtest_qemu_binary(const char *var);
+
+/**
+ * qtest_init_after_exec:
+ * @qts: the previous QEMU state
+ *
+ * Return a test state representing new QEMU after @qts exec's it.
+ */
+QTestState *qtest_init_after_exec(QTestState *qts);
+
+/**
+ * qtest_qemu_args:
+ * @extra_args: Other arguments to pass to QEMU.
+ *
+ * Return the command line used to start QEMU, sans binary.
+ */
+gchar *qtest_qemu_args(const char *extra_args);
+
+/**
  * qtest_init:
  * @extra_args: other arguments to pass to QEMU.  CAUTION: these
  * arguments are subject to word splitting and shell evaluation.
@@ -57,37 +82,21 @@ QTestState *qtest_vinitf(const char *fmt, va_list ap) G_GNUC_PRINTF(1, 0);
 QTestState *qtest_init(const char *extra_args);
 
 /**
- * qtest_init_with_env:
- * @var: Environment variable from where to take the QEMU binary
- * @extra_args: Other arguments to pass to QEMU.  CAUTION: these
- * arguments are subject to word splitting and shell evaluation.
- * @do_connect: connect to qemu monitor and qtest socket.
- *
- * Like qtest_init(), but use a different environment variable for the
- * QEMU binary.
- *
- * Returns: #QTestState instance.
- */
-QTestState *qtest_init_with_env(const char *var, const char *extra_args,
-                                bool do_connect);
-
-/**
- * qtest_init_with_env_and_capabilities:
+ * qtest_init_ext:
  * @var: Environment variable from where to take the QEMU binary
  * @extra_args: Other arguments to pass to QEMU.  CAUTION: these
  * arguments are subject to word splitting and shell evaluation.
  * @capabilities: list of QMP capabilities (strings) to enable
  * @do_connect: connect to qemu monitor and qtest socket.
  *
- * Like qtest_init_with_env(), but enable specified capabilities during
- * hadshake.
+ * Like qtest_init(), but use a different environment variable for the
+ * QEMU binary, allow specify capabilities and skip connecting
+ * to QEMU monitor.
  *
  * Returns: #QTestState instance.
  */
-QTestState *qtest_init_with_env_and_capabilities(const char *var,
-                                                 const char *extra_args,
-                                                 QList *capabilities,
-                                                 bool do_connect);
+QTestState *qtest_init_ext(const char *var, const char *extra_args,
+                           QList *capabilities, bool do_connect);
 
 /**
  * qtest_init_without_qmp_handshake:
@@ -102,7 +111,7 @@ QTestState *qtest_init_without_qmp_handshake(const char *extra_args);
  * qtest_connect
  * @s: #QTestState instance to connect
  * Connect to qemu monitor and qtest socket, after skipping them in
- * qtest_init_with_env.  Does not handshake with the monitor.
+ * qtest_init_ext.  Does not handshake with the monitor.
  */
 void qtest_connect(QTestState *s);
 
@@ -993,7 +1002,7 @@ void qtest_qmp_fds_assert_success(QTestState *qts, int *fds, size_t nfds,
  * @cb: Pointer to the callback function
  * @skip_old_versioned: true if versioned old machine types should be skipped
  *
- *  Call a callback function for every name of all available machines.
+ * Call a callback function for every name of all available machines.
  */
 void qtest_cb_for_every_machine(void (*cb)(const char *machine),
                                 bool skip_old_versioned);

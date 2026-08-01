@@ -23,7 +23,7 @@
 #include "exec/helper-gen.h"
 #include "exec/helper-proto.h"
 #include "exec/translation-block.h"
-#include "exec/cpu_ldst.h"
+#include "accel/tcg/cpu-ldst.h"
 #include "exec/log.h"
 #include "internal.h"
 #include "attribs.h"
@@ -133,15 +133,15 @@ static bool use_goto_tb(DisasContext *ctx, target_ulong dest)
     return translator_use_goto_tb(&ctx->base, dest);
 }
 
-static void gen_goto_tb(DisasContext *ctx, int idx, target_ulong dest, bool
-                        move_to_pc)
+static void gen_goto_tb(DisasContext *ctx, unsigned tb_slot_idx,
+                        target_ulong dest, bool move_to_pc)
 {
     if (use_goto_tb(ctx, dest)) {
-        tcg_gen_goto_tb(idx);
+        tcg_gen_goto_tb(tb_slot_idx);
         if (move_to_pc) {
             tcg_gen_movi_tl(hex_gpr[HEX_REG_PC], dest);
         }
-        tcg_gen_exit_tb(ctx->base.tb, idx);
+        tcg_gen_exit_tb(ctx->base.tb, tb_slot_idx);
     } else {
         if (move_to_pc) {
             tcg_gen_movi_tl(hex_gpr[HEX_REG_PC], dest);
@@ -656,17 +656,17 @@ void process_store(DisasContext *ctx, int slot_num)
         case 2:
             tcg_gen_qemu_st_tl(hex_store_val32[slot_num],
                                hex_store_addr[slot_num],
-                               ctx->mem_idx, MO_TEUW);
+                               ctx->mem_idx, MO_LE | MO_UW);
             break;
         case 4:
             tcg_gen_qemu_st_tl(hex_store_val32[slot_num],
                                hex_store_addr[slot_num],
-                               ctx->mem_idx, MO_TEUL);
+                               ctx->mem_idx, MO_LE | MO_UL);
             break;
         case 8:
             tcg_gen_qemu_st_i64(hex_store_val64[slot_num],
                                 hex_store_addr[slot_num],
-                                ctx->mem_idx, MO_TEUQ);
+                                ctx->mem_idx, MO_LE | MO_UQ);
             break;
         default:
             {
@@ -693,11 +693,11 @@ static void process_store_log(DisasContext *ctx)
      *  the memory accesses overlap.
      */
     Packet *pkt = ctx->pkt;
-    if (pkt->pkt_has_store_s1) {
+    if (pkt->pkt_has_scalar_store_s1) {
         g_assert(!pkt->pkt_has_dczeroa);
         process_store(ctx, 1);
     }
-    if (pkt->pkt_has_store_s0) {
+    if (pkt->pkt_has_scalar_store_s0) {
         g_assert(!pkt->pkt_has_dczeroa);
         process_store(ctx, 0);
     }
@@ -822,8 +822,9 @@ static void gen_commit_packet(DisasContext *ctx)
      * involved in committing the packet.
      */
     Packet *pkt = ctx->pkt;
-    bool has_store_s0 = pkt->pkt_has_store_s0;
-    bool has_store_s1 = (pkt->pkt_has_store_s1 && !ctx->s1_store_processed);
+    bool has_store_s0 = pkt->pkt_has_scalar_store_s0;
+    bool has_store_s1 =
+        (pkt->pkt_has_scalar_store_s1 && !ctx->s1_store_processed);
     bool has_hvx_store = pkt_has_hvx_store(pkt);
     if (pkt->pkt_has_dczeroa) {
         /*

@@ -173,7 +173,7 @@ static const Property nvram_properties[] = {
     DEFINE_PROP_DRIVE("drive", A1NVRAMState, blk),
 };
 
-static void nvram_class_init(ObjectClass *oc, void *data)
+static void nvram_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
@@ -221,7 +221,7 @@ struct bd_info {
 
 static void create_bd_info(hwaddr addr, ram_addr_t ram_size)
 {
-    struct bd_info *bd = g_new0(struct bd_info, 1);
+    g_autofree struct bd_info *bd = g_new0(struct bd_info, 1);
 
     bd->bi_memsize =    cpu_to_be32(ram_size);
     bd->bi_flashstart = cpu_to_be32(PROM_ADDR);
@@ -324,11 +324,7 @@ static void amigaone_init(MachineState *machine)
             error_report("Could not find firmware '%s'", machine->firmware);
             exit(1);
         }
-        sz = load_image_targphys(filename, PROM_ADDR, PROM_SIZE);
-        if (sz <= 0 || sz > PROM_SIZE) {
-            error_report("Could not load firmware '%s'", filename);
-            exit(1);
-        }
+        sz = load_image_targphys(filename, PROM_ADDR, PROM_SIZE, &error_fatal);
     }
 
     /* Articia S */
@@ -413,12 +409,7 @@ static void amigaone_init(MachineState *machine)
         loadaddr = ROUND_UP(loadaddr + 4 * MiB, 4 * KiB);
         loadaddr = MAX(loadaddr, INITRD_MIN_ADDR);
         sz = load_image_targphys(machine->initrd_filename, loadaddr,
-                                 bi->bd_info - loadaddr);
-        if (sz <= 0) {
-            error_report("Could not load initrd '%s'",
-                         machine->initrd_filename);
-            exit(1);
-        }
+                                 bi->bd_info - loadaddr, &error_fatal);
         bi->initrd_start = loadaddr;
         bi->initrd_end = loadaddr + sz;
     }

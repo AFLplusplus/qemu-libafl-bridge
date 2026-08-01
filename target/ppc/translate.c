@@ -21,7 +21,7 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "internal.h"
-#include "exec/exec-all.h"
+#include "exec/target_page.h"
 #include "tcg/tcg-op.h"
 #include "tcg/tcg-op-gvec.h"
 #include "qemu/host-utils.h"
@@ -208,6 +208,11 @@ struct DisasContext {
 #define DISAS_EXIT_UPDATE  DISAS_TARGET_1  /* exit to main loop, pc stale */
 #define DISAS_CHAIN        DISAS_TARGET_2  /* lookup next tb, pc updated */
 #define DISAS_CHAIN_UPDATE DISAS_TARGET_3  /* lookup next tb, pc stale */
+
+static inline bool is_ppe(const DisasContext *ctx)
+{
+    return !!(ctx->flags & POWERPC_FLAG_PPE42);
+}
 
 /* Return true iff byteswap is needed in a scalar memop */
 static inline bool need_byteswap(const DisasContext *ctx)
@@ -556,11 +561,8 @@ void spr_access_nop(DisasContext *ctx, int sprn, int gprn)
 
 #endif
 
-/* SPR common to all PowerPC */
-/* XER */
-void spr_read_xer(DisasContext *ctx, int gprn, int sprn)
+static void gen_get_xer(DisasContext *ctx, TCGv dst)
 {
-    TCGv dst = cpu_gpr[gprn];
     TCGv t0 = tcg_temp_new();
     TCGv t1 = tcg_temp_new();
     TCGv t2 = tcg_temp_new();
@@ -579,9 +581,16 @@ void spr_read_xer(DisasContext *ctx, int gprn, int sprn)
     }
 }
 
-void spr_write_xer(DisasContext *ctx, int sprn, int gprn)
+/* SPR common to all PowerPC */
+/* XER */
+void spr_read_xer(DisasContext *ctx, int gprn, int sprn)
 {
-    TCGv src = cpu_gpr[gprn];
+    TCGv dst = cpu_gpr[gprn];
+    gen_get_xer(ctx, dst);
+}
+
+static void gen_set_xer(DisasContext *ctx, TCGv src)
+{
     /* Write all flags, while reading back check for isa300 */
     tcg_gen_andi_tl(cpu_xer, src,
                     ~((1u << XER_SO) |
@@ -592,6 +601,12 @@ void spr_write_xer(DisasContext *ctx, int sprn, int gprn)
     tcg_gen_extract_tl(cpu_so, src, XER_SO, 1);
     tcg_gen_extract_tl(cpu_ov, src, XER_OV, 1);
     tcg_gen_extract_tl(cpu_ca, src, XER_CA, 1);
+}
+
+void spr_write_xer(DisasContext *ctx, int sprn, int gprn)
+{
+    TCGv src = cpu_gpr[gprn];
+    gen_set_xer(ctx, src);
 }
 
 /* LR */
@@ -1745,11 +1760,10 @@ static inline void gen_op_arith_add(DisasContext *ctx, TCGv ret, TCGv arg1,
                 tcg_gen_mov_tl(ca32, ca);
             }
         } else {
-            TCGv zero = tcg_constant_tl(0);
             if (add_ca) {
-                tcg_gen_add2_tl(t0, ca, arg1, zero, ca, zero);
-                tcg_gen_add2_tl(t0, ca, t0, ca, arg2, zero);
+                tcg_gen_addcio_tl(t0, ca, arg1, arg2, ca);
             } else {
+                TCGv zero = tcg_constant_tl(0);
                 tcg_gen_add2_tl(t0, ca, arg1, zero, arg2, zero);
             }
             gen_op_arith_compute_ca32(ctx, t0, arg1, arg2, ca32, 0);
@@ -1948,11 +1962,9 @@ static inline void gen_op_arith_subf(DisasContext *ctx, TCGv ret, TCGv arg1,
                 tcg_gen_mov_tl(cpu_ca32, cpu_ca);
             }
         } else if (add_ca) {
-            TCGv zero, inv1 = tcg_temp_new();
+            TCGv inv1 = tcg_temp_new();
             tcg_gen_not_tl(inv1, arg1);
-            zero = tcg_constant_tl(0);
-            tcg_gen_add2_tl(t0, cpu_ca, arg2, zero, cpu_ca, zero);
-            tcg_gen_add2_tl(t0, cpu_ca, t0, cpu_ca, inv1, zero);
+            tcg_gen_addcio_tl(t0, cpu_ca, arg2, inv1, cpu_ca);
             gen_op_arith_compute_ca32(ctx, t0, inv1, arg2, cpu_ca32, 0);
         } else {
             tcg_gen_setcond_tl(TCG_COND_GEU, cpu_ca, arg2, arg1);
@@ -3627,7 +3639,6 @@ static void pmu_count_insns(DisasContext *ctx)
 #else
 static void pmu_count_insns(DisasContext *ctx)
 {
-    return;
 }
 #endif /* #if defined(TARGET_PPC64) */
 
@@ -3657,16 +3668,17 @@ static void gen_lookup_and_goto_ptr(DisasContext *ctx)
 }
 
 /***                                Branch                                 ***/
-static void gen_goto_tb(DisasContext *ctx, int n, target_ulong dest)
+static void gen_goto_tb(DisasContext *ctx, unsigned tb_slot_idx,
+                        target_ulong dest)
 {
     if (NARROW_MODE(ctx)) {
         dest = (uint32_t) dest;
     }
     if (use_goto_tb(ctx, dest)) {
         pmu_count_insns(ctx);
-        tcg_gen_goto_tb(n);
+        tcg_gen_goto_tb(tb_slot_idx);
         tcg_gen_movi_tl(cpu_nip, dest & ~3);
-        tcg_gen_exit_tb(ctx->base.tb, n);
+        tcg_gen_exit_tb(ctx->base.tb, tb_slot_idx);
     } else {
         tcg_gen_movi_tl(cpu_nip, dest & ~3);
         gen_lookup_and_goto_ptr(ctx);
@@ -4268,8 +4280,10 @@ static void gen_mtmsr(DisasContext *ctx)
         /* L=1 form only updates EE and RI */
         mask &= (1ULL << MSR_RI) | (1ULL << MSR_EE);
     } else {
-        /* mtmsr does not alter S, ME, or LE */
-        mask &= ~((1ULL << MSR_LE) | (1ULL << MSR_ME) | (1ULL << MSR_S));
+        if (likely(!(ctx->insns_flags2 & PPC2_PPE42))) {
+            /* mtmsr does not alter S, ME, or LE */
+            mask &= ~((1ULL << MSR_LE) | (1ULL << MSR_ME) | (1ULL << MSR_S));
+        }
 
         /*
          * XXX: we need to update nip before the store if we enter
@@ -5756,6 +5770,8 @@ static bool resolve_PLS_D(DisasContext *ctx, arg_D *d, arg_PLS_D *a)
 #include "translate/misc-impl.c.inc"
 
 #include "translate/bhrb-impl.c.inc"
+
+#include "translate/ppe-impl.c.inc"
 
 /* Handles lfdp */
 static void gen_dform39(DisasContext *ctx)

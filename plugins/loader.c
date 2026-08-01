@@ -29,7 +29,7 @@
 #include "qemu/xxhash.h"
 #include "qemu/plugin.h"
 #include "qemu/memalign.h"
-#include "hw/core/cpu.h"
+#include "qemu/target-info.h"
 #include "exec/tb-flush.h"
 
 #include "plugin.h"
@@ -318,6 +318,7 @@ struct qemu_plugin_reset_data {
     bool reset;
 };
 
+QEMU_DISABLE_CFI
 static void plugin_reset_destroy__locked(struct qemu_plugin_reset_data *data)
 {
     struct qemu_plugin_ctx *ctx = data->ctx;
@@ -377,8 +378,7 @@ static void plugin_flush_destroy(CPUState *cpu, run_on_cpu_data arg)
 {
     struct qemu_plugin_reset_data *data = arg.host_ptr;
 
-    g_assert(cpu_in_exclusive_context(cpu));
-    tb_flush(cpu);
+    tb_flush__exclusive_or_serial();
     plugin_reset_destroy(data);
 }
 

@@ -102,10 +102,9 @@ struct SysemuCPUOps;
  * CPUClass:
  * @class_by_name: Callback to map -cpu command line model name to an
  *                 instantiatable CPU type.
+ * @list_cpus: list available CPU models and flags.
  * @parse_features: Callback to parse command line arguments.
  * @reset_dump_flags: #CPUDumpFlags to use for reset logging.
- * @mmu_index: Callback for choosing softmmu mmu index;
- *       may be used internally by memory_rw_debug without TCG.
  * @memory_rw_debug: Callback for GDB memory access.
  * @dump_state: Callback for dumping state.
  * @query_cpu_fast:
@@ -132,6 +131,10 @@ struct SysemuCPUOps;
  * @gdb_num_core_regs: Number of core registers accessible to GDB or 0 to infer
  *                     from @gdb_core_xml_file.
  * @gdb_core_xml_file: File name for core registers GDB XML description.
+ * @gdb_get_core_xml_file: Optional callback that returns the file name for
+ * the core registers GDB XML description. The returned value is expected to
+ * be a simple constant string: the caller will not g_free() it. If this
+ * is NULL then @gdb_core_xml_file will be used instead.
  * @gdb_stop_before_watchpoint: Indicates whether GDB expects the CPU to stop
  *           before the insn which triggers a watchpoint rather than after it.
  * @gdb_arch_name: Optional callback that returns the architecture name known
@@ -151,9 +154,9 @@ struct CPUClass {
     /*< public >*/
 
     ObjectClass *(*class_by_name)(const char *cpu_model);
+    void (*list_cpus)(void);
     void (*parse_features)(const char *typename, char *str, Error **errp);
 
-    int (*mmu_index)(CPUState *cpu, bool ifetch);
     int (*memory_rw_debug)(CPUState *cpu, vaddr addr,
                            uint8_t *buf, size_t len, bool is_write);
     void (*dump_state)(CPUState *cpu, FILE *, int flags);
@@ -166,7 +169,8 @@ struct CPUClass {
     vaddr (*gdb_adjust_breakpoint)(CPUState *cpu, vaddr addr);
 
     const char *gdb_core_xml_file;
-    const gchar * (*gdb_arch_name)(CPUState *cpu);
+    const char * (*gdb_arch_name)(CPUState *cpu);
+    const char * (*gdb_get_core_xml_file)(CPUState *cpu);
 
     void (*disas_set_info)(CPUState *cpu, disassemble_info *info);
 
@@ -194,10 +198,11 @@ struct CPUClass {
 };
 
 /*
- * Fix the number of mmu modes to 16, which is also the maximum
- * supported by the softmmu tlb api.
+ * Fix the number of mmu modes across all targets.
+ * Current maximum is target/arm/.
  */
-#define NB_MMU_MODES 16
+#define NB_MMU_MODES 22
+typedef uint32_t MMUIdxMap;
 
 /* Use a fully associative victim tlb of 8 entries. */
 #define CPU_VTLB_SIZE 8
@@ -302,7 +307,7 @@ typedef struct CPUTLBCommon {
      * mmu_idx N since the last time that mmu_idx was flushed.
      * Protected by tlb_c.lock.
      */
-    uint16_t dirty;
+    MMUIdxMap dirty;
     /*
      * Statistics.  These are not lock protected, but are read and
      * written atomically.  This allows the monitor to print a snapshot
@@ -364,6 +369,7 @@ typedef struct CPUNegativeOffsetState {
     GArray *plugin_mem_cbs;
     uint64_t plugin_mem_value_low;
     uint64_t plugin_mem_value_high;
+    int32_t plugin_cb_flags;
 #endif
     IcountDecr icount_decr;
     bool can_do_io;
@@ -417,7 +423,17 @@ struct qemu_work_item;
  * valid under cpu_list_lock.
  * @created: Indicates whether the CPU thread has been successfully created.
  * @halt_cond: condition variable sleeping threads can wait on.
+ * @exit_request: Another thread requests the CPU to call qemu_process_cpu_events().
+ *   Should be read only by CPU thread with load-acquire, to synchronize with
+ *   other threads' store-release operation.
+ *
+ *   In some cases, accelerator-specific code will write exit_request from
+ *   within the same thread, to "bump" the effect of qemu_cpu_kick() to
+ *   the one provided by cpu_exit(), especially when processing interrupt
+ *   flags.  In this case, the write and read happen in the same thread
+ *   and the write therefore can use qemu_atomic_set().
  * @interrupt_request: Indicates a pending interrupt request.
+ *   Only used by system emulation.
  * @halted: Nonzero if the CPU is in suspended state.
  * @stop: Indicates a pending stop request.
  * @stopped: Indicates the CPU has been artificially stopped.
@@ -437,6 +453,7 @@ struct qemu_work_item;
  * @opaque: User data.
  * @mem_io_pc: Host Program Counter at which the memory was accessed.
  * @accel: Pointer to accelerator specific state.
+ * @vcpu_dirty: Hardware accelerator is not synchronized with QEMU state
  * @kvm_fd: vCPU file descriptor for KVM.
  * @work_mutex: Lock to prevent multiple access to @work_list.
  * @work_list: List of pending asynchronous work.
@@ -488,7 +505,6 @@ struct CPUState {
     bool exit_request;
     int exclusive_context_count;
     uint32_t cflags_next_tb;
-    /* updates protected by BQL */
     uint32_t interrupt_request;
     int singlestep_enabled;
     int64_t icount_budget;
@@ -500,7 +516,6 @@ struct CPUState {
     QSIMPLEQ_HEAD(, qemu_work_item) work_list;
 
     struct CPUAddressSpace *cpu_ases;
-    int cpu_ases_count;
     int num_ases;
     AddressSpace *as;
     MemoryRegion *memory;
@@ -533,7 +548,6 @@ struct CPUState {
     uint32_t kvm_fetch_index;
     uint64_t dirty_pages;
     int kvm_vcpu_stats_fd;
-    bool vcpu_dirty;
 
     /* Use by accel-block: CPU is executing an ioctl() */
     QemuLockCnt in_ioctl_lock;
@@ -549,6 +563,7 @@ struct CPUState {
     uint32_t halted;
     int32_t exception_index;
 
+    bool vcpu_dirty;
     AccelCPUState *accel;
 
     /* Used to keep track of an outstanding cpu throttle thread for migration
@@ -583,9 +598,25 @@ QEMU_BUILD_BUG_ON(offsetof(CPUState, neg) !=
 
 static inline CPUArchState *cpu_env(CPUState *cpu)
 {
-    /* We validate that CPUArchState follows CPUState in cpu-all.h. */
+    /* We validate that CPUArchState follows CPUState in cpu-target.c */
     return (CPUArchState *)(cpu + 1);
 }
+
+#ifdef CONFIG_TCG
+/*
+ * Invert the index order of the CPUTLBDescFast array so that lower
+ * mmu_idx have offsets from env with smaller magnitude.
+ */
+static inline int mmuidx_to_fast_index(int mmu_idx)
+{
+    return NB_MMU_MODES - 1 - mmu_idx;
+}
+
+static inline CPUTLBDescFast *cpu_tlb_fast(CPUState *cpu, int mmu_idx)
+{
+    return &cpu->neg.tlb.f[mmuidx_to_fast_index(mmu_idx)];
+}
+#endif
 
 typedef QTAILQ_HEAD(CPUTailQ, CPUState) CPUTailQ;
 extern CPUTailQ cpus_queue;
@@ -599,23 +630,12 @@ extern CPUTailQ cpus_queue;
 extern __thread CPUState *current_cpu;
 
 /**
- * qemu_tcg_mttcg_enabled:
- * Check whether we are running MultiThread TCG or not.
- *
- * Returns: %true if we are in MTTCG mode %false otherwise.
- */
-extern bool mttcg_enabled;
-#define qemu_tcg_mttcg_enabled() (mttcg_enabled)
-
-/**
  * cpu_paging_enabled:
  * @cpu: The CPU whose state is to be inspected.
  *
  * Returns: %true if paging is enabled, %false otherwise.
  */
 bool cpu_paging_enabled(const CPUState *cpu);
-
-#if !defined(CONFIG_USER_ONLY)
 
 /**
  * cpu_get_memory_mapping:
@@ -669,6 +689,26 @@ int cpu_write_elf32_qemunote(WriteCoreDumpFunction f, CPUState *cpu,
                              void *opaque);
 
 /**
+ * cpu_memory_rw_debug:
+ * @cpu: The CPU whose memory is to be accessed
+ * @addr: guest virtual address
+ * @ptr: buffer with the data transferred
+ * @len: the number of bytes to read or write
+ * @is_write: indicates the transfer direction
+ *
+ * Take a virtual address, convert it to a physical address via
+ * an MMU lookup using the current settings of the specified CPU,
+ * and then perform the access (using address_space_rw() for
+ * reads or address_space_write_rom() for writes).
+ *
+ * This function is intended for use by the GDB stub and similar code.
+ *
+ * Returns: 0 on success, -1 on error
+ */
+int cpu_memory_rw_debug(CPUState *cpu, vaddr addr,
+                        void *ptr, size_t len, bool is_write);
+
+/**
  * cpu_get_crash_info:
  * @cpu: The CPU to get crash information for
  *
@@ -676,8 +716,6 @@ int cpu_write_elf32_qemunote(WriteCoreDumpFunction f, CPUState *cpu,
  * Caller is responsible for freeing the data.
  */
 GuestPanicInformation *cpu_get_crash_info(CPUState *cpu);
-
-#endif /* !CONFIG_USER_ONLY */
 
 /**
  * CPUDumpFlags:
@@ -702,7 +740,6 @@ enum CPUDumpFlags {
  */
 void cpu_dump_state(CPUState *cpu, FILE *f, int flags);
 
-#ifndef CONFIG_USER_ONLY
 /**
  * cpu_get_phys_page_attrs_debug:
  * @cpu: The CPU to obtain the physical page address for.
@@ -758,8 +795,6 @@ bool cpu_virtio_is_big_endian(CPUState *cpu);
  * Returns: %true if the CPU has work, %false otherwise.
  */
 bool cpu_has_work(CPUState *cpu);
-
-#endif /* CONFIG_USER_ONLY */
 
 /**
  * cpu_list_add:
@@ -839,7 +874,8 @@ bool qemu_cpu_is_self(CPUState *cpu);
  * qemu_cpu_kick:
  * @cpu: The vCPU to kick.
  *
- * Kicks @cpu's thread.
+ * Kicks @cpu's thread to exit the accelerator.  For accelerators that
+ * can do that, the target vCPU thread will try not to take the BQL.
  */
 void qemu_cpu_kick(CPUState *cpu);
 
@@ -951,6 +987,28 @@ CPUState *cpu_by_arch_id(int64_t id);
  */
 
 void cpu_interrupt(CPUState *cpu, int mask);
+
+/**
+ * cpu_test_interrupt:
+ * @cpu: The CPU to check interrupt(s) on.
+ * @mask: The interrupts to check.
+ *
+ * Checks if any of interrupts in @mask are pending on @cpu.
+ */
+static inline bool cpu_test_interrupt(CPUState *cpu, int mask)
+{
+    return qatomic_load_acquire(&cpu->interrupt_request) & mask;
+}
+
+/**
+ * cpu_set_interrupt:
+ * @cpu: The CPU to set pending interrupt(s) on.
+ * @mask: The interrupts to set.
+ *
+ * Sets interrupts in @mask as pending on @cpu.  Unlike @cpu_interrupt,
+ * this does not kick the vCPU.
+ */
+void cpu_set_interrupt(CPUState *cpu, int mask);
 
 /**
  * cpu_set_pc:
@@ -1110,36 +1168,6 @@ static inline bool cpu_breakpoint_test(CPUState *cpu, vaddr pc, int mask)
     return false;
 }
 
-#if defined(CONFIG_USER_ONLY)
-static inline int cpu_watchpoint_insert(CPUState *cpu, vaddr addr, vaddr len,
-                                        int flags, CPUWatchpoint **watchpoint)
-{
-    return -ENOSYS;
-}
-
-static inline int cpu_watchpoint_remove(CPUState *cpu, vaddr addr,
-                                        vaddr len, int flags)
-{
-    return -ENOSYS;
-}
-
-static inline void cpu_watchpoint_remove_by_ref(CPUState *cpu,
-                                                CPUWatchpoint *wp)
-{
-}
-
-static inline void cpu_watchpoint_remove_all(CPUState *cpu, int mask)
-{
-}
-#else
-int cpu_watchpoint_insert(CPUState *cpu, vaddr addr, vaddr len,
-                          int flags, CPUWatchpoint **watchpoint);
-int cpu_watchpoint_remove(CPUState *cpu, vaddr addr,
-                          vaddr len, int flags);
-void cpu_watchpoint_remove_by_ref(CPUState *cpu, CPUWatchpoint *watchpoint);
-void cpu_watchpoint_remove_all(CPUState *cpu, int mask);
-#endif
-
 /**
  * cpu_get_address_space:
  * @cpu: CPU to get address space from
@@ -1153,6 +1181,15 @@ AddressSpace *cpu_get_address_space(CPUState *cpu, int asidx);
 G_NORETURN void cpu_abort(CPUState *cpu, const char *fmt, ...)
     G_GNUC_PRINTF(2, 3);
 
+/**
+ * qemu_process_cpu_events:
+ * @cpu: CPU that left the execution loop
+ *
+ * Perform accelerator-independent work after the CPU has left
+ * the inner execution loop.
+ */
+void qemu_process_cpu_events(CPUState *cpu);
+
 /* $(top_srcdir)/cpu.c */
 void cpu_class_init_props(DeviceClass *dc);
 void cpu_exec_class_post_init(CPUClass *cc);
@@ -1163,26 +1200,15 @@ bool cpu_exec_realizefn(CPUState *cpu, Error **errp);
 void cpu_exec_unrealizefn(CPUState *cpu);
 void cpu_exec_reset_hold(CPUState *cpu);
 
-const char *target_name(void);
-
-#ifdef COMPILING_PER_TARGET
-
-#ifndef CONFIG_USER_ONLY
-
 extern const VMStateDescription vmstate_cpu_common;
-
-#define VMSTATE_CPU() {                                                     \
-    .name = "parent_obj",                                                   \
-    .size = sizeof(CPUState),                                               \
-    .vmsd = &vmstate_cpu_common,                                            \
-    .flags = VMS_STRUCT,                                                    \
-    .offset = 0,                                                            \
-}
-#endif /* !CONFIG_USER_ONLY */
-
-#endif /* COMPILING_PER_TARGET */
 
 #define UNASSIGNED_CPU_INDEX -1
 #define UNASSIGNED_CLUSTER_INDEX -1
+
+enum CacheType {
+    DATA_CACHE,
+    INSTRUCTION_CACHE,
+    UNIFIED_CACHE
+};
 
 #endif

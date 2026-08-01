@@ -235,8 +235,6 @@ void spapr_dt_persistent_memory(SpaprMachineState *spapr, void *fdt)
         spapr_dt_nvdimm(spapr, fdt, offset, nvdimm);
     }
     g_slist_free(nvdimms);
-
-    return;
 }
 
 static target_ulong h_scm_read_metadata(PowerPCCPU *cpu,
@@ -890,7 +888,7 @@ static const Property spapr_nvdimm_properties[] = {
 };
 #endif
 
-static void spapr_nvdimm_class_init(ObjectClass *oc, void *data)
+static void spapr_nvdimm_class_init(ObjectClass *oc, const void *data)
 {
     NVDIMMClass *nvc = NVDIMM_CLASS(oc);
 

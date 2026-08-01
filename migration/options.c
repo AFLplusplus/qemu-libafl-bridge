@@ -187,6 +187,8 @@ const Property migration_properties[] = {
     DEFINE_PROP_MIG_CAP("x-postcopy-ram", MIGRATION_CAPABILITY_POSTCOPY_RAM),
     DEFINE_PROP_MIG_CAP("x-postcopy-preempt",
                         MIGRATION_CAPABILITY_POSTCOPY_PREEMPT),
+    DEFINE_PROP_MIG_CAP("postcopy-blocktime",
+                        MIGRATION_CAPABILITY_POSTCOPY_BLOCKTIME),
     DEFINE_PROP_MIG_CAP("x-colo", MIGRATION_CAPABILITY_X_COLO),
     DEFINE_PROP_MIG_CAP("x-release-ram", MIGRATION_CAPABILITY_RELEASE_RAM),
     DEFINE_PROP_MIG_CAP("x-return-path", MIGRATION_CAPABILITY_RETURN_PATH),
@@ -443,9 +445,53 @@ INITIALIZE_MIGRATE_CAPS_SET(check_caps_background_snapshot,
     MIGRATION_CAPABILITY_VALIDATE_UUID,
     MIGRATION_CAPABILITY_ZERO_COPY_SEND);
 
+/* Snapshot compatibility check list */
+static const
+INITIALIZE_MIGRATE_CAPS_SET(check_caps_savevm,
+                            MIGRATION_CAPABILITY_MULTIFD,
+);
+
 static bool migrate_incoming_started(void)
 {
     return !!migration_incoming_get_current()->transport_data;
+}
+
+bool migrate_can_snapshot(Error **errp)
+{
+    MigrationState *s = migrate_get_current();
+    int i;
+
+    for (i = 0; i < check_caps_savevm.size; i++) {
+        int incomp_cap = check_caps_savevm.caps[i];
+
+        if (s->capabilities[incomp_cap]) {
+            error_setg(errp,
+                       "Snapshots are not compatible with %s",
+                       MigrationCapability_str(incomp_cap));
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
+bool migrate_rdma_caps_check(bool *caps, Error **errp)
+{
+    if (caps[MIGRATION_CAPABILITY_XBZRLE]) {
+        error_setg(errp, "RDMA and XBZRLE can't be used together");
+        return false;
+    }
+    if (caps[MIGRATION_CAPABILITY_MULTIFD]) {
+        error_setg(errp, "RDMA and multifd can't be used together");
+        return false;
+    }
+    if (caps[MIGRATION_CAPABILITY_POSTCOPY_RAM]) {
+        error_setg(errp, "RDMA and postcopy-ram can't be used together");
+        return false;
+    }
+
+    return true;
 }
 
 /**
@@ -489,11 +535,6 @@ bool migrate_caps_check(bool *old_caps, bool *new_caps, Error **errp)
 
         if (new_caps[MIGRATION_CAPABILITY_X_IGNORE_SHARED]) {
             error_setg(errp, "Postcopy is not compatible with ignore-shared");
-            return false;
-        }
-
-        if (new_caps[MIGRATION_CAPABILITY_MULTIFD]) {
-            error_setg(errp, "Postcopy is not yet compatible with multifd");
             return false;
         }
     }
@@ -611,6 +652,13 @@ bool migrate_caps_check(bool *old_caps, bool *new_caps, Error **errp)
         }
     }
 
+    /*
+     * On destination side, check the cases that capability is being set
+     * after incoming thread has started.
+     */
+    if (migrate_rdma() && !migrate_rdma_caps_check(new_caps, errp)) {
+        return false;
+    }
     return true;
 }
 
@@ -937,6 +985,9 @@ MigrationParameters *qmp_query_migrate_parameters(Error **errp)
     params->zero_page_detection = s->parameters.zero_page_detection;
     params->has_direct_io = true;
     params->direct_io = s->parameters.direct_io;
+    params->has_cpr_exec_command = true;
+    params->cpr_exec_command = QAPI_CLONE(strList,
+                                          s->parameters.cpr_exec_command);
 
     return params;
 }
@@ -971,6 +1022,7 @@ void migrate_params_init(MigrationParameters *params)
     params->has_mode = true;
     params->has_zero_page_detection = true;
     params->has_direct_io = true;
+    params->has_cpr_exec_command = true;
 }
 
 /*
@@ -1193,6 +1245,11 @@ static void migrate_params_test_apply(MigrateSetParameters *params,
         dest->tls_hostname = params->tls_hostname->u.s;
     }
 
+    if (params->tls_authz) {
+        assert(params->tls_authz->type == QTYPE_QSTRING);
+        dest->tls_authz = params->tls_authz->u.s;
+    }
+
     if (params->has_max_bandwidth) {
         dest->max_bandwidth = params->max_bandwidth;
     }
@@ -1269,6 +1326,10 @@ static void migrate_params_test_apply(MigrateSetParameters *params,
 
     if (params->has_direct_io) {
         dest->direct_io = params->direct_io;
+    }
+
+    if (params->has_cpr_exec_command) {
+        dest->cpr_exec_command = params->cpr_exec_command;
     }
 }
 
@@ -1401,6 +1462,12 @@ static void migrate_params_apply(MigrateSetParameters *params, Error **errp)
 
     if (params->has_direct_io) {
         s->parameters.direct_io = params->direct_io;
+    }
+
+    if (params->has_cpr_exec_command) {
+        qapi_free_strList(s->parameters.cpr_exec_command);
+        s->parameters.cpr_exec_command =
+            QAPI_CLONE(strList, params->cpr_exec_command);
     }
 }
 

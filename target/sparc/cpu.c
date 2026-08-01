@@ -22,7 +22,7 @@
 #include "cpu.h"
 #include "qemu/module.h"
 #include "qemu/qemu-print.h"
-#include "exec/exec-all.h"
+#include "accel/tcg/cpu-mmu-index.h"
 #include "exec/translation-block.h"
 #include "hw/qdev-properties.h"
 #include "qapi/visitor.h"
@@ -579,7 +579,7 @@ static void print_features(uint32_t features, const char *prefix)
     }
 }
 
-void sparc_cpu_list(void)
+static void sparc_cpu_list(void)
 {
     unsigned int i;
 
@@ -716,13 +716,11 @@ static void sparc_cpu_synchronize_from_tb(CPUState *cs,
     cpu->env.npc = tb->cs_base;
 }
 
-void cpu_get_tb_cpu_state(CPUSPARCState *env, vaddr *pc,
-                          uint64_t *cs_base, uint32_t *pflags)
+static TCGTBCPUState sparc_get_tb_cpu_state(CPUState *cs)
 {
-    uint32_t flags;
-    *pc = env->pc;
-    *cs_base = env->npc;
-    flags = cpu_mmu_index(env_cpu(env), false);
+    CPUSPARCState *env = cpu_env(cs);
+    uint32_t flags = cpu_mmu_index(cs, false);
+
 #ifndef CONFIG_USER_ONLY
     if (cpu_supervisor_mode(env)) {
         flags |= TB_FLAG_SUPER;
@@ -751,7 +749,12 @@ void cpu_get_tb_cpu_state(CPUSPARCState *env, vaddr *pc,
     }
 #endif /* !CONFIG_USER_ONLY */
 #endif /* TARGET_SPARC64 */
-    *pflags = flags;
+
+    return (TCGTBCPUState){
+        .pc = env->pc,
+        .flags = flags,
+        .cs_base = env->npc,
+    };
 }
 
 static void sparc_restore_state_to_opc(CPUState *cs,
@@ -780,7 +783,7 @@ static void sparc_restore_state_to_opc(CPUState *cs,
 #ifndef CONFIG_USER_ONLY
 static bool sparc_cpu_has_work(CPUState *cs)
 {
-    return (cs->interrupt_request & CPU_INTERRUPT_HARD) &&
+    return cpu_test_interrupt(cs, CPU_INTERRUPT_HARD) &&
            cpu_interrupts_enabled(cpu_env(cs));
 }
 #endif /* !CONFIG_USER_ONLY */
@@ -999,16 +1002,56 @@ static const struct SysemuCPUOps sparc_sysemu_ops = {
 #ifdef CONFIG_TCG
 #include "accel/tcg/cpu-ops.h"
 
+#ifndef CONFIG_USER_ONLY
+static vaddr sparc_pointer_wrap(CPUState *cs, int mmu_idx,
+                                vaddr result, vaddr base)
+{
+#ifdef TARGET_SPARC64
+    return cpu_env(cs)->pstate & PS_AM ? (uint32_t)result : result;
+#else
+    return (uint32_t)result;
+#endif
+}
+#endif
+
 static const TCGCPUOps sparc_tcg_ops = {
+    /*
+     * From Oracle SPARC Architecture 2015:
+     *
+     *   Compatibility notes: The PSO memory model described in SPARC V8 and
+     *   SPARC V9 compatibility architecture specifications was never
+     *   implemented in a SPARC V9 implementation and is not included in the
+     *   Oracle SPARC Architecture specification.
+     *
+     *   The RMO memory model described in the SPARC V9 specification was
+     *   implemented in some non-Sun SPARC V9 implementations, but is not
+     *   directly supported in Oracle SPARC Architecture 2015 implementations.
+     *
+     * Therefore always use TSO in QEMU.
+     *
+     * D.5 Specification of Partial Store Order (PSO)
+     *   ... [loads] are followed by an implied MEMBAR #LoadLoad | #LoadStore.
+     *
+     * D.6 Specification of Total Store Order (TSO)
+     *   ... PSO with the additional requirement that all [stores] are followed
+     *   by an implied MEMBAR #StoreStore.
+     */
+    .guest_default_memory_order = TCG_MO_LD_LD | TCG_MO_LD_ST | TCG_MO_ST_ST,
+    .mttcg_supported = true,
+
     .initialize = sparc_tcg_init,
     .translate_code = sparc_translate_code,
+    .get_tb_cpu_state = sparc_get_tb_cpu_state,
     .synchronize_from_tb = sparc_cpu_synchronize_from_tb,
     .restore_state_to_opc = sparc_restore_state_to_opc,
+    .mmu_index = sparc_cpu_mmu_index,
 
 #ifndef CONFIG_USER_ONLY
     .tlb_fill = sparc_cpu_tlb_fill,
+    .pointer_wrap = sparc_pointer_wrap,
     .cpu_exec_interrupt = sparc_cpu_exec_interrupt,
     .cpu_exec_halt = sparc_cpu_has_work,
+    .cpu_exec_reset = cpu_reset,
     .do_interrupt = sparc_cpu_do_interrupt,
     .do_transaction_failed = sparc_cpu_do_transaction_failed,
     .do_unaligned_access = sparc_cpu_do_unaligned_access,
@@ -1016,7 +1059,7 @@ static const TCGCPUOps sparc_tcg_ops = {
 };
 #endif /* CONFIG_TCG */
 
-static void sparc_cpu_class_init(ObjectClass *oc, void *data)
+static void sparc_cpu_class_init(ObjectClass *oc, const void *data)
 {
     SPARCCPUClass *scc = SPARC_CPU_CLASS(oc);
     CPUClass *cc = CPU_CLASS(oc);
@@ -1031,8 +1074,8 @@ static void sparc_cpu_class_init(ObjectClass *oc, void *data)
                                        &scc->parent_phases);
 
     cc->class_by_name = sparc_cpu_class_by_name;
+    cc->list_cpus = sparc_cpu_list,
     cc->parse_features = sparc_cpu_parse_features;
-    cc->mmu_index = sparc_cpu_mmu_index;
     cc->dump_state = sparc_cpu_dump_state;
 #if !defined(TARGET_SPARC64) && !defined(CONFIG_USER_ONLY)
     cc->memory_rw_debug = sparc_cpu_memory_rw_debug;
@@ -1047,6 +1090,7 @@ static void sparc_cpu_class_init(ObjectClass *oc, void *data)
     cc->disas_set_info = cpu_sparc_disas_set_info;
 
 #if defined(TARGET_SPARC64) && !defined(TARGET_ABI32)
+    cc->gdb_core_xml_file = "sparc64-core.xml";
     cc->gdb_num_core_regs = 86;
 #else
     cc->gdb_num_core_regs = 72;
@@ -1065,7 +1109,7 @@ static const TypeInfo sparc_cpu_type_info = {
     .class_init = sparc_cpu_class_init,
 };
 
-static void sparc_cpu_cpudef_class_init(ObjectClass *oc, void *data)
+static void sparc_cpu_cpudef_class_init(ObjectClass *oc, const void *data)
 {
     SPARCCPUClass *scc = SPARC_CPU_CLASS(oc);
     scc->cpu_def = data;
@@ -1078,7 +1122,7 @@ static void sparc_register_cpudef_type(const struct sparc_def_t *def)
         .name = typename,
         .parent = TYPE_SPARC_CPU,
         .class_init = sparc_cpu_cpudef_class_init,
-        .class_data = (void *)def,
+        .class_data = def,
     };
 
     type_register_static(&ti);

@@ -1,5 +1,10 @@
+#include "qemu/osdep.h"
+#include "exec/translation-block.h"
+#include "tcg/tcg-op-common.h"
+
 #include "libafl/tcg.h"
 #include "libafl/hooks/tcg/block.h"
+#include "libafl/hook.h"
 
 static struct libafl_block_hook* libafl_block_hooks;
 static size_t libafl_block_hooks_num = 0;
@@ -17,8 +22,7 @@ size_t libafl_add_block_hook(libafl_block_pre_gen_cb pre_gen_cb,
                              libafl_block_post_gen_cb post_gen_cb,
                              libafl_block_exec_cb exec_cb, uint64_t data)
 {
-    CPUState* cpu;
-    CPU_FOREACH(cpu) { tb_flush(cpu); }
+    libafl_flush_jit();
 
     struct libafl_block_hook* hook =
         calloc(sizeof(struct libafl_block_hook), 1);
@@ -62,7 +66,7 @@ void libafl_qemu_hook_block_post_run(TranslationBlock* tb, vaddr pc)
     }
 }
 
-void libafl_qemu_hook_block_pre_run(target_ulong pc)
+void libafl_qemu_hook_block_pre_run(vaddr pc)
 {
     struct libafl_block_hook* hook = libafl_block_hooks;
 
@@ -79,8 +83,6 @@ void libafl_qemu_hook_block_pre_run(target_ulong pc)
             TCGTemp* tmp2[2] = {tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1)};
             tcg_gen_callN(hook->helper_info.func, &hook->helper_info, NULL,
                           tmp2);
-            tcg_temp_free_i64(tmp0);
-            tcg_temp_free_i64(tmp1);
         }
 
         if (cur_id != (uint64_t)-1 && hook->jit_cb) {

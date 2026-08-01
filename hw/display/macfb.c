@@ -383,7 +383,6 @@ static void macfb_sense_write(MacfbState *s, uint32_t val)
     s->regs[DAFB_MODE_SENSE >> 2] = val;
 
     trace_macfb_sense_write(val);
-    return;
 }
 
 static void macfb_update_mode(MacfbState *s)
@@ -794,7 +793,7 @@ static const VMStateDescription vmstate_macfb_nubus = {
     }
 };
 
-static void macfb_sysbus_class_init(ObjectClass *klass, void *data)
+static void macfb_sysbus_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -805,7 +804,7 @@ static void macfb_sysbus_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, macfb_sysbus_properties);
 }
 
-static void macfb_nubus_class_init(ObjectClass *klass, void *data)
+static void macfb_nubus_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     MacfbNubusDeviceClass *ndc = NUBUS_MACFB_CLASS(klass);

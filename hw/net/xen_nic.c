@@ -62,8 +62,6 @@ struct XenNetDev {
     NICState              *nic;
 };
 
-typedef struct XenNetDev XenNetDev;
-
 #define TYPE_XEN_NET_DEVICE "xen-net-device"
 OBJECT_DECLARE_SIMPLE_TYPE(XenNetDev, XEN_NET_DEVICE)
 
@@ -559,7 +557,7 @@ static const Property xen_netdev_properties[] = {
     DEFINE_PROP_INT32("idx", XenNetDev, dev, -1),
 };
 
-static void xen_netdev_class_init(ObjectClass *class, void *data)
+static void xen_netdev_class_init(ObjectClass *class, const void *data)
 {
     DeviceClass *dev_class = DEVICE_CLASS(class);
     XenDeviceClass *xendev_class = XEN_DEVICE_CLASS(class);

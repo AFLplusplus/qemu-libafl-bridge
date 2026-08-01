@@ -20,10 +20,11 @@
 #include "qemu/main-loop.h"
 #include "cpu.h"
 #include "exec/helper-proto.h"
+#include "exec/target_page.h"
 #include "internals.h"
 #include "cpu-features.h"
-#include "exec/exec-all.h"
-#include "exec/cpu_ldst.h"
+#include "accel/tcg/cpu-ldst.h"
+#include "accel/tcg/probe.h"
 #include "cpregs.h"
 
 #define SIGNBIT (uint32_t)0x80000000
@@ -45,7 +46,7 @@ int exception_target_el(CPUARMState *env)
 }
 
 void raise_exception(CPUARMState *env, uint32_t excp,
-                     uint32_t syndrome, uint32_t target_el)
+                     uint64_t syndrome, uint32_t target_el)
 {
     CPUState *cs = env_cpu(env);
 
@@ -69,7 +70,7 @@ void raise_exception(CPUARMState *env, uint32_t excp,
     cpu_loop_exit(cs);
 }
 
-void raise_exception_ra(CPUARMState *env, uint32_t excp, uint32_t syndrome,
+void raise_exception_ra(CPUARMState *env, uint32_t excp, uint64_t syndrome,
                         uint32_t target_el, uintptr_t ra)
 {
     CPUState *cs = env_cpu(env);
@@ -767,12 +768,6 @@ const void *HELPER(access_check_cp_reg)(CPUARMState *env, uint32_t key,
 
     assert(ri != NULL);
 
-    if (arm_feature(env, ARM_FEATURE_XSCALE) && ri->cp < 14
-        && extract32(env->cp15.c15_cpar, ri->cp, 1) == 0) {
-        res = CP_ACCESS_UNDEFINED;
-        goto fail;
-    }
-
     if (ri->accessfn) {
         res = ri->accessfn(env, ri, isread);
     }
@@ -885,6 +880,13 @@ const void *HELPER(access_check_cp_reg)(CPUARMState *env, uint32_t key,
             break;
         }
         syndrome = syn_uncategorized();
+        break;
+    case CP_ACCESS_EXLOCK:
+        /*
+         * CP_ACCESS_EXLOCK is always directed to the current EL,
+         * which is going to be the same as the usual target EL.
+         */
+        syndrome = syn_gcs_exlock();
         break;
     default:
         g_assert_not_reached();
@@ -1221,7 +1223,7 @@ uint32_t HELPER(ror_cc)(CPUARMState *env, uint32_t x, uint32_t i)
     }
 }
 
-void HELPER(probe_access)(CPUARMState *env, target_ulong ptr,
+void HELPER(probe_access)(CPUARMState *env, vaddr ptr,
                           uint32_t access_type, uint32_t mmu_idx,
                           uint32_t size)
 {

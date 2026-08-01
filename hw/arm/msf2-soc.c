@@ -25,7 +25,7 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "hw/char/serial-mm.h"
 #include "hw/arm/msf2-soc.h"
 #include "hw/misc/unimp.h"
@@ -236,7 +236,7 @@ static const Property m2sxxx_soc_properties[] = {
     DEFINE_PROP_UINT8("apb1div", MSF2State, apb1div, 2),
 };
 
-static void m2sxxx_soc_class_init(ObjectClass *klass, void *data)
+static void m2sxxx_soc_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

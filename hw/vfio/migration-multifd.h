@@ -12,7 +12,7 @@
 #ifndef HW_VFIO_MIGRATION_MULTIFD_H
 #define HW_VFIO_MIGRATION_MULTIFD_H
 
-#include "hw/vfio/vfio-common.h"
+#include "hw/vfio/vfio-device.h"
 
 bool vfio_multifd_setup(VFIODevice *vbasedev, bool alloc_multifd, Error **errp);
 void vfio_multifd_cleanup(VFIODevice *vbasedev);
@@ -20,13 +20,16 @@ void vfio_multifd_cleanup(VFIODevice *vbasedev);
 bool vfio_multifd_transfer_supported(void);
 bool vfio_multifd_transfer_enabled(VFIODevice *vbasedev);
 
+bool vfio_load_config_after_iter(VFIODevice *vbasedev);
 bool vfio_multifd_load_state_buffer(void *opaque, char *data, size_t data_size,
                                     Error **errp);
+
+int vfio_load_state_config_load_ready(VFIODevice *vbasedev);
 
 void vfio_multifd_emit_dummy_eos(VFIODevice *vbasedev, QEMUFile *f);
 
 bool
-vfio_multifd_save_complete_precopy_thread(SaveLiveCompletePrecopyThreadData *d,
+vfio_multifd_save_complete_precopy_thread(SaveCompletePrecopyThreadData *d,
                                           Error **errp);
 
 int vfio_multifd_switchover_start(VFIODevice *vbasedev);

@@ -1589,7 +1589,7 @@ enum NvmeIdNsMc {
 
 enum NvmeIdNsNsfeat {
     NVME_ID_NS_NSFEAT_THINP         = 1 << 0,
-    NVME_ID_NS_NSFEAT_NSABPNS       = 1 << 1,
+    NVME_ID_NS_NSFEAT_NSABP         = 1 << 1,
     NVME_ID_NS_NSFEAT_DAE           = 1 << 2,
     NVME_ID_NS_NSFEAT_UIDREUSE      = 1 << 3,
     NVME_ID_NS_NSFEAT_OPTPERF_ALL   = 3 << 4,
@@ -1778,6 +1778,21 @@ enum NvmeDirectiveTypes {
 enum NvmeDirectiveOperations {
     NVME_DIRECTIVE_RETURN_PARAMS = 0x1,
 };
+
+typedef enum SfscSecurityProtocol {
+    SFSC_SECURITY_PROT_INFO = 0x00,
+} SfscSecurityProtocol;
+
+typedef enum NvmeSecurityProtocols {
+    NVME_SEC_PROT_DMTF_SPDM    = 0xE8,
+} NvmeSecurityProtocols;
+
+typedef enum SpdmOperationCodes {
+    SPDM_STORAGE_DISCOVERY      = 0x1, /* Mandatory */
+    SPDM_STORAGE_PENDING_INFO   = 0x2, /* Optional */
+    SPDM_STORAGE_MSG            = 0x5, /* Mandatory */
+    SPDM_STORAGE_SEC_MSG        = 0x6, /* Optional */
+} SpdmOperationCodes;
 
 typedef struct QEMU_PACKED NvmeFdpConfsHdr {
     uint16_t num_confs;

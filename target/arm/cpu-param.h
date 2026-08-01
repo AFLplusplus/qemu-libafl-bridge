@@ -17,15 +17,9 @@
 #endif
 
 #ifdef CONFIG_USER_ONLY
-# ifdef TARGET_AARCH64
-#  define TARGET_TAGGED_ADDRESSES
-# ifdef __FreeBSD__
-#  define TARGET_PAGE_BITS 12
-# else
+# if defined(TARGET_AARCH64) && defined(CONFIG_LINUX)
 /* Allow user-only to vary page size from 4k */
 #  define TARGET_PAGE_BITS_VARY
-#  define TARGET_PAGE_BITS_MIN  12
-# endif
 # else
 #  define TARGET_PAGE_BITS 12
 # endif
@@ -35,10 +29,14 @@
  * have to support 1K tiny pages.
  */
 # define TARGET_PAGE_BITS_VARY
-# define TARGET_PAGE_BITS_MIN  10
+# define TARGET_PAGE_BITS_LEGACY 10
 #endif /* !CONFIG_USER_ONLY */
 
-/* ARM processors have a weak memory model */
-#define TCG_GUEST_DEFAULT_MO      (0)
+/*
+ * ARM-specific extra insn start words:
+ * 1: Conditional execution bits
+ * 2: Partial exception syndrome for data aborts
+ */
+#define TARGET_INSN_START_EXTRA_WORDS 2
 
 #endif

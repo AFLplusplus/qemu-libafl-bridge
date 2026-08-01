@@ -27,7 +27,7 @@
 #include "qemu/error-report.h"
 #include "qdev-prop-internal.h"
 
-#include "audio/audio.h"
+#include "qemu/audio.h"
 #include "chardev/char-fe.h"
 #include "system/block-backend.h"
 #include "system/blockdev.h"
@@ -258,10 +258,10 @@ const PropertyInfo qdev_prop_drive_iothread = {
 static void get_chr(Object *obj, Visitor *v, const char *name, void *opaque,
                     Error **errp)
 {
-    CharBackend *be = object_field_prop_ptr(obj, opaque);
+    CharFrontend *fe = object_field_prop_ptr(obj, opaque);
     char *p;
 
-    p = g_strdup(be->chr && be->chr->label ? be->chr->label : "");
+    p = g_strdup(fe->chr && fe->chr->label ? fe->chr->label : "");
     visit_type_str(v, name, &p, errp);
     g_free(p);
 }
@@ -271,7 +271,7 @@ static void set_chr(Object *obj, Visitor *v, const char *name, void *opaque,
 {
     ERRP_GUARD();
     const Property *prop = opaque;
-    CharBackend *be = object_field_prop_ptr(obj, prop);
+    CharFrontend *fe = object_field_prop_ptr(obj, prop);
     Chardev *s;
     char *str;
 
@@ -283,13 +283,13 @@ static void set_chr(Object *obj, Visitor *v, const char *name, void *opaque,
      * TODO Should this really be an error?  If no, the old value
      * needs to be released before we store the new one.
      */
-    if (!check_prop_still_unset(obj, name, be->chr, str, false, errp)) {
+    if (!check_prop_still_unset(obj, name, fe->chr, str, false, errp)) {
         return;
     }
 
     if (!*str) {
         g_free(str);
-        be->chr = NULL;
+        fe->chr = NULL;
         return;
     }
 
@@ -297,7 +297,7 @@ static void set_chr(Object *obj, Visitor *v, const char *name, void *opaque,
     if (s == NULL) {
         error_setg(errp, "Property '%s.%s' can't find value '%s'",
                    object_get_typename(obj), name, str);
-    } else if (!qemu_chr_fe_init(be, s, errp)) {
+    } else if (!qemu_chr_fe_init(fe, s, errp)) {
         error_prepend(errp, "Property '%s.%s' can't take value '%s': ",
                       object_get_typename(obj), name, str);
     }
@@ -307,9 +307,9 @@ static void set_chr(Object *obj, Visitor *v, const char *name, void *opaque,
 static void release_chr(Object *obj, const char *name, void *opaque)
 {
     const Property *prop = opaque;
-    CharBackend *be = object_field_prop_ptr(obj, prop);
+    CharFrontend *fe = object_field_prop_ptr(obj, prop);
 
-    qemu_chr_fe_deinit(be, false);
+    qemu_chr_fe_deinit(fe, false);
 }
 
 const PropertyInfo qdev_prop_chr = {
@@ -487,28 +487,27 @@ static void get_audiodev(Object *obj, Visitor *v, const char* name,
                          void *opaque, Error **errp)
 {
     const Property *prop = opaque;
-    QEMUSoundCard *card = object_field_prop_ptr(obj, prop);
-    char *p = g_strdup(audio_get_id(card));
+    AudioBackend **be = object_field_prop_ptr(obj, prop);
+    g_autofree char *id = g_strdup(audio_be_get_id(*be));
 
-    visit_type_str(v, name, &p, errp);
-    g_free(p);
+    visit_type_str(v, name, (char **)&id, errp);
 }
 
 static void set_audiodev(Object *obj, Visitor *v, const char* name,
                          void *opaque, Error **errp)
 {
     const Property *prop = opaque;
-    QEMUSoundCard *card = object_field_prop_ptr(obj, prop);
-    AudioState *state;
+    AudioBackend **be = object_field_prop_ptr(obj, prop);
+    AudioBackend *state;
     g_autofree char *str = NULL;
 
     if (!visit_type_str(v, name, &str, errp)) {
         return;
     }
 
-    state = audio_state_by_name(str, errp);
+    state = audio_be_by_name(str, errp);
     if (state) {
-        card->state = state;
+        *be = state;
     }
 }
 
@@ -794,7 +793,6 @@ separator_error:
     error_setg(errp, "reserved region fields must be separated with ':'");
 out:
     g_free(str);
-    return;
 }
 
 const PropertyInfo qdev_prop_reserved_region = {
@@ -866,15 +864,14 @@ out:
     visit_end_alternate(v, (void **) &alt);
 }
 
-static int print_pci_devfn(Object *obj, const Property *prop, char *dest,
-                           size_t len)
+static char *print_pci_devfn(Object *obj, const Property *prop)
 {
     int32_t *ptr = object_field_prop_ptr(obj, prop);
 
     if (*ptr == -1) {
-        return snprintf(dest, len, "<unset>");
+        return g_strdup("<unset>");
     } else {
-        return snprintf(dest, len, "%02x.%x", *ptr >> 3, *ptr & 7);
+        return g_strdup_printf("%02x.%x", *ptr >> 3, *ptr & 7);
     }
 }
 
@@ -1299,4 +1296,48 @@ const PropertyInfo qdev_prop_vmapple_virtio_blk_variant = {
     .get   = qdev_propinfo_get_enum,
     .set   = qdev_propinfo_set_enum,
     .set_default_value = qdev_propinfo_set_default_value_enum,
+};
+
+/* --- VirtIOGPUOutputList --- */
+
+static void get_virtio_gpu_output_list(Object *obj, Visitor *v,
+    const char *name, void *opaque, Error **errp)
+{
+    VirtIOGPUOutputList **prop_ptr =
+        object_field_prop_ptr(obj, opaque);
+
+    visit_type_VirtIOGPUOutputList(v, name, prop_ptr, errp);
+}
+
+static void set_virtio_gpu_output_list(Object *obj, Visitor *v,
+    const char *name, void *opaque, Error **errp)
+{
+    VirtIOGPUOutputList **prop_ptr =
+        object_field_prop_ptr(obj, opaque);
+    VirtIOGPUOutputList *list;
+
+    if (!visit_type_VirtIOGPUOutputList(v, name, &list, errp)) {
+        return;
+    }
+
+    qapi_free_VirtIOGPUOutputList(*prop_ptr);
+    *prop_ptr = list;
+}
+
+static void release_virtio_gpu_output_list(Object *obj,
+    const char *name, void *opaque)
+{
+    VirtIOGPUOutputList **prop_ptr =
+        object_field_prop_ptr(obj, opaque);
+
+    qapi_free_VirtIOGPUOutputList(*prop_ptr);
+    *prop_ptr = NULL;
+}
+
+const PropertyInfo qdev_prop_virtio_gpu_output_list = {
+    .type = "VirtIOGPUOutputList",
+    .description = "VirtIO GPU output list [{\"name\":\"<name>\"},...]",
+    .get = get_virtio_gpu_output_list,
+    .set = set_virtio_gpu_output_list,
+    .release = release_virtio_gpu_output_list,
 };

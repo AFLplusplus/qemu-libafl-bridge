@@ -96,6 +96,8 @@ meson.stamp: config-host.mak
 
 # 3. ensure meson-generated build files are up-to-date
 
+ninja-cmd-goals =
+
 ifneq ($(NINJA),)
 Makefile.ninja: build.ninja
 	$(quiet-@){ \
@@ -150,7 +152,7 @@ NINJAFLAGS = \
           $(or $(filter -l% -j%, $(MAKEFLAGS)), \
                $(if $(filter --jobserver-auth=%, $(MAKEFLAGS)),, -j1))) \
         -d keepdepfile
-ninja-cmd-goals = $(or $(MAKECMDGOALS), all)
+ninja-cmd-goals += $(or $(MAKECMDGOALS), all)
 ninja-cmd-goals += $(foreach g, $(MAKECMDGOALS), $(.ninja-goals.$g))
 
 makefile-targets := build.ninja ctags TAGS cscope dist clean
@@ -227,6 +229,7 @@ distclean: clean recurse-distclean
 	rm -Rf .sdk qemu-bundle
 
 find-src-path = find "$(SRC_PATH)" -path "$(SRC_PATH)/meson" -prune -o \
+	-path "$(SRC_PATH)/.pc" -prune -o \
 	-type l -prune -o \( -name "*.[chsS]" -o -name "*.[ch].inc" \)
 
 .PHONY: ctags

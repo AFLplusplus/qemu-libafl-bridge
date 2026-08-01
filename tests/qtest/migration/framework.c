@@ -30,6 +30,7 @@
 #define QEMU_VM_FILE_MAGIC 0x5145564d
 #define QEMU_ENV_SRC "QTEST_QEMU_BINARY_SRC"
 #define QEMU_ENV_DST "QTEST_QEMU_BINARY_DST"
+#define MULTIFD_TEST_CHANNELS 4
 
 unsigned start_address;
 unsigned end_address;
@@ -207,37 +208,109 @@ static QList *migrate_start_get_qmp_capabilities(const MigrateStart *args)
     return capabilities;
 }
 
-int migrate_start(QTestState **from, QTestState **to, const char *uri,
-                  MigrateStart *args)
+static void migrate_start_set_capabilities(QTestState *from, QTestState *to,
+                                           MigrateStart *args)
+{
+    /*
+     * MigrationCapability_lookup and MIGRATION_CAPABILITY_ constants
+     * are from qapi-types-migration.h.
+     */
+    for (uint8_t i = 0; i < MIGRATION_CAPABILITY__MAX; i++) {
+        if (!args->caps[i]) {
+            continue;
+        }
+        if (from) {
+            migrate_set_capability(from,
+                            MigrationCapability_lookup.array[i], true);
+        }
+        if (to) {
+            migrate_set_capability(to,
+                            MigrationCapability_lookup.array[i], true);
+        }
+    }
+
+    /*
+     * Always enable migration events.  Libvirt always uses it, let's try
+     * to mimic as closer as that.
+     */
+    migrate_set_capability(from, "events", true);
+    if (!args->defer_target_connect && to) {
+        migrate_set_capability(to, "events", true);
+    }
+
+    /*
+     * Default number of channels should be fine for most
+     * tests. Individual tests can override by calling
+     * migrate_set_parameter() directly.
+     */
+    if (args->caps[MIGRATION_CAPABILITY_MULTIFD]) {
+        migrate_set_parameter_int(from, "multifd-channels",
+                                  MULTIFD_TEST_CHANNELS);
+        if (to) {
+            migrate_set_parameter_int(to, "multifd-channels",
+                                      MULTIFD_TEST_CHANNELS);
+        }
+    }
+
+    return;
+}
+
+static char *test_shmem_path(void)
+{
+    return g_strdup_printf("/dev/shm/qemu-%d", getpid());
+}
+
+#define  MIG_MEM_ID  "mig.mem"
+
+/* NOTE: caller is responsbile to free the string if returned */
+static char *migrate_mem_type_get_opts(MemType type, const char *memory_size)
+{
+    g_autofree char *shmem_path = NULL;
+    g_autofree char *backend = NULL;
+    bool share = true;
+    char *opts;
+
+    switch (type) {
+    case MEM_TYPE_ANON:
+        backend = g_strdup("-object memory-backend-ram");
+        share = false;
+        break;
+    case MEM_TYPE_SHMEM:
+        shmem_path = test_shmem_path();
+        backend = g_strdup_printf("-object memory-backend-file,mem-path=%s",
+                                  shmem_path);
+        break;
+    case MEM_TYPE_MEMFD:
+        backend = g_strdup("-object memory-backend-memfd");
+        break;
+    default:
+        g_assert_not_reached();
+        break;
+    }
+
+    opts = g_strdup_printf("%s,id=%s,size=%s,share=%s",
+                           backend, MIG_MEM_ID, memory_size,
+                           share ? "on" : "off");
+
+    return opts;
+}
+
+int migrate_args(char **from, char **to, const char *uri, MigrateStart *args)
 {
     /* options for source and target */
     g_autofree gchar *arch_opts = NULL;
-    g_autofree gchar *cmd_source = NULL;
-    g_autofree gchar *cmd_target = NULL;
+    gchar *cmd_source = NULL;
+    gchar *cmd_target = NULL;
     const gchar *ignore_stderr;
-    g_autofree char *shmem_opts = NULL;
-    g_autofree char *shmem_path = NULL;
+    g_autofree char *mem_object = NULL;
     const char *kvm_opts = NULL;
     const char *arch = qtest_get_arch();
     const char *memory_size;
     const char *machine_alias, *machine_opts = "";
     g_autofree char *machine = NULL;
-    const char *bootpath;
-    g_autoptr(QList) capabilities = migrate_start_get_qmp_capabilities(args);
+    const char *bootpath = bootfile_get();
     g_autofree char *memory_backend = NULL;
     const char *events;
-
-    if (args->use_shmem) {
-        if (!g_file_test("/dev/shm", G_FILE_TEST_IS_DIR)) {
-            g_test_skip("/dev/shm is not supported");
-            return -1;
-        }
-    }
-
-    dst_state = (QTestMigrationState) { };
-    src_state = (QTestMigrationState) { };
-    bootpath = bootfile_create(arch, tmpfs, args->suspend_me);
-    src_state.suspend_me = args->suspend_me;
 
     if (strcmp(arch, "i386") == 0 || strcmp(arch, "x86_64") == 0) {
         memory_size = "150M";
@@ -293,19 +366,9 @@ int migrate_start(QTestState **from, QTestState **to, const char *uri,
         ignore_stderr = "";
     }
 
-    if (args->use_shmem) {
-        shmem_path = g_strdup_printf("/dev/shm/qemu-%d", getpid());
-        shmem_opts = g_strdup_printf(
-            "-object memory-backend-file,id=mem0,size=%s"
-            ",mem-path=%s,share=on -numa node,memdev=mem0",
-            memory_size, shmem_path);
-    }
-
-    if (args->memory_backend) {
-        memory_backend = g_strdup_printf(args->memory_backend, memory_size);
-    } else {
-        memory_backend = g_strdup_printf("-m %s ", memory_size);
-    }
+    mem_object = migrate_mem_type_get_opts(args->mem_type, memory_size);
+    memory_backend = g_strdup_printf("-machine memory-backend=%s %s",
+                                     MIG_MEM_ID, mem_object);
 
     if (args->use_dirty_ring) {
         kvm_opts = ",dirty-ring-size=4096";
@@ -327,21 +390,13 @@ int migrate_start(QTestState **from, QTestState **to, const char *uri,
                                  "-name source,debug-threads=on "
                                  "%s "
                                  "-serial file:%s/src_serial "
-                                 "%s %s %s %s",
+                                 "%s %s %s",
                                  kvm_opts ? kvm_opts : "",
                                  machine, machine_opts,
                                  memory_backend, tmpfs,
                                  arch_opts ? arch_opts : "",
-                                 shmem_opts ? shmem_opts : "",
                                  args->opts_source ? args->opts_source : "",
                                  ignore_stderr);
-    if (!args->only_target) {
-        *from = qtest_init_with_env_and_capabilities(QEMU_ENV_SRC, cmd_source,
-                                                     capabilities, true);
-        qtest_qmp_set_event_callback(*from,
-                                     migrate_watch_for_events,
-                                     &src_state);
-    }
 
     /*
      * If the monitor connection is deferred, enable events on the command line
@@ -356,37 +411,95 @@ int migrate_start(QTestState **from, QTestState **to, const char *uri,
                                  "%s "
                                  "-serial file:%s/dest_serial "
                                  "-incoming %s "
-                                 "%s %s %s %s %s",
+                                 "%s %s %s %s",
                                  kvm_opts ? kvm_opts : "",
                                  machine, machine_opts,
                                  memory_backend, tmpfs, uri,
                                  events,
                                  arch_opts ? arch_opts : "",
-                                 shmem_opts ? shmem_opts : "",
                                  args->opts_target ? args->opts_target : "",
                                  ignore_stderr);
-    *to = qtest_init_with_env_and_capabilities(QEMU_ENV_DST, cmd_target,
-                                               capabilities, !args->defer_target_connect);
-    qtest_qmp_set_event_callback(*to,
-                                 migrate_watch_for_events,
-                                 &dst_state);
 
-    /*
-     * Remove shmem file immediately to avoid memory leak in test failed case.
-     * It's valid because QEMU has already opened this file
-     */
-    if (args->use_shmem) {
+    *from = cmd_source;
+    *to = cmd_target;
+    return 0;
+}
+
+static bool migrate_mem_type_prepare(MemType type)
+{
+    switch (type) {
+    case MEM_TYPE_SHMEM:
+        if (!g_file_test("/dev/shm", G_FILE_TEST_IS_DIR)) {
+            g_test_skip("/dev/shm is not supported");
+            return false;
+        }
+        break;
+    default:
+        break;
+    }
+
+    return true;
+}
+
+static void migrate_mem_type_cleanup(MemType type)
+{
+    g_autofree char *shmem_path = NULL;
+
+    switch (type) {
+    case MEM_TYPE_SHMEM:
+
+        /*
+         * Remove shmem file immediately to avoid memory leak in test
+         * failed case.  It's valid because QEMU has already opened this
+         * file
+         */
+        shmem_path = test_shmem_path();
         unlink(shmem_path);
+        break;
+    default:
+        break;
+    }
+}
+
+int migrate_start(QTestState **from, QTestState **to, const char *uri,
+                  MigrateStart *args)
+{
+    g_autofree gchar *cmd_source = NULL;
+    g_autofree gchar *cmd_target = NULL;
+    g_autoptr(QList) capabilities = migrate_start_get_qmp_capabilities(args);
+
+    if (!migrate_mem_type_prepare(args->mem_type)) {
+        return -1;
     }
 
-    /*
-     * Always enable migration events.  Libvirt always uses it, let's try
-     * to mimic as closer as that.
-     */
-    migrate_set_capability(*from, "events", true);
-    if (!args->defer_target_connect) {
-        migrate_set_capability(*to, "events", true);
+    dst_state = (QTestMigrationState) { };
+    src_state = (QTestMigrationState) { };
+    bootfile_create(qtest_get_arch(), tmpfs, args->suspend_me);
+    src_state.suspend_me = args->suspend_me;
+
+    if (migrate_args(&cmd_source, &cmd_target, uri, args)) {
+        return -1;
     }
+
+    if (!args->only_target) {
+        *from = qtest_init_ext(QEMU_ENV_SRC, cmd_source, capabilities, true);
+        qtest_qmp_set_event_callback(*from,
+                                     migrate_watch_for_events,
+                                     &src_state);
+    }
+
+    if (!args->only_source) {
+        *to = qtest_init_ext(QEMU_ENV_DST, cmd_target, capabilities,
+                             !args->defer_target_connect);
+        qtest_qmp_set_event_callback(*to,
+                                     migrate_watch_for_events,
+                                     &dst_state);
+    }
+
+    migrate_mem_type_cleanup(args->mem_type);
+    migrate_start_set_capabilities(*from,
+                                   args->only_source ? NULL : *to,
+                                   args);
 
     return 0;
 }
@@ -432,6 +545,10 @@ static int migrate_postcopy_prepare(QTestState **from_ptr,
 {
     QTestState *from, *to;
 
+    /* set postcopy capabilities */
+    args->start.caps[MIGRATION_CAPABILITY_POSTCOPY_BLOCKTIME] = true;
+    args->start.caps[MIGRATION_CAPABILITY_POSTCOPY_RAM] = true;
+
     if (migrate_start(&from, &to, "defer", &args->start)) {
         return -1;
     }
@@ -440,17 +557,7 @@ static int migrate_postcopy_prepare(QTestState **from_ptr,
         args->postcopy_data = args->start_hook(from, to);
     }
 
-    migrate_set_capability(from, "postcopy-ram", true);
-    migrate_set_capability(to, "postcopy-ram", true);
-    migrate_set_capability(to, "postcopy-blocktime", true);
-
-    if (args->postcopy_preempt) {
-        migrate_set_capability(from, "postcopy-preempt", true);
-        migrate_set_capability(to, "postcopy-preempt", true);
-    }
-
     migrate_ensure_non_converge(from);
-
     migrate_prepare_for_dirty_mem(from);
     qtest_qmp_assert_success(to, "{ 'execute': 'migrate-incoming',"
                              "  'arguments': { "
@@ -704,7 +811,7 @@ void test_postcopy_recovery_common(MigrateCommon *args)
     migrate_postcopy_complete(from, to, args);
 }
 
-void test_precopy_common(MigrateCommon *args)
+int test_precopy_common(MigrateCommon *args)
 {
     QTestState *from, *to;
     void *data_hook = NULL;
@@ -714,7 +821,7 @@ void test_precopy_common(MigrateCommon *args)
     g_assert(!args->cpr_channel || args->connect_channels);
 
     if (migrate_start(&from, &to, args->listen_uri, &args->start)) {
-        return;
+        return -1;
     }
 
     if (args->start_hook) {
@@ -837,6 +944,8 @@ finish:
     }
 
     migrate_end(from, to, args->result == MIG_TEST_SUCCEED);
+
+    return 0;
 }
 
 static void file_dirty_offset_region(void)
@@ -948,14 +1057,8 @@ void *migrate_hook_start_precopy_tcp_multifd_common(QTestState *from,
                                                     QTestState *to,
                                                     const char *method)
 {
-    migrate_set_parameter_int(from, "multifd-channels", 16);
-    migrate_set_parameter_int(to, "multifd-channels", 16);
-
     migrate_set_parameter_str(from, "multifd-compression", method);
     migrate_set_parameter_str(to, "multifd-compression", method);
-
-    migrate_set_capability(from, "multifd", true);
-    migrate_set_capability(to, "multifd", true);
 
     /* Start incoming migration from the 1st socket */
     migrate_incoming_qmp(to, "tcp:127.0.0.1:0", NULL, "{}");
@@ -966,6 +1069,11 @@ void *migrate_hook_start_precopy_tcp_multifd_common(QTestState *from,
 QTestMigrationState *get_src(void)
 {
     return &src_state;
+}
+
+QTestMigrationState *get_dst(void)
+{
+    return &dst_state;
 }
 
 MigrationTestEnv *migration_get_env(void)

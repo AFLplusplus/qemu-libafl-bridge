@@ -73,9 +73,9 @@ typedef struct QDevAlias
 
 /* Please keep this table sorted by typename. */
 static const QDevAlias qdev_alias_table[] = {
-    { "AC97", "ac97" }, /* -soundhw name */
+    { "AC97", "ac97" },
     { "e1000", "e1000-82540em" },
-    { "ES1370", "es1370" }, /* -soundhw name */
+    { "ES1370", "es1370" },
     { "ich9-ahci", "ahci" },
     { "lsi53c895a", "lsi" },
     { "virtio-9p-device", "virtio-9p", QEMU_ARCH_VIRTIO_MMIO },
@@ -621,6 +621,25 @@ const char *qdev_set_id(DeviceState *dev, char *id, Error **errp)
     return prop->name;
 }
 
+BusState *qdev_find_default_bus(DeviceClass *dc, Error **errp)
+{
+    BusState *bus = NULL;
+
+    assert(dc->bus_type != NULL);
+    bus = qbus_find_recursive(sysbus_get_default(), NULL, dc->bus_type);
+    if (!bus) {
+        error_setg(errp, "No '%s' bus found for device '%s'",
+                   dc->bus_type, object_class_get_name(OBJECT_CLASS(dc)));
+        return NULL;
+    }
+    if (qbus_is_full(bus)) {
+        error_setg(errp, "A '%s' bus was found but is full", dc->bus_type);
+        return NULL;
+    }
+
+    return bus;
+}
+
 DeviceState *qdev_device_add_from_qdict(const QDict *opts,
                                         bool from_json, Error **errp)
 {
@@ -628,7 +647,7 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
     DeviceClass *dc;
     const char *driver, *path;
     char *id;
-    DeviceState *dev = NULL;
+    DeviceState *dev;
     BusState *bus = NULL;
     QDict *properties;
 
@@ -657,10 +676,8 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
             return NULL;
         }
     } else if (dc->bus_type != NULL) {
-        bus = qbus_find_recursive(sysbus_get_default(), NULL, dc->bus_type);
-        if (!bus || qbus_is_full(bus)) {
-            error_setg(errp, "No '%s' bus found for device '%s'",
-                       dc->bus_type, driver);
+        bus = qdev_find_default_bus(dc, errp);
+        if (!bus) {
             return NULL;
         }
     }
@@ -717,10 +734,9 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
     return dev;
 
 err_del_dev:
-    if (dev) {
-        object_unparent(OBJECT(dev));
-        object_unref(OBJECT(dev));
-    }
+    object_unparent(OBJECT(dev));
+    object_unref(OBJECT(dev));
+
     return NULL;
 }
 

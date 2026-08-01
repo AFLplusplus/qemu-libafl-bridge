@@ -101,9 +101,9 @@ static void guest_loader_realize(DeviceState *dev, Error **errp)
 
     /* Default to the maximum size being the machine's ram size */
     size = load_image_targphys_as(file, s->addr, current_machine->ram_size,
-                                  NULL);
+                                  NULL, errp);
     if (size < 0) {
-        error_setg(errp, "Cannot load specified image %s", file);
+        error_prepend(errp, "Cannot load specified image %s: ", file);
         return;
     }
 
@@ -118,7 +118,7 @@ static const Property guest_loader_props[] = {
     DEFINE_PROP_STRING("initrd", GuestLoaderState, initrd),
 };
 
-static void guest_loader_class_init(ObjectClass *klass, void *data)
+static void guest_loader_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

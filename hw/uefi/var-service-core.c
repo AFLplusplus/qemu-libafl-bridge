@@ -12,7 +12,7 @@
 #include "hw/uefi/var-service-api.h"
 #include "hw/uefi/var-service-edk2.h"
 
-#include "trace/trace-hw_uefi.h"
+#include "trace.h"
 
 static int uefi_vars_pre_load(void *opaque)
 {
@@ -259,8 +259,8 @@ static void uefi_vars_write(void *opaque, hwaddr addr, uint64_t val, unsigned si
         uv->buf_size = val;
         g_free(uv->buffer);
         g_free(uv->pio_xfer_buffer);
-        uv->buffer = g_malloc(uv->buf_size);
-        uv->pio_xfer_buffer = g_malloc(uv->buf_size);
+        uv->buffer = g_malloc0(uv->buf_size);
+        uv->pio_xfer_buffer = g_malloc0(uv->buf_size);
         break;
     case UEFI_VARS_REG_DMA_BUFFER_ADDR_LO:
         uv->buf_addr_lo = val;

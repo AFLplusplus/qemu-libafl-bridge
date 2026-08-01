@@ -28,6 +28,7 @@
 #include "qapi/error.h"
 #include "qemu/units.h"
 #include "qemu/log.h"
+#include "qemu/bswap.h"
 #include "hw/qdev-properties.h"
 #include "hw/registerfields.h"
 #include "hw/pci/pci_device.h"
@@ -1258,7 +1259,7 @@ static void gt64120_pci_reset_hold(Object *obj, ResetType type)
     pci_set_byte(d->config + 0x3d, 0x01);
 }
 
-static void gt64120_pci_class_init(ObjectClass *klass, void *data)
+static void gt64120_pci_class_init(ObjectClass *klass, const void *data)
 {
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -1282,7 +1283,7 @@ static const TypeInfo gt64120_pci_info = {
     .parent        = TYPE_PCI_DEVICE,
     .instance_size = sizeof(PCIDevice),
     .class_init    = gt64120_pci_class_init,
-    .interfaces = (InterfaceInfo[]) {
+    .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },
     },
@@ -1293,7 +1294,7 @@ static const Property gt64120_properties[] = {
                      cpu_little_endian, false),
 };
 
-static void gt64120_class_init(ObjectClass *klass, void *data)
+static void gt64120_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

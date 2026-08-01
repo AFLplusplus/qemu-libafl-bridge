@@ -24,7 +24,7 @@
 #include "hw/mips/mips.h"
 #include "hw/qdev-clock.h"
 #include "hw/qdev-properties.h"
-#include "system/kvm.h"
+#include "system/tcg.h"
 #include "system/reset.h"
 
 qemu_irq get_cps_irq(MIPSCPSState *s, int pin_number)
@@ -59,7 +59,7 @@ static bool cpu_mips_itu_supported(CPUMIPSState *env)
 {
     bool is_mt = (env->CP0_Config5 & (1 << CP0C5_VP)) || ase_mt_available(env);
 
-    return is_mt && !kvm_enabled();
+    return is_mt && tcg_enabled();
 }
 
 static void mips_cps_realize(DeviceState *dev, Error **errp)
@@ -173,7 +173,7 @@ static const Property mips_cps_properties[] = {
     DEFINE_PROP_BOOL("cpu-big-endian", MIPSCPSState, cpu_is_bigendian, false),
 };
 
-static void mips_cps_class_init(ObjectClass *klass, void *data)
+static void mips_cps_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

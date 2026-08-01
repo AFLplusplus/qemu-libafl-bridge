@@ -19,4 +19,6 @@
 #undef  HELPER_H
 //// --- End LibAFL code ---
 
+#include "accel/tcg/getpc.h"
+
 #endif /* HELPER_PROTO_COMMON_H */

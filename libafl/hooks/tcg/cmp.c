@@ -1,4 +1,8 @@
+#include "qemu/osdep.h"
+
 #include "libafl/tcg.h"
+#include "libafl/cpu.h"
+#include "libafl/hook.h"
 #include "libafl/hooks/tcg/cmp.h"
 
 static struct libafl_cmp_hook* libafl_cmp_hooks;
@@ -38,8 +42,7 @@ size_t libafl_add_cmp_hook(libafl_cmp_gen_cb gen_cb,
                            libafl_cmp_exec4_cb exec4_cb,
                            libafl_cmp_exec8_cb exec8_cb, uint64_t data)
 {
-    CPUState* cpu;
-    CPU_FOREACH(cpu) { tb_flush(cpu); }
+    libafl_flush_jit();
 
     struct libafl_cmp_hook* hook = calloc(sizeof(struct libafl_cmp_hook), 1);
     hook->gen_cb = gen_cb;
@@ -72,7 +75,7 @@ size_t libafl_add_cmp_hook(libafl_cmp_gen_cb gen_cb,
     return hook->num;
 }
 
-void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot)
+void libafl_gen_cmp(vaddr pc, TCGv op0, TCGv op1, MemOp ot)
 {
     size_t size = 0;
     switch (ot & MO_SIZE) {

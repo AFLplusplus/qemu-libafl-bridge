@@ -78,33 +78,27 @@ void cpu_loop(CPUPPCState *env)
     target_ulong ret;
 
 //// --- Begin LibAFL code ---
-
     libafl_exit_signal_vm_start();
-
 //// --- End LibAFL code ---
 
     for(;;) {
         bool arch_interrupt;
 
 //// --- Begin LibAFL code ---
-
         if (libafl_exit_asap()) return;
-
 //// --- End LibAFL code ---
 
         cpu_exec_start(cs);
         trapnr = cpu_exec(cs);
         cpu_exec_end(cs);
-        process_queued_cpu_work(cs);
+        qemu_process_cpu_events(cs);
 
         arch_interrupt = true;
         switch (trapnr) {
 
 //// --- Begin LibAFL code ---
-
         case EXCP_LIBAFL_EXIT:
             return;
-
 //// --- End LibAFL code ---
 
         case POWERPC_EXCP_NONE:
@@ -404,21 +398,31 @@ void cpu_loop(CPUPPCState *env)
     }
 }
 
-void target_cpu_copy_regs(CPUArchState *env, target_pt_regs *regs)
+void init_main_thread(CPUState *cs, struct image_info *info)
 {
-    int i;
+    CPUArchState *env = cpu_env(cs);
+    abi_ptr entry = info->entry;
 
-#if defined(TARGET_PPC64)
+    env->gpr[1] = info->start_stack;
+
+#ifdef TARGET_PPC64
+    if (get_ppc64_abi(info) < 2) {
+        uint64_t val;
+        get_user_u64(val, entry + 8);
+        env->gpr[2] = val + info->load_bias;
+        get_user_u64(val, entry);
+        entry = val + info->load_bias;
+    } else {
+        env->gpr[12] = entry;  /* r12 set to global entry address */
+    }
+
     int flag = (env->insns_flags2 & PPC2_BOOKE206) ? MSR_CM : MSR_SF;
 #if defined(TARGET_ABI32)
     ppc_store_msr(env, env->msr & ~((target_ulong)1 << flag));
 #else
     ppc_store_msr(env, env->msr | (target_ulong)1 << flag);
 #endif
-#endif
+#endif /* TARGET_PPC64 */
 
-    env->nip = regs->nip;
-    for(i = 0; i < 32; i++) {
-        env->gpr[i] = regs->gpr[i];
-    }
+    env->nip = entry;
 }

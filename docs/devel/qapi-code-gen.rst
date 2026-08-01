@@ -646,9 +646,9 @@ Member 'event' names the event.  This is the event name used in the
 Client JSON Protocol.
 
 Member 'data' defines the event-specific data.  It defaults to an
-empty MEMBERS object.
+empty MEMBERS_ object.
 
-If 'data' is a MEMBERS object, then MEMBERS defines event-specific
+If 'data' is a MEMBERS_ object, then MEMBERS defines event-specific
 data just like a struct type's 'data' defines struct type members.
 
 If 'data' is a STRING, then STRING names a complex type whose members
@@ -786,8 +786,8 @@ Configuring the schema
 Syntax::
 
     COND = STRING
-         | { 'all: [ COND, ... ] }
-         | { 'any: [ COND, ... ] }
+         | { 'all': [ COND, ... ] }
+         | { 'any': [ COND, ... ] }
          | { 'not': COND }
 
 All definitions take an optional 'if' member.  Its value must be a
@@ -876,25 +876,35 @@ structuring content.
 Headings and subheadings
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-A free-form documentation comment containing a line which starts with
-some ``=`` symbols and then a space defines a section heading::
+Free-form documentation does not start with ``@SYMBOL`` and can contain
+arbitrary rST markup. Headings can be marked up using the standard rST
+syntax::
 
     ##
-    # = This is a top level heading
+    # *************************
+    # This is a level 2 heading
+    # *************************
     #
     # This is a free-form comment which will go under the
     # top level heading.
     ##
 
     ##
-    # == This is a second level heading
+    # This is a third level heading
+    # ==============================
+    #
+    # Level 4
+    # _______
+    #
+    # Level 5
+    # ^^^^^^^
+    #
+    # Level 6
+    # """""""
     ##
 
-A heading line must be the first line of the documentation
-comment block.
-
-Section headings must always be correctly nested, so you can only
-define a third-level heading inside a second-level heading, and so on.
+Level 1 headings are reserved for use by the generated documentation
+page itself, leaving level 2 as the highest level that should be used.
 
 
 Documentation markup
@@ -933,9 +943,14 @@ The usual ****strong****, *\*emphasized\** and ````literal```` markup
 should be used.  If you need a single literal ``*``, you will need to
 backslash-escape it.
 
-Use ``@foo`` to reference a name in the schema.  This is an rST
-extension.  It is rendered the same way as ````foo````, but carries
-additional meaning.
+Use ```foo``` to reference a definition in the schema.  This generates
+a link to the definition.  In the event that such a cross-reference is
+ambiguous, you can use `QAPI cross-reference roles
+<QAPI-domain-cross-references>` to disambiguate.
+
+Use @foo to reference a member description within the current
+definition.  This is an rST extension.  It is currently rendered the
+same way as ````foo````, but carries additional meaning.
 
 Example::
 
@@ -1794,27 +1809,13 @@ Example::
     $ cat qapi-generated/example-qapi-commands.c
     [Uninteresting stuff omitted...]
 
-    static void qmp_marshal_output_UserDefOne(UserDefOne *ret_in,
-                                    QObject **ret_out, Error **errp)
-    {
-        Visitor *v;
-
-        v = qobject_output_visitor_new_qmp(ret_out);
-        if (visit_type_UserDefOne(v, "unused", &ret_in, errp)) {
-            visit_complete(v, ret_out);
-        }
-        visit_free(v);
-        v = qapi_dealloc_visitor_new();
-        visit_type_UserDefOne(v, "unused", &ret_in, NULL);
-        visit_free(v);
-    }
-
     void qmp_marshal_my_command(QDict *args, QObject **ret, Error **errp)
     {
         Error *err = NULL;
         bool ok = false;
         Visitor *v;
         UserDefOne *retval;
+        Visitor *ov;
         q_obj_my_command_arg arg = {0};
 
         v = qobject_input_visitor_new_qmp(QOBJECT(args));
@@ -1842,7 +1843,14 @@ Example::
             goto out;
         }
 
-        qmp_marshal_output_UserDefOne(retval, ret, errp);
+        ov = qobject_output_visitor_new_qmp(ret);
+        if (visit_type_UserDefOne(ov, "unused", &retval, errp)) {
+            visit_complete(ov, ret);
+        }
+        visit_free(ov);
+        ov = qapi_dealloc_visitor_new();
+        visit_type_UserDefOne(ov, "unused", &retval, NULL);
+        visit_free(ov);
 
         if (trace_event_get_state_backends(TRACE_QMP_EXIT_MY_COMMAND)) {
             g_autoptr(GString) ret_json = qobject_to_json(*ret);

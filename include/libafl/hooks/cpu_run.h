@@ -2,13 +2,7 @@
 
 #include "qemu/osdep.h"
 
-#include "qapi/error.h"
-
-#include "exec/exec-all.h"
-#include "exec/tb-flush.h"
-
 #include "libafl/exit.h"
-#include "libafl/hook.h"
 
 typedef void (*libafl_cpu_run_fn)(uint64_t data, CPUState* cpu);
 

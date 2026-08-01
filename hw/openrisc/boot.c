@@ -9,6 +9,7 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "exec/cpu-defs.h"
+#include "exec/target_page.h"
 #include "elf.h"
 #include "hw/loader.h"
 #include "hw/openrisc/boot.h"
@@ -43,7 +44,8 @@ hwaddr openrisc_load_kernel(ram_addr_t ram_size,
         if (kernel_size < 0) {
             kernel_size = load_image_targphys(kernel_filename,
                                               KERNEL_LOAD_ADDR,
-                                              ram_size - KERNEL_LOAD_ADDR);
+                                              ram_size - KERNEL_LOAD_ADDR,
+                                              NULL);
             high_addr = KERNEL_LOAD_ADDR + kernel_size;
         }
 
@@ -73,7 +75,7 @@ hwaddr openrisc_load_initrd(void *fdt, const char *filename,
 
     size = load_ramdisk(filename, start, mem_size - start);
     if (size < 0) {
-        size = load_image_targphys(filename, start, mem_size - start);
+        size = load_image_targphys(filename, start, mem_size - start, NULL);
         if (size < 0) {
             error_report("could not load ramdisk '%s'", filename);
             exit(1);

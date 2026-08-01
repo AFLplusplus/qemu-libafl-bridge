@@ -18,6 +18,7 @@
 
 #include "qemu/osdep.h"
 #include "qom/object.h"
+#include "exec/target_page.h"
 #include "hw/pci/pci_bus.h"
 #include "hw/pci/pci_device.h"
 #include "hw/qdev-properties.h"
@@ -25,6 +26,8 @@
 #include "migration/vmstate.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
+#include "qemu/target-info.h"
+#include "qemu/bitops.h"
 
 #include "cpu_bits.h"
 #include "riscv-iommu.h"
@@ -390,9 +393,9 @@ static int riscv_iommu_spa_fetch(RISCVIOMMUState *s, RISCVIOMMUContext *ctx,
             const uint64_t va_mask = (1ULL << va_len) - 1;
 
             if (pass == S_STAGE && va_len > 32) {
-                target_ulong mask, masked_msbs;
+                uint64_t mask, masked_msbs;
 
-                mask = (1L << (TARGET_LONG_BITS - (va_len - 1))) - 1;
+                mask = MAKE_64BIT_MASK(0, target_long_bits() - va_len + 1);
                 masked_msbs = (addr >> (va_len - 1)) & mask;
 
                 if (masked_msbs != 0 && masked_msbs != mask) {
@@ -557,6 +560,7 @@ static MemTxResult riscv_iommu_msi_write(RISCVIOMMUState *s,
     MemTxResult res;
     dma_addr_t addr;
     uint64_t intn;
+    size_t offset;
     uint32_t n190;
     uint64_t pte[2];
     int fault_type = RISCV_IOMMU_FQ_TTYPE_UADDR_WR;
@@ -564,16 +568,18 @@ static MemTxResult riscv_iommu_msi_write(RISCVIOMMUState *s,
 
     /* Interrupt File Number */
     intn = riscv_iommu_pext_u64(PPN_DOWN(gpa), ctx->msi_addr_mask);
-    if (intn >= 256) {
+    offset = intn * sizeof(pte);
+
+    /* fetch MSI PTE */
+    addr = PPN_PHYS(get_field(ctx->msiptp, RISCV_IOMMU_DC_MSIPTP_PPN));
+    if (addr & offset) {
         /* Interrupt file number out of range */
         res = MEMTX_ACCESS_ERROR;
         cause = RISCV_IOMMU_FQ_CAUSE_MSI_LOAD_FAULT;
         goto err;
     }
 
-    /* fetch MSI PTE */
-    addr = PPN_PHYS(get_field(ctx->msiptp, RISCV_IOMMU_DC_MSIPTP_PPN));
-    addr = addr | (intn * sizeof(pte));
+    addr |= offset;
     res = dma_memory_read(s->target_as, addr, &pte, sizeof(pte),
             MEMTXATTRS_UNSPECIFIED);
     if (res != MEMTX_OK) {
@@ -865,6 +871,145 @@ static bool riscv_iommu_validate_process_ctx(RISCVIOMMUState *s,
     return true;
 }
 
+/**
+ * pdt_memory_read: PDT wrapper of dma_memory_read.
+ *
+ * @s: IOMMU Device State
+ * @ctx: Device Translation Context with devid and pasid set
+ * @addr: address within that address space
+ * @buf: buffer with the data transferred
+ * @len: length of the data transferred
+ * @attrs: memory transaction attributes
+ */
+static MemTxResult pdt_memory_read(RISCVIOMMUState *s,
+                                   RISCVIOMMUContext *ctx,
+                                   dma_addr_t addr,
+                                   void *buf, dma_addr_t len,
+                                   MemTxAttrs attrs)
+{
+    uint64_t gatp_mode, pte;
+    struct {
+        unsigned char step;
+        unsigned char levels;
+        unsigned char ptidxbits;
+        unsigned char ptesize;
+    } sc;
+    MemTxResult ret;
+    dma_addr_t base = addr;
+
+    /* G stages translation mode */
+    gatp_mode = get_field(ctx->gatp, RISCV_IOMMU_ATP_MODE_FIELD);
+    if (gatp_mode == RISCV_IOMMU_DC_IOHGATP_MODE_BARE) {
+        goto out;
+    }
+
+    /* G stages translation tables root pointer */
+    base = PPN_PHYS(get_field(ctx->gatp, RISCV_IOMMU_ATP_PPN_FIELD));
+
+    /* Start at step 0 */
+    sc.step = 0;
+
+    if (s->fctl & RISCV_IOMMU_FCTL_GXL) {
+        /* 32bit mode for GXL == 1 */
+        switch (gatp_mode) {
+        case RISCV_IOMMU_DC_IOHGATP_MODE_SV32X4:
+            if (!(s->cap & RISCV_IOMMU_CAP_SV32X4)) {
+                return MEMTX_ACCESS_ERROR;
+            }
+            sc.levels    = 2;
+            sc.ptidxbits = 10;
+            sc.ptesize   = 4;
+            break;
+        default:
+            return MEMTX_ACCESS_ERROR;
+        }
+    } else {
+        /* 64bit mode for GXL == 0 */
+        switch (gatp_mode) {
+        case RISCV_IOMMU_DC_IOHGATP_MODE_SV39X4:
+            if (!(s->cap & RISCV_IOMMU_CAP_SV39X4)) {
+                return MEMTX_ACCESS_ERROR;
+            }
+            sc.levels    = 3;
+            sc.ptidxbits = 9;
+            sc.ptesize   = 8;
+            break;
+        case RISCV_IOMMU_DC_IOHGATP_MODE_SV48X4:
+            if (!(s->cap & RISCV_IOMMU_CAP_SV48X4)) {
+                return MEMTX_ACCESS_ERROR;
+            }
+            sc.levels    = 4;
+            sc.ptidxbits = 9;
+            sc.ptesize   = 8;
+            break;
+        case RISCV_IOMMU_DC_IOHGATP_MODE_SV57X4:
+            if (!(s->cap & RISCV_IOMMU_CAP_SV57X4)) {
+                return MEMTX_ACCESS_ERROR;
+            }
+            sc.levels    = 5;
+            sc.ptidxbits = 9;
+            sc.ptesize   = 8;
+            break;
+        default:
+            return MEMTX_ACCESS_ERROR;
+        }
+    }
+
+    do {
+        const unsigned va_bits = (sc.step ? 0 : 2) + sc.ptidxbits;
+        const unsigned va_skip = TARGET_PAGE_BITS + sc.ptidxbits *
+                                 (sc.levels - 1 - sc.step);
+        const unsigned idx = (addr >> va_skip) & ((1 << va_bits) - 1);
+        const dma_addr_t pte_addr = base + idx * sc.ptesize;
+
+        /* Address range check before first level lookup */
+        if (!sc.step) {
+            const uint64_t va_mask = (1ULL << (va_skip + va_bits)) - 1;
+            if ((addr & va_mask) != addr) {
+                return MEMTX_ACCESS_ERROR;
+            }
+        }
+
+        /* Read page table entry */
+        if (sc.ptesize == 4) {
+            uint32_t pte32 = 0;
+            ret = ldl_le_dma(s->target_as, pte_addr, &pte32, attrs);
+            pte = pte32;
+        } else {
+            ret = ldq_le_dma(s->target_as, pte_addr, &pte, attrs);
+        }
+        if (ret != MEMTX_OK) {
+            return ret;
+        }
+
+        sc.step++;
+        hwaddr ppn = pte >> PTE_PPN_SHIFT;
+
+        if (!(pte & PTE_V)) {
+            return MEMTX_ACCESS_ERROR; /* Invalid PTE */
+        } else if (!(pte & (PTE_R | PTE_W | PTE_X))) {
+            base = PPN_PHYS(ppn); /* Inner PTE, continue walking */
+        } else if ((pte & (PTE_R | PTE_W | PTE_X)) == PTE_W) {
+            return MEMTX_ACCESS_ERROR; /* Reserved leaf PTE flags: PTE_W */
+        } else if ((pte & (PTE_R | PTE_W | PTE_X)) == (PTE_W | PTE_X)) {
+            return MEMTX_ACCESS_ERROR; /* Reserved leaf PTE flags: PTE_W + PTE_X */
+        } else if (ppn & ((1ULL << (va_skip - TARGET_PAGE_BITS)) - 1)) {
+            return MEMTX_ACCESS_ERROR; /* Misaligned PPN */
+        } else {
+            /* Leaf PTE, translation completed. */
+            base = PPN_PHYS(ppn) | (addr & ((1ULL << va_skip) - 1));
+            break;
+        }
+
+        if (sc.step == sc.levels) {
+            return MEMTX_ACCESS_ERROR; /* Can't find leaf PTE */
+        }
+    } while (1);
+
+out:
+    return dma_memory_read(s->target_as, base, buf, len, attrs);
+}
+
 /*
  * RISC-V IOMMU Device Context Loopkup - Device Directory Tree Walk
  *
@@ -1037,7 +1182,7 @@ static int riscv_iommu_ctx_fetch(RISCVIOMMUState *s, RISCVIOMMUContext *ctx)
          */
         const int split = depth * 9 + 8;
         addr |= ((ctx->process_id >> split) << 3) & ~TARGET_PAGE_MASK;
-        if (dma_memory_read(s->target_as, addr, &de, sizeof(de),
+        if (pdt_memory_read(s, ctx, addr, &de, sizeof(de),
                             MEMTXATTRS_UNSPECIFIED) != MEMTX_OK) {
             return RISCV_IOMMU_FQ_CAUSE_PDT_LOAD_FAULT;
         }
@@ -1052,7 +1197,7 @@ static int riscv_iommu_ctx_fetch(RISCVIOMMUState *s, RISCVIOMMUContext *ctx)
 
     /* Leaf entry in PDT */
     addr |= (ctx->process_id << 4) & ~TARGET_PAGE_MASK;
-    if (dma_memory_read(s->target_as, addr, &dc.ta, sizeof(uint64_t) * 2,
+    if (pdt_memory_read(s, ctx, addr, &dc.ta, sizeof(uint64_t) * 2,
                         MEMTXATTRS_UNSPECIFIED) != MEMTX_OK) {
         return RISCV_IOMMU_FQ_CAUSE_PDT_LOAD_FAULT;
     }
@@ -1934,11 +2079,7 @@ static void riscv_iommu_process_dbg(RISCVIOMMUState *s)
             iova = RISCV_IOMMU_TR_RESPONSE_FAULT | (((uint64_t) fault) << 10);
         } else {
             iova = iotlb.translated_addr & ~iotlb.addr_mask;
-            iova >>= TARGET_PAGE_BITS;
-            iova &= RISCV_IOMMU_TR_RESPONSE_PPN;
-
-            /* We do not support superpages (> 4kbs) for now */
-            iova &= ~RISCV_IOMMU_TR_RESPONSE_S;
+            iova = set_field(0, RISCV_IOMMU_TR_RESPONSE_PPN, PPN_DOWN(iova));
         }
         riscv_iommu_reg_set64(s, RISCV_IOMMU_REG_TR_RESPONSE, iova);
     }
@@ -2354,7 +2495,8 @@ static void riscv_iommu_realize(DeviceState *dev, Error **errp)
     }
     if (s->enable_g_stage) {
         s->cap |= RISCV_IOMMU_CAP_SV32X4 | RISCV_IOMMU_CAP_SV39X4 |
-                  RISCV_IOMMU_CAP_SV48X4 | RISCV_IOMMU_CAP_SV57X4;
+                  RISCV_IOMMU_CAP_SV48X4 | RISCV_IOMMU_CAP_SV57X4 |
+                  RISCV_IOMMU_CAP_SVRSW60T59B;
     }
 
     if (s->hpm_cntrs > 0) {
@@ -2512,7 +2654,7 @@ static const Property riscv_iommu_properties[] = {
                       RISCV_IOMMU_IOCOUNT_NUM),
 };
 
-static void riscv_iommu_class_init(ObjectClass *klass, void* data)
+static void riscv_iommu_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -2653,7 +2795,7 @@ static int riscv_iommu_memory_region_index_len(IOMMUMemoryRegion *iommu_mr)
     return 1 << as->iommu->pid_bits;
 }
 
-static void riscv_iommu_memory_region_init(ObjectClass *klass, void *data)
+static void riscv_iommu_memory_region_init(ObjectClass *klass, const void *data)
 {
     IOMMUMemoryRegionClass *imrc = IOMMU_MEMORY_REGION_CLASS(klass);
 

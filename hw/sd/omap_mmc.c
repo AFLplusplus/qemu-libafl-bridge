@@ -130,7 +130,8 @@ static void omap_mmc_command(OMAPMMCState *host, int cmd, int dir,
                              sd_rsp_type_t resptype, int init)
 {
     uint32_t rspstatus, mask;
-    int rsplen, timeout;
+    size_t rsplen;
+    int timeout;
     SDRequest request;
     uint8_t response[16];
 
@@ -157,7 +158,7 @@ static void omap_mmc_command(OMAPMMCState *host, int cmd, int dir,
     request.arg = host->arg;
     request.crc = 0; /* FIXME */
 
-    rsplen = sdbus_do_command(&host->sdbus, &request, response);
+    rsplen = sdbus_do_command(&host->sdbus, &request, response, sizeof(response));
 
     /* TODO: validate CRCs */
     switch (resptype) {
@@ -612,7 +613,7 @@ static void omap_mmc_initfn(Object *obj)
     qbus_init(&s->sdbus, sizeof(s->sdbus), TYPE_SD_BUS, DEVICE(obj), "sd-bus");
 }
 
-static void omap_mmc_class_init(ObjectClass *oc, void *data)
+static void omap_mmc_class_init(ObjectClass *oc, const void *data)
 {
     ResettableClass *rc = RESETTABLE_CLASS(oc);
 

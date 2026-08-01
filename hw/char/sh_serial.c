@@ -67,7 +67,7 @@ struct SHSerialState {
     int flags;
     int rtrg;
 
-    CharBackend chr;
+    CharFrontend chr;
     QEMUTimer fifo_timeout_timer;
     uint64_t etu; /* Elementary Time Unit (ns) */
 
@@ -77,10 +77,6 @@ struct SHSerialState {
     qemu_irq tei;
     qemu_irq bri;
 };
-
-typedef struct {} SHSerialStateClass;
-
-OBJECT_DEFINE_TYPE(SHSerialState, sh_serial, SH_SERIAL, SYS_BUS_DEVICE)
 
 static void sh_serial_clear_fifo(SHSerialState *s)
 {
@@ -434,15 +430,11 @@ static void sh_serial_realize(DeviceState *d, Error **errp)
     s->etu = NANOSECONDS_PER_SECOND / 9600;
 }
 
-static void sh_serial_finalize(Object *obj)
+static void sh_serial_unrealize(DeviceState *dev)
 {
-    SHSerialState *s = SH_SERIAL(obj);
+    SHSerialState *s = SH_SERIAL(dev);
 
     timer_del(&s->fifo_timeout_timer);
-}
-
-static void sh_serial_init(Object *obj)
-{
 }
 
 static const Property sh_serial_properties[] = {
@@ -450,13 +442,25 @@ static const Property sh_serial_properties[] = {
     DEFINE_PROP_UINT8("features", SHSerialState, feat, 0),
 };
 
-static void sh_serial_class_init(ObjectClass *oc, void *data)
+static void sh_serial_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
     device_class_set_props(dc, sh_serial_properties);
     dc->realize = sh_serial_realize;
+    dc->unrealize = sh_serial_unrealize;
     device_class_set_legacy_reset(dc, sh_serial_reset);
     /* Reason: part of SuperH CPU/SoC, needs to be wired up */
     dc->user_creatable = false;
 }
+
+static const TypeInfo sh_serial_types[] = {
+    {
+        .name           = TYPE_SH_SERIAL,
+        .parent         = TYPE_SYS_BUS_DEVICE,
+        .instance_size  = sizeof(SHSerialState),
+        .class_init     = sh_serial_class_init,
+    },
+};
+
+DEFINE_TYPES(sh_serial_types)

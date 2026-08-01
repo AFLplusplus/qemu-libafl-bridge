@@ -1,7 +1,10 @@
-#include "libafl/tcg.h"
-#include "libafl/hooks/tcg/instruction.h"
+#include "qemu/osdep.h"
+#include "cpu.h"
+#include "tcg/tcg-op.h"
 
+#include "libafl/tcg.h"
 #include "libafl/cpu.h"
+#include "libafl/hooks/tcg/instruction.h"
 
 static TCGHelperInfo libafl_instruction_info = {
     .func = NULL,
@@ -10,13 +13,13 @@ static TCGHelperInfo libafl_instruction_info = {
     .typemask = dh_typemask(void, 0) | dh_typemask(i64, 1) | dh_typemask(tl, 2),
 };
 
-tcg_target_ulong libafl_gen_cur_pc;
+vaddr libafl_gen_cur_pc;
 
 static struct libafl_instruction_hook*
     libafl_qemu_instruction_hooks[LIBAFL_TABLES_SIZE];
 static size_t libafl_qemu_hooks_num = 0;
 
-size_t libafl_qemu_add_instruction_hooks(target_ulong pc,
+size_t libafl_qemu_add_instruction_hooks(vaddr pc,
                                          libafl_instruction_cb exec_cb,
                                          uint64_t data, int invalidate)
 {
@@ -41,7 +44,7 @@ size_t libafl_qemu_add_instruction_hooks(target_ulong pc,
     return hk->num;
 }
 
-size_t libafl_qemu_remove_instruction_hooks_at(target_ulong addr,
+size_t libafl_qemu_remove_instruction_hooks_at(vaddr addr,
                                                int invalidate)
 {
     CPUState* cpu;
@@ -96,7 +99,7 @@ int libafl_qemu_remove_instruction_hook(size_t num, int invalidate)
 }
 
 struct libafl_instruction_hook*
-libafl_search_instruction_hook(target_ulong addr)
+libafl_search_instruction_hook(vaddr addr)
 {
     size_t idx = LIBAFL_TABLES_HASH(addr);
 

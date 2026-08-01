@@ -42,10 +42,10 @@ size_t libafl_add_post_syscall_hook(
     return hook->num;
 }
 
-bool libafl_hook_syscall_pre_run(CPUArchState* env, int num, abi_long arg1,
-                                 abi_long arg2, abi_long arg3, abi_long arg4,
-                                 abi_long arg5, abi_long arg6, abi_long arg7,
-                                 abi_long arg8, abi_long* ret)
+bool libafl_hook_syscall_pre_run(CPUArchState* env, int* num, abi_long* arg1,
+                                 abi_long* arg2, abi_long* arg3, abi_long* arg4,
+                                 abi_long* arg5, abi_long* arg6, abi_long* arg7,
+                                 abi_long* arg8, abi_long* ret)
 {
     bool skip_syscall = false;
 
@@ -53,9 +53,9 @@ bool libafl_hook_syscall_pre_run(CPUArchState* env, int num, abi_long arg1,
     while (h) {
         // no null check
         struct libafl_syshook_ret hook_ret = h->callback(
-            h->data, num, (target_ulong)arg1, (target_ulong)arg2,
-            (target_ulong)arg3, (target_ulong)arg4, (target_ulong)arg5,
-            (target_ulong)arg6, (target_ulong)arg7, (target_ulong)arg8);
+            h->data, num, (target_ulong*) arg1, (target_ulong*) arg2,
+            (target_ulong*) arg3, (target_ulong*) arg4, (target_ulong*) arg5,
+            (target_ulong*) arg6, (target_ulong*) arg7, (target_ulong*) arg8);
 
         if (hook_ret.tag == LIBAFL_SYSHOOK_SKIP) {
             skip_syscall = true;

@@ -27,6 +27,7 @@
 #include "hw/display/bcm2835_fb.h"
 #include "hw/hw.h"
 #include "hw/irq.h"
+#include "ui/console.h"
 #include "framebuffer.h"
 #include "ui/pixel_ops.h"
 #include "hw/misc/bcm2835_mbox_defs.h"
@@ -442,7 +443,7 @@ static const Property bcm2835_fb_props[] = {
                        initial_config.alpha, 2), /* alpha ignored */
 };
 
-static void bcm2835_fb_class_init(ObjectClass *klass, void *data)
+static void bcm2835_fb_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

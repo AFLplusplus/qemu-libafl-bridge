@@ -21,21 +21,22 @@
 #include "qemu/log.h"
 #include "cpu.h"
 #include "internals.h"
-#include "exec/exec-all.h"
+#include "exec/target_page.h"
 #include "exec/page-protection.h"
 #ifdef CONFIG_USER_ONLY
 #include "user/cpu_loop.h"
 #include "user/page-protection.h"
 #else
-#include "exec/ram_addr.h"
+#include "system/physmem.h"
 #endif
-#include "exec/cpu_ldst.h"
+#include "accel/tcg/cpu-ldst.h"
+#include "accel/tcg/probe.h"
 #include "exec/helper-proto.h"
+#include "exec/tlb-flags.h"
 #include "accel/tcg/cpu-ops.h"
 #include "qapi/error.h"
 #include "qemu/guest-random.h"
 #include "mte_helper.h"
-
 
 static int choose_nonexcluded_tag(int tag, int offset, uint16_t exclude)
 {
@@ -62,6 +63,7 @@ uint8_t *allocation_tag_mem_probe(CPUARMState *env, int ptr_mmu_idx,
                                   bool probe, uintptr_t ra)
 {
 #ifdef CONFIG_USER_ONLY
+    const size_t page_data_size = TARGET_PAGE_SIZE >> (LOG2_TAG_GRANULE + 1);
     uint64_t clean_ptr = useronly_clean_ptr(ptr);
     int flags = page_get_flags(clean_ptr);
     uint8_t *tags;
@@ -82,7 +84,7 @@ uint8_t *allocation_tag_mem_probe(CPUARMState *env, int ptr_mmu_idx,
         return NULL;
     }
 
-    tags = page_get_target_data(clean_ptr);
+    tags = page_get_target_data(clean_ptr, page_data_size);
 
     index = extract32(ptr, LOG2_TAG_GRANULE + 1,
                       TARGET_PAGE_BITS - LOG2_TAG_GRANULE - 1);
@@ -187,7 +189,7 @@ uint8_t *allocation_tag_mem_probe(CPUARMState *env, int ptr_mmu_idx,
      */
     if (tag_access == MMU_DATA_STORE) {
         ram_addr_t tag_ra = memory_region_get_ram_addr(mr) + xlat;
-        cpu_physical_memory_set_dirty_flag(tag_ra, DIRTY_MEMORY_MIGRATION);
+        physical_memory_set_dirty_flag(tag_ra, DIRTY_MEMORY_MIGRATION);
     }
 
     return memory_region_get_ram_ptr(mr) + xlat;
@@ -590,7 +592,7 @@ static void mte_async_check_fail(CPUARMState *env, uint64_t dirty_ptr,
      * which is rather sooner than "normal".  But the alternative
      * is waiting until the next syscall.
      */
-    qemu_cpu_kick(env_cpu(env));
+    cpu_exit(env_cpu(env));
 #endif
 }
 
@@ -603,7 +605,7 @@ void mte_check_fail(CPUARMState *env, uint32_t desc,
     int el, reg_el, tcf;
     uint64_t sctlr;
 
-    reg_el = regime_el(env, arm_mmu_idx);
+    reg_el = regime_el(arm_mmu_idx);
     sctlr = env->cp15.sctlr_el[reg_el];
 
     switch (arm_mmu_idx) {

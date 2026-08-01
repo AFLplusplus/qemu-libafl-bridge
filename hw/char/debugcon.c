@@ -40,7 +40,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(ISADebugconState, ISA_DEBUGCON_DEVICE)
 
 typedef struct DebugconState {
     MemoryRegion io;
-    CharBackend chr;
+    CharFrontend chr;
     uint32_t readback;
 } DebugconState;
 
@@ -120,7 +120,7 @@ static const Property debugcon_isa_properties[] = {
     DEFINE_PROP_UINT32("readback", ISADebugconState, state.readback, 0xe9),
 };
 
-static void debugcon_isa_class_initfn(ObjectClass *klass, void *data)
+static void debugcon_isa_class_initfn(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

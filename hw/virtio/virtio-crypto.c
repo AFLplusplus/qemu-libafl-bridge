@@ -1197,11 +1197,12 @@ static void virtio_crypto_vhost_status(VirtIOCrypto *c, uint8_t status)
     }
 }
 
-static void virtio_crypto_set_status(VirtIODevice *vdev, uint8_t status)
+static int virtio_crypto_set_status(VirtIODevice *vdev, uint8_t status)
 {
     VirtIOCrypto *vcrypto = VIRTIO_CRYPTO(vdev);
 
     virtio_crypto_vhost_status(vcrypto, status);
+    return 0;
 }
 
 static void virtio_crypto_guest_notifier_mask(VirtIODevice *vdev, int idx,
@@ -1264,7 +1265,7 @@ static struct vhost_dev *virtio_crypto_get_vhost(VirtIODevice *vdev)
     return &vhost_crypto->dev;
 }
 
-static void virtio_crypto_class_init(ObjectClass *klass, void *data)
+static void virtio_crypto_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     VirtioDeviceClass *vdc = VIRTIO_DEVICE_CLASS(klass);

@@ -29,9 +29,7 @@
 #include "migration/misc.h"
 
 //// --- Begin LibAFL code ---
-#ifdef CONFIG_SOFTMMU
 #include "libafl/syx-snapshot/syx-snapshot.h"
-#endif
 //// --- End LibAFL code ---
 
 /* Number of coroutines to reserve per attached device model */
@@ -145,9 +143,9 @@ static void blk_root_drained_end(BdrvChild *child);
 static void blk_root_change_media(BdrvChild *child, bool load);
 static void blk_root_resize(BdrvChild *child);
 
-static bool blk_root_change_aio_ctx(BdrvChild *child, AioContext *ctx,
-                                    GHashTable *visited, Transaction *tran,
-                                    Error **errp);
+static bool GRAPH_RDLOCK
+blk_root_change_aio_ctx(BdrvChild *child, AioContext *ctx, GHashTable *visited,
+                        Transaction *tran, Error **errp);
 
 static char *blk_root_get_parent_desc(BdrvChild *child)
 {
@@ -935,7 +933,7 @@ void blk_remove_bs(BlockBackend *blk)
     root = blk->root;
     blk->root = NULL;
 
-    bdrv_graph_wrlock();
+    bdrv_graph_wrlock_drained();
     bdrv_root_unref_child(root);
     bdrv_graph_wrunlock();
 }
@@ -950,7 +948,7 @@ int blk_insert_bs(BlockBackend *blk, BlockDriverState *bs, Error **errp)
 
     GLOBAL_STATE_CODE();
     bdrv_ref(bs);
-    bdrv_graph_wrlock();
+    bdrv_graph_wrlock_drained();
 
     if ((bs->open_flags & BDRV_O_INACTIVE) && blk_can_inactivate(blk)) {
         blk->disable_perm = true;
@@ -1364,9 +1362,9 @@ static void coroutine_fn blk_wait_while_drained(BlockBackend *blk)
          * section.
          */
         qemu_mutex_lock(&blk->queued_requests_lock);
+        /* blk_root_drained_end() has the corresponding blk_inc_in_flight() */
         blk_dec_in_flight(blk);
         qemu_co_queue_wait(&blk->queued_requests, &blk->queued_requests_lock);
-        blk_inc_in_flight(blk);
         qemu_mutex_unlock(&blk->queued_requests_lock);
     }
 }
@@ -1664,18 +1662,14 @@ static void coroutine_fn blk_aio_read_entry(void *opaque)
     assert(qiov->size == acb->bytes);
 
 //// --- Begin LibAFL code ---
-#ifdef CONFIG_SOFTMMU
     if (!syx_snapshot_cow_cache_read_entry(rwco->blk, rwco->offset, acb->bytes, qiov, 0, rwco->flags)) {
-#endif
 //// --- End LibAFL code ---
        rwco->ret = blk_co_do_preadv_part(rwco->blk, rwco->offset, acb->bytes, qiov,
                                       0, rwco->flags);
 //// --- Begin LibAFL code ---
-#ifdef CONFIG_SOFTMMU
     } else {
        rwco->ret = 0;
     }
-#endif
 //// --- End LibAFL code ---
 
     blk_aio_complete(acb);
@@ -1690,17 +1684,13 @@ static void coroutine_fn blk_aio_write_entry(void *opaque)
     assert(!qiov || qiov->size == acb->bytes);
 
 //// --- Begin LibAFL code ---
-#ifdef CONFIG_SOFTMMU
    if (!syx_snapshot_cow_cache_write_entry(rwco->blk, rwco->offset, acb->bytes, qiov, 0, rwco->flags)) {
-#endif
 //// --- End LibAFL code ---
         rwco->ret = blk_co_do_pwritev_part(rwco->blk, rwco->offset, acb->bytes, qiov, 0, rwco->flags);
 //// --- Begin LibAFL code ---
-#ifdef CONFIG_SOFTMMU
    } else {
        rwco->ret = 0;
    }
-#endif
 //// --- End LibAFL code ---
 
     blk_aio_complete(acb);
@@ -2378,6 +2368,17 @@ uint32_t blk_get_request_alignment(BlockBackend *blk)
     return bs ? bs->bl.request_alignment : BDRV_SECTOR_SIZE;
 }
 
+/* Returns the optimal write zeroes alignment, in bytes; guaranteed nonzero */
+uint32_t blk_get_pwrite_zeroes_alignment(BlockBackend *blk)
+{
+    BlockDriverState *bs = blk_bs(blk);
+    IO_CODE();
+    if (!bs) {
+        return BDRV_SECTOR_SIZE;
+    }
+    return bs->bl.pwrite_zeroes_alignment ?: bs->bl.request_alignment;
+}
+
 /* Returns the maximum hardware transfer length, in bytes; guaranteed nonzero */
 uint64_t blk_get_max_hw_transfer(BlockBackend *blk)
 {
@@ -2840,9 +2841,11 @@ static void blk_root_drained_end(BdrvChild *child)
             blk->dev_ops->drained_end(blk->dev_opaque);
         }
         qemu_mutex_lock(&blk->queued_requests_lock);
-        while (qemu_co_enter_next(&blk->queued_requests,
-                                  &blk->queued_requests_lock)) {
+        while (!qemu_co_queue_empty(&blk->queued_requests)) {
             /* Resume all queued requests */
+            blk_inc_in_flight(blk);
+            qemu_co_enter_next(&blk->queued_requests,
+                               &blk->queued_requests_lock);
         }
         qemu_mutex_unlock(&blk->queued_requests_lock);
     }

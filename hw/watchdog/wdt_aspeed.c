@@ -225,7 +225,6 @@ static void aspeed_wdt_write(void *opaque, hwaddr offset, uint64_t data,
                       "%s: Out-of-bounds write at offset 0x%" HWADDR_PRIx "\n",
                       __func__, offset);
     }
-    return;
 }
 
 static const VMStateDescription vmstate_aspeed_wdt = {
@@ -308,7 +307,7 @@ static const Property aspeed_wdt_properties[] = {
                      AspeedSCUState *),
 };
 
-static void aspeed_wdt_class_init(ObjectClass *klass, void *data)
+static void aspeed_wdt_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -330,7 +329,7 @@ static const TypeInfo aspeed_wdt_info = {
     .abstract      = true,
 };
 
-static void aspeed_2400_wdt_class_init(ObjectClass *klass, void *data)
+static void aspeed_2400_wdt_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     AspeedWDTClass *awc = ASPEED_WDT_CLASS(klass);
@@ -367,7 +366,7 @@ static void aspeed_2500_wdt_reset_pulse(AspeedWDTState *s, uint32_t property)
     }
 }
 
-static void aspeed_2500_wdt_class_init(ObjectClass *klass, void *data)
+static void aspeed_2500_wdt_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     AspeedWDTClass *awc = ASPEED_WDT_CLASS(klass);
@@ -390,7 +389,7 @@ static const TypeInfo aspeed_2500_wdt_info = {
     .class_init = aspeed_2500_wdt_class_init,
 };
 
-static void aspeed_2600_wdt_class_init(ObjectClass *klass, void *data)
+static void aspeed_2600_wdt_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     AspeedWDTClass *awc = ASPEED_WDT_CLASS(klass);
@@ -413,7 +412,7 @@ static const TypeInfo aspeed_2600_wdt_info = {
     .class_init = aspeed_2600_wdt_class_init,
 };
 
-static void aspeed_1030_wdt_class_init(ObjectClass *klass, void *data)
+static void aspeed_1030_wdt_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     AspeedWDTClass *awc = ASPEED_WDT_CLASS(klass);
@@ -436,7 +435,7 @@ static const TypeInfo aspeed_1030_wdt_info = {
     .class_init = aspeed_1030_wdt_class_init,
 };
 
-static void aspeed_2700_wdt_class_init(ObjectClass *klass, void *data)
+static void aspeed_2700_wdt_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     AspeedWDTClass *awc = ASPEED_WDT_CLASS(klass);

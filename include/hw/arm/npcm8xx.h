@@ -28,7 +28,8 @@
 #include "hw/misc/npcm7xx_mft.h"
 #include "hw/misc/npcm7xx_pwm.h"
 #include "hw/misc/npcm7xx_rng.h"
-#include "hw/net/npcm7xx_emc.h"
+#include "hw/net/npcm_gmac.h"
+#include "hw/net/npcm_pcs.h"
 #include "hw/nvram/npcm7xx_otp.h"
 #include "hw/sd/npcm7xx_sdhci.h"
 #include "hw/timer/npcm7xx_timer.h"
@@ -36,6 +37,7 @@
 #include "hw/usb/hcd-ehci.h"
 #include "hw/usb/hcd-ohci.h"
 #include "target/arm/cpu.h"
+#include "hw/ssi/npcm_pspi.h"
 
 #define NPCM8XX_MAX_NUM_CPUS    (4)
 
@@ -98,7 +100,10 @@ struct NPCM8xxState {
     EHCISysBusState     ehci[2];
     OHCISysBusState     ohci[2];
     NPCM7xxFIUState     fiu[3];
+    NPCMGMACState       gmac[4];
+    NPCMPCSState        pcs;
     NPCM7xxSDHCIState   mmc;
+    NPCMPSPIState       pspi;
 };
 
 struct NPCM8xxClass {

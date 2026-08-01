@@ -134,10 +134,10 @@ static void test_ast2600_evb(AspeedSMCTestData *data)
                           "-drive file=%s,format=raw,if=mtd",
                           data->tmp_path);
 
-    /* fmc cs0 with mx66u51235f flash */
+    /* fmc cs0 with w25q512jv flash */
     data->flash_base = 0x20000000;
     data->spi_base = 0x1E620000;
-    data->jedec_id = 0xc2253a;
+    data->jedec_id = 0xef4020;
     data->cs = 0;
     data->node = "/machine/soc/fmc/ssi.0/child[0]";
     /* beyond 16MB */
@@ -228,5 +228,10 @@ int main(int argc, char **argv)
     unlink(ast2500_evb_data.tmp_path);
     unlink(ast2600_evb_data.tmp_path);
     unlink(ast1030_evb_data.tmp_path);
+    g_free(palmetto_data.tmp_path);
+    g_free(ast2500_evb_data.tmp_path);
+    g_free(ast2600_evb_data.tmp_path);
+    g_free(ast1030_evb_data.tmp_path);
+
     return ret;
 }

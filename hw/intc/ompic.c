@@ -13,7 +13,7 @@
 #include "hw/qdev-properties.h"
 #include "hw/sysbus.h"
 #include "migration/vmstate.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "qom/object.h"
 
 #define TYPE_OR1K_OMPIC "or1k-ompic"
@@ -155,7 +155,7 @@ static const VMStateDescription vmstate_or1k_ompic = {
     }
 };
 
-static void or1k_ompic_class_init(ObjectClass *klass, void *data)
+static void or1k_ompic_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

@@ -19,7 +19,7 @@
 #include "system/dirtylimit.h"
 #include "monitor/hmp.h"
 #include "monitor/monitor.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "exec/target_page.h"
 #include "hw/boards.h"
 #include "system/kvm.h"
@@ -337,8 +337,6 @@ static void dirtylimit_adjust_throttle(CPUState *cpu)
     if (!dirtylimit_done(quota, current)) {
         dirtylimit_set_throttle(cpu, quota, current);
     }
-
-    return;
 }
 
 void dirtylimit_process(void)

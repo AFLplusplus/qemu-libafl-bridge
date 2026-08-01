@@ -212,13 +212,14 @@ static void npcm7xx_clk_update_pll(void *opaque)
 {
     NPCM7xxClockPLLState *s = opaque;
     uint32_t con = s->clk->regs[s->reg];
-    uint64_t freq;
+    uint64_t freq, freq_div;
 
     /* The PLL is grounded if it is not locked yet. */
     if (con & PLLCON_LOKI) {
         freq = clock_get_hz(s->clock_in);
         freq *= PLLCON_FBDV(con);
-        freq /= PLLCON_INDV(con) * PLLCON_OTDV1(con) * PLLCON_OTDV2(con);
+        freq_div = PLLCON_INDV(con) * PLLCON_OTDV1(con) * PLLCON_OTDV2(con);
+        freq = freq_div ? freq / freq_div : 0;
     } else {
         freq = 0;
     }
@@ -1102,7 +1103,7 @@ static const VMStateDescription vmstate_npcm_clk = {
     },
 };
 
-static void npcm7xx_clk_pll_class_init(ObjectClass *klass, void *data)
+static void npcm7xx_clk_pll_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -1112,7 +1113,7 @@ static void npcm7xx_clk_pll_class_init(ObjectClass *klass, void *data)
     dc->user_creatable = false;
 }
 
-static void npcm7xx_clk_sel_class_init(ObjectClass *klass, void *data)
+static void npcm7xx_clk_sel_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -1122,7 +1123,7 @@ static void npcm7xx_clk_sel_class_init(ObjectClass *klass, void *data)
     dc->user_creatable = false;
 }
 
-static void npcm7xx_clk_divider_class_init(ObjectClass *klass, void *data)
+static void npcm7xx_clk_divider_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
@@ -1132,7 +1133,7 @@ static void npcm7xx_clk_divider_class_init(ObjectClass *klass, void *data)
     dc->user_creatable = false;
 }
 
-static void npcm_clk_class_init(ObjectClass *klass, void *data)
+static void npcm_clk_class_init(ObjectClass *klass, const void *data)
 {
     ResettableClass *rc = RESETTABLE_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -1142,7 +1143,7 @@ static void npcm_clk_class_init(ObjectClass *klass, void *data)
     rc->phases.enter = npcm_clk_enter_reset;
 }
 
-static void npcm7xx_clk_class_init(ObjectClass *klass, void *data)
+static void npcm7xx_clk_class_init(ObjectClass *klass, const void *data)
 {
     NPCMCLKClass *c = NPCM_CLK_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -1152,7 +1153,7 @@ static void npcm7xx_clk_class_init(ObjectClass *klass, void *data)
     c->cold_reset_values = npcm7xx_cold_reset_values;
 }
 
-static void npcm8xx_clk_class_init(ObjectClass *klass, void *data)
+static void npcm8xx_clk_class_init(ObjectClass *klass, const void *data)
 {
     NPCMCLKClass *c = NPCM_CLK_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);

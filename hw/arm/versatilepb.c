@@ -12,6 +12,7 @@
 #include "hw/sysbus.h"
 #include "migration/vmstate.h"
 #include "hw/arm/boot.h"
+#include "hw/arm/machines-qom.h"
 #include "hw/net/smc91c111.h"
 #include "net/net.h"
 #include "system/system.h"
@@ -25,7 +26,7 @@
 #include "hw/char/pl011.h"
 #include "hw/sd/sd.h"
 #include "qom/object.h"
-#include "audio/audio.h"
+#include "qemu/audio.h"
 #include "target/arm/cpu-qom.h"
 #include "qemu/log.h"
 
@@ -412,7 +413,7 @@ static void vab_init(MachineState *machine)
     versatile_init(machine, 0x25e);
 }
 
-static void versatilepb_class_init(ObjectClass *oc, void *data)
+static void versatilepb_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 
@@ -431,9 +432,10 @@ static const TypeInfo versatilepb_type = {
     .name = MACHINE_TYPE_NAME("versatilepb"),
     .parent = TYPE_MACHINE,
     .class_init = versatilepb_class_init,
+    .interfaces = arm_machine_interfaces,
 };
 
-static void versatileab_class_init(ObjectClass *oc, void *data)
+static void versatileab_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
 
@@ -452,6 +454,7 @@ static const TypeInfo versatileab_type = {
     .name = MACHINE_TYPE_NAME("versatileab"),
     .parent = TYPE_MACHINE,
     .class_init = versatileab_class_init,
+    .interfaces = arm_machine_interfaces,
 };
 
 static void versatile_machine_init(void)
@@ -462,7 +465,7 @@ static void versatile_machine_init(void)
 
 type_init(versatile_machine_init)
 
-static void vpb_sic_class_init(ObjectClass *klass, void *data)
+static void vpb_sic_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

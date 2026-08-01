@@ -7,9 +7,9 @@
 #include "exec/cpu-defs.h"
 
 struct libafl_mapinfo {
-    target_ulong start;
-    target_ulong end;
-    target_ulong offset;
+    uint64_t start;
+    uint64_t end;
+    uint64_t offset;
     const char* path;
     int flags;
     int is_priv;
@@ -43,9 +43,9 @@ IntervalTreeNode* libafl_maps_next(IntervalTreeNode* pageflags_maps_node,
 uint64_t libafl_load_addr(void);
 struct image_info* libafl_get_image_info(void);
 
-uint64_t libafl_get_initial_brk(void);
-uint64_t libafl_get_brk(void);
-uint64_t libafl_set_brk(uint64_t new_brk);
+abi_ulong libafl_get_initial_brk(void);
+abi_ulong libafl_get_brk(void);
+abi_ulong libafl_set_brk(abi_ulong new_brk);
 
 int _libafl_qemu_user_init(int argc, char** argv, char** envp);
 

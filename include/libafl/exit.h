@@ -2,12 +2,11 @@
 
 #include "qemu/osdep.h"
 #include "hw/core/cpu.h"
-#include "exec/cpu-defs.h"
 
 #include "libafl/defs.h"
 
 struct libafl_breakpoint {
-    target_ulong addr;
+    vaddr addr;
     struct libafl_breakpoint* next;
 };
 
@@ -33,7 +32,7 @@ struct libafl_exit_reason_internal {
 
 // A breakpoint has been triggered.
 struct libafl_exit_reason_breakpoint {
-    target_ulong addr;
+    vaddr addr;
 };
 
 // A synchronous exit has been triggered.
@@ -63,8 +62,8 @@ struct libafl_exit_reason {
     } data;
 };
 
-int libafl_qemu_set_breakpoint(target_ulong pc);
-int libafl_qemu_remove_breakpoint(target_ulong pc);
+int libafl_qemu_set_breakpoint(vaddr pc);
+int libafl_qemu_remove_breakpoint(vaddr pc);
 void libafl_qemu_trigger_breakpoint(CPUState* cpu);
 void libafl_qemu_breakpoint_run(vaddr pc_next);
 
@@ -78,8 +77,8 @@ void libafl_sync_exit_cpu(void);
 
 void libafl_exit_request_internal(CPUState* cpu, uint64_t pc,
                                   ShutdownCause cause, int signal);
-void libafl_exit_request_breakpoint(CPUState* cpu, target_ulong pc);
-void libafl_exit_request_custom_insn(CPUState* cpu, target_ulong pc,
+void libafl_exit_request_breakpoint(CPUState* cpu, vaddr pc);
+void libafl_exit_request_custom_insn(CPUState* cpu, vaddr pc,
                                      enum libafl_custom_insn_kind kind);
 void libafl_exit_request_crash(CPUState* cpu);
 void libafl_exit_request_timeout(void);

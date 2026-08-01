@@ -1,8 +1,6 @@
 #include "qemu/osdep.h"
-
-#include "qapi/error.h"
-
-#include "exec/exec-all.h"
+#include "tcg/tcg-op-common.h"
+#include "tcg/tcg.h"
 
 #include "libafl/jit.h"
 

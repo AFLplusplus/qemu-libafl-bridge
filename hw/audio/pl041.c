@@ -626,13 +626,13 @@ static const VMStateDescription vmstate_pl041 = {
 };
 
 static const Property pl041_device_properties[] = {
-    DEFINE_AUDIO_PROPERTIES(PL041State, codec.card),
+    DEFINE_AUDIO_PROPERTIES(PL041State, codec.audio_be),
     /* Non-compact FIFO depth property */
     DEFINE_PROP_UINT32("nc_fifo_depth", PL041State, fifo_depth,
                        DEFAULT_FIFO_DEPTH),
 };
 
-static void pl041_device_class_init(ObjectClass *klass, void *data)
+static void pl041_device_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

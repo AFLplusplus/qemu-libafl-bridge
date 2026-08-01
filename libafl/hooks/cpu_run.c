@@ -1,3 +1,6 @@
+#include "qemu/osdep.h"
+
+#include "libafl/hook.h"
 #include "libafl/hooks/cpu_run.h"
 
 static struct libafl_cpu_run_hook* libafl_cpu_run_hooks = NULL;

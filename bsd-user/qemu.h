@@ -22,8 +22,7 @@
 #include "qemu/int128.h"
 #include "cpu.h"
 #include "qemu/units.h"
-#include "exec/cpu_ldst.h"
-#include "exec/exec-all.h"
+#include "accel/tcg/cpu-ldst.h"
 
 #include "user/abitypes.h"
 #include "user/cpu_loop.h"

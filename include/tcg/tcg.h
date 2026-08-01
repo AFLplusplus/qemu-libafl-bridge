@@ -34,6 +34,7 @@
 #include "tcg-target-reg-bits.h"
 #include "tcg-target.h"
 #include "tcg/tcg-cond.h"
+#include "tcg/insn-start-words.h"
 #include "tcg/debug-assert.h"
 
 /* XXX: make safe guess about sizes */
@@ -188,6 +189,7 @@ typedef tcg_target_ulong TCGArg;
     * TCGv_i64  : 64 bit integer type
     * TCGv_i128 : 128 bit integer type
     * TCGv_ptr  : a host pointer type
+    * TCGv_vaddr: an integer type wide enough to hold a target pointer type
     * TCGv_vec  : a host vector type; the exact size is not exposed
                   to the CPU front-end code.
     * TCGv      : an integer type the same size as target_ulong
@@ -215,6 +217,14 @@ typedef struct TCGv_i128_d *TCGv_i128;
 typedef struct TCGv_ptr_d *TCGv_ptr;
 typedef struct TCGv_vec_d *TCGv_vec;
 typedef TCGv_ptr TCGv_env;
+
+#if __SIZEOF_POINTER__ == 4
+typedef TCGv_i32 TCGv_vaddr;
+#elif __SIZEOF_POINTER__ == 8
+typedef TCGv_i64 TCGv_vaddr;
+#else
+# error "sizeof pointer is different from {4,8}"
+#endif /* __SIZEOF_POINTER__ */
 
 /* call flags */
 /* Helper does not read globals (either directly or through an exception). It
@@ -347,7 +357,7 @@ static inline TCGRegSet output_pref(const TCGOp *op, unsigned i)
 }
 
 struct TCGContext {
-    uint8_t *pool_cur, *pool_end;
+    uintptr_t pool_cur, pool_end;
     TCGPool *pool_first, *pool_current, *pool_first_large;
     int nb_labels;
     int nb_globals;
@@ -355,11 +365,6 @@ struct TCGContext {
     int nb_indirects;
     int nb_ops;
     TCGType addr_type;            /* TCG_TYPE_I32 or TCG_TYPE_I64 */
-
-    int page_mask;
-    uint8_t page_bits;
-    uint8_t tlb_dyn_max_bits;
-    uint8_t insn_start_words;
     TCGBar guest_mo;
 
     TCGRegSet reserved_regs;
@@ -418,6 +423,11 @@ struct TCGContext {
     MemOp riscv_cur_vsew;
     TCGType riscv_cur_type;
 #endif
+    /*
+     * During the tcg_reg_alloc_op loop, we are within a sequence of
+     * carry-using opcodes like addco+addci.
+     */
+    bool carry_live;
 
     GHashTable *const_table[TCG_TYPE_COUNT];
     TCGTempSet free_temps[TCG_TYPE_COUNT];
@@ -572,23 +582,29 @@ static inline TCGv_ptr temp_tcgv_ptr(TCGTemp *t)
     return (TCGv_ptr)temp_tcgv_i32(t);
 }
 
+static inline TCGv_vaddr temp_tcgv_vaddr(TCGTemp *t)
+{
+    return (TCGv_vaddr)temp_tcgv_i32(t);
+}
+
 static inline TCGv_vec temp_tcgv_vec(TCGTemp *t)
 {
     return (TCGv_vec)temp_tcgv_i32(t);
 }
 
-static inline TCGArg tcg_get_insn_param(TCGOp *op, int arg)
+static inline TCGArg tcg_get_insn_param(TCGOp *op, unsigned arg)
 {
     return op->args[arg];
 }
 
-static inline void tcg_set_insn_param(TCGOp *op, int arg, TCGArg v)
+static inline void tcg_set_insn_param(TCGOp *op, unsigned arg, TCGArg v)
 {
     op->args[arg] = v;
 }
 
-static inline uint64_t tcg_get_insn_start_param(TCGOp *op, int arg)
+static inline uint64_t tcg_get_insn_start_param(TCGOp *op, unsigned arg)
 {
+    tcg_debug_assert(arg < INSN_START_WORDS);
     if (TCG_TARGET_REG_BITS == 64) {
         return tcg_get_insn_param(op, arg);
     } else {
@@ -597,8 +613,9 @@ static inline uint64_t tcg_get_insn_start_param(TCGOp *op, int arg)
     }
 }
 
-static inline void tcg_set_insn_start_param(TCGOp *op, int arg, uint64_t v)
+static inline void tcg_set_insn_start_param(TCGOp *op, unsigned arg, uint64_t v)
 {
+    tcg_debug_assert(arg < INSN_START_WORDS);
     if (TCG_TARGET_REG_BITS == 64) {
         tcg_set_insn_param(op, arg, v);
     } else {
@@ -689,7 +706,7 @@ size_t tcg_nb_tbs(void);
 static inline void *tcg_malloc(int size)
 {
     TCGContext *s = tcg_ctx;
-    uint8_t *ptr, *ptr_end;
+    uintptr_t ptr, ptr_end;
 
     /* ??? This is a weak placeholder for minimum malloc alignment.  */
     size = QEMU_ALIGN_UP(size, 8);
@@ -700,7 +717,7 @@ static inline void *tcg_malloc(int size)
         return tcg_malloc_internal(tcg_ctx, size);
     } else {
         s->pool_cur = ptr_end;
-        return ptr;
+        return (void *)ptr;
     }
 }
 
@@ -741,19 +758,25 @@ enum {
     /* Instruction has side effects: it cannot be removed if its outputs
        are not used, and might trigger exceptions.  */
     TCG_OPF_SIDE_EFFECTS = 0x08,
+    /* Instruction operands may be I32 or I64 */
+    TCG_OPF_INT          = 0x10,
     /* Instruction is optional and not implemented by the host, or insn
        is generic and should not be implemented by the host.  */
     TCG_OPF_NOT_PRESENT  = 0x20,
     /* Instruction operands are vectors.  */
     TCG_OPF_VECTOR       = 0x40,
     /* Instruction is a conditional branch. */
-    TCG_OPF_COND_BRANCH  = 0x80
+    TCG_OPF_COND_BRANCH  = 0x80,
+    /* Instruction produces carry out. */
+    TCG_OPF_CARRY_OUT    = 0x100,
+    /* Instruction consumes carry in. */
+    TCG_OPF_CARRY_IN     = 0x200,
 };
 
 typedef struct TCGOpDef {
     const char *name;
     uint8_t nb_oargs, nb_iargs, nb_cargs, nb_args;
-    uint8_t flags;
+    uint16_t flags;
 } TCGOpDef;
 
 extern const TCGOpDef tcg_op_defs[];
@@ -982,5 +1005,7 @@ static inline const TCGOpcode *tcg_swap_vecop_list(const TCGOpcode *n)
 
 bool tcg_can_emit_vecop_list(const TCGOpcode *, TCGType, unsigned);
 void tcg_dump_ops(TCGContext *s, FILE *f, bool have_prefs);
+/* tcg_dump_stats: Append TCG statistics to @buf */
+void tcg_dump_stats(GString *buf);
 
 #endif /* TCG_H */

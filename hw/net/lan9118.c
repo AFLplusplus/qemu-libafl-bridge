@@ -21,6 +21,7 @@
 #include "hw/ptimer.h"
 #include "hw/qdev-properties.h"
 #include "qapi/error.h"
+#include "qemu/bswap.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include <zlib.h> /* for crc32 */
@@ -1309,7 +1310,7 @@ static const Property lan9118_properties[] = {
     DEFINE_PROP_UINT32("mode_16bit", lan9118_state, mode_16bit, 0),
 };
 
-static void lan9118_class_init(ObjectClass *klass, void *data)
+static void lan9118_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 

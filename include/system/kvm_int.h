@@ -9,11 +9,12 @@
 #ifndef QEMU_KVM_INT_H
 #define QEMU_KVM_INT_H
 
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "qapi/qapi-types-common.h"
 #include "qemu/accel.h"
 #include "qemu/queue.h"
 #include "system/kvm.h"
+#include "accel/accel-ops.h"
 #include "hw/boards.h"
 #include "hw/i386/topology.h"
 #include "io/channel-socket.h"

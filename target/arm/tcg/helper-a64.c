@@ -29,8 +29,11 @@
 #include "internals.h"
 #include "qemu/crc32c.h"
 #include "exec/cpu-common.h"
-#include "exec/exec-all.h"
-#include "exec/cpu_ldst.h"
+#include "accel/tcg/cpu-ldst.h"
+#include "accel/tcg/helper-retaddr.h"
+#include "accel/tcg/probe.h"
+#include "exec/target_page.h"
+#include "exec/tlb-flags.h"
 #include "qemu/int128.h"
 #include "qemu/atomic128.h"
 #include "fpu/softfloat.h"
@@ -399,6 +402,8 @@ AH_MINMAX_HELPER(vfp_ah_mind, float64, float64, min)
 AH_MINMAX_HELPER(vfp_ah_maxh, dh_ctype_f16, float16, max)
 AH_MINMAX_HELPER(vfp_ah_maxs, float32, float32, max)
 AH_MINMAX_HELPER(vfp_ah_maxd, float64, float64, max)
+AH_MINMAX_HELPER(sme2_ah_fmax_b16, bfloat16, bfloat16, max)
+AH_MINMAX_HELPER(sme2_ah_fmin_b16, bfloat16, bfloat16, min)
 
 /* 64-bit versions of the CRC helpers. Note that although the operation
  * (and the prototypes of crc32c() and crc32() mean that only the bottom
@@ -571,6 +576,7 @@ uint32_t HELPER(advsimd_rinth)(uint32_t x, float_status *fp_status)
     return ret;
 }
 
+#ifndef CONFIG_USER_ONLY
 static int el_from_spsr(uint32_t spsr)
 {
     /* Return the exception level that this SPSR is requesting a return to,
@@ -609,32 +615,12 @@ static int el_from_spsr(uint32_t spsr)
     }
 }
 
-static void cpsr_write_from_spsr_elx(CPUARMState *env,
-                                     uint32_t val)
-{
-    uint32_t mask;
-
-    /* Save SPSR_ELx.SS into PSTATE. */
-    env->pstate = (env->pstate & ~PSTATE_SS) | (val & PSTATE_SS);
-    val &= ~PSTATE_SS;
-
-    /* Move DIT to the correct location for CPSR */
-    if (val & PSTATE_DIT) {
-        val &= ~PSTATE_DIT;
-        val |= CPSR_DIT;
-    }
-
-    mask = aarch32_cpsr_valid_mask(env->features, \
-        &env_archcpu(env)->isar);
-    cpsr_write(env, val, mask, CPSRWriteRaw);
-}
-
 void HELPER(exception_return)(CPUARMState *env, uint64_t new_pc)
 {
     ARMCPU *cpu = env_archcpu(env);
     int cur_el = arm_current_el(env);
     unsigned int spsr_idx = aarch64_banked_spsr_index(cur_el);
-    uint32_t spsr = env->banked_spsr[spsr_idx];
+    uint64_t spsr = env->banked_spsr[spsr_idx];
     int new_el;
     bool return_to_aa64 = (spsr & PSTATE_nRW) == 0;
 
@@ -686,6 +672,17 @@ void HELPER(exception_return)(CPUARMState *env, uint64_t new_pc)
     }
 
     if (new_el == 1 && (arm_hcr_el2_eff(env) & HCR_TGE)) {
+        goto illegal_return;
+    }
+
+    /*
+     * If GetCurrentEXLOCKEN, the exception return path must use GCSPOPCX,
+     * which will set PSTATE.EXLOCK.  We need not explicitly check FEAT_GCS,
+     * because GCSCR_ELx cannot be set without it.
+     */
+    if (new_el == cur_el &&
+        (env->cp15.gcscr_el[cur_el] & GCSCR_EXLOCKEN) &&
+        !(env->pstate & PSTATE_EXLOCK)) {
         goto illegal_return;
     }
 
@@ -782,6 +779,7 @@ illegal_return:
     qemu_log_mask(LOG_GUEST_ERROR, "Illegal exception return at EL%d: "
                   "resuming execution at 0x%" PRIx64 "\n", cur_el, env->pc);
 }
+#endif /* !CONFIG_USER_ONLY */
 
 void HELPER(dc_zva)(CPUARMState *env, uint64_t vaddr_in)
 {
@@ -1149,7 +1147,6 @@ static void do_setp(CPUARMState *env, uint32_t syndrome, uint32_t mtedesc,
     env->ZF = 1; /* our env->ZF encoding is inverted */
     env->CF = 0;
     env->VF = 0;
-    return;
 }
 
 void HELPER(setp)(CPUARMState *env, uint32_t syndrome, uint32_t mtedesc)
@@ -1549,7 +1546,6 @@ static void do_cpyp(CPUARMState *env, uint32_t syndrome, uint32_t wdesc,
     env->ZF = 1; /* our env->ZF encoding is inverted */
     env->CF = 0;
     env->VF = 0;
-    return;
 }
 
 void HELPER(cpyp)(CPUARMState *env, uint32_t syndrome, uint32_t wdesc,

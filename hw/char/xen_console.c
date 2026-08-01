@@ -53,10 +53,9 @@ struct XenConsole {
     char              *fe_path;
     unsigned int      ring_ref;
     void              *sring;
-    CharBackend       chr;
+    CharFrontend       chr;
     int               backlog;
 };
-typedef struct XenConsole XenConsole;
 
 #define TYPE_XEN_CONSOLE_DEVICE "xen-console"
 OBJECT_DECLARE_SIMPLE_TYPE(XenConsole, XEN_CONSOLE_DEVICE)
@@ -492,7 +491,7 @@ static const Property xen_console_properties[] = {
     DEFINE_PROP_INT32("idx", XenConsole, dev, -1),
 };
 
-static void xen_console_class_init(ObjectClass *class, void *data)
+static void xen_console_class_init(ObjectClass *class, const void *data)
 {
     DeviceClass *dev_class = DEVICE_CLASS(class);
     XenDeviceClass *xendev_class = XEN_DEVICE_CLASS(class);

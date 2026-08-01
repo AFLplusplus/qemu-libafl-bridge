@@ -1,4 +1,5 @@
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 
 #include "migration/qemu-file.h"
 #include "io/channel-buffer.h"
@@ -105,7 +106,7 @@ void device_restore_all(DeviceSaveState* dss)
     bool save_libafl_restoring_devices = libafl_restoring_devices;
     libafl_restoring_devices = true;
 
-    qemu_load_device_state(f);
+    qemu_load_device_state(f, &error_abort);
 
     libafl_restoring_devices = save_libafl_restoring_devices;
 

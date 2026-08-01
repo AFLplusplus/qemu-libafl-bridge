@@ -91,6 +91,7 @@
 #define BMC_DEV_ID           TO_REG(0x1A4)
 
 #define AST2600_PROT_KEY          TO_REG(0x00)
+#define AST2600_PROT_KEY2         TO_REG(0x10)
 #define AST2600_SILICON_REV       TO_REG(0x04)
 #define AST2600_SILICON_REV2      TO_REG(0x14)
 #define AST2600_SYS_RST_CTRL      TO_REG(0x40)
@@ -176,6 +177,7 @@
 #define AST2700_SCUIO_UARTCLK_GEN       TO_REG(0x330)
 #define AST2700_SCUIO_HUARTCLK_GEN      TO_REG(0x334)
 #define AST2700_SCUIO_CLK_DUTY_MEAS_RST TO_REG(0x388)
+#define AST2700_SCUIO_FREQ_CNT_CTL      TO_REG(0x3A0)
 
 #define SCU_IO_REGION_SIZE 0x1000
 
@@ -618,7 +620,7 @@ static const Property aspeed_scu_properties[] = {
     DEFINE_PROP_UINT32("hw-prot-key", AspeedSCUState, hw_prot_key, 0),
 };
 
-static void aspeed_scu_class_init(ObjectClass *klass, void *data)
+static void aspeed_scu_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->realize = aspeed_scu_realize;
@@ -637,7 +639,7 @@ static const TypeInfo aspeed_scu_info = {
     .abstract      = true,
 };
 
-static void aspeed_2400_scu_class_init(ObjectClass *klass, void *data)
+static void aspeed_2400_scu_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     AspeedSCUClass *asc = ASPEED_SCU_CLASS(klass);
@@ -659,7 +661,7 @@ static const TypeInfo aspeed_2400_scu_info = {
     .class_init = aspeed_2400_scu_class_init,
 };
 
-static void aspeed_2500_scu_class_init(ObjectClass *klass, void *data)
+static void aspeed_2500_scu_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     AspeedSCUClass *asc = ASPEED_SCU_CLASS(klass);
@@ -722,6 +724,8 @@ static void aspeed_ast2600_scu_write(void *opaque, hwaddr offset,
     int reg = TO_REG(offset);
     /* Truncate here so bitwise operations below behave as expected */
     uint32_t data = data64;
+    bool prot_data_state = data == ASPEED_SCU_PROT_KEY;
+    bool unlocked = s->regs[AST2600_PROT_KEY] && s->regs[AST2600_PROT_KEY2];
 
     if (reg >= ASPEED_AST2600_SCU_NR_REGS) {
         qemu_log_mask(LOG_GUEST_ERROR,
@@ -730,15 +734,24 @@ static void aspeed_ast2600_scu_write(void *opaque, hwaddr offset,
         return;
     }
 
-    if (reg > PROT_KEY && !s->regs[PROT_KEY]) {
+    if ((reg != AST2600_PROT_KEY && reg != AST2600_PROT_KEY2) && !unlocked) {
         qemu_log_mask(LOG_GUEST_ERROR, "%s: SCU is locked!\n", __func__);
+        return;
     }
 
     trace_aspeed_scu_write(offset, size, data);
 
     switch (reg) {
     case AST2600_PROT_KEY:
-        s->regs[reg] = (data == ASPEED_SCU_PROT_KEY) ? 1 : 0;
+        /*
+         * Writing a value to SCU000 will modify both protection
+         * registers to each protection register individually.
+         */
+        s->regs[AST2600_PROT_KEY] = prot_data_state;
+        s->regs[AST2600_PROT_KEY2] = prot_data_state;
+        return;
+    case AST2600_PROT_KEY2:
+        s->regs[AST2600_PROT_KEY2] = prot_data_state;
         return;
     case AST2600_HW_STRAP1:
     case AST2600_HW_STRAP2:
@@ -835,7 +848,7 @@ static void aspeed_ast2600_scu_reset(DeviceState *dev)
     s->regs[PROT_KEY] = s->hw_prot_key;
 }
 
-static void aspeed_2600_scu_class_init(ObjectClass *klass, void *data)
+static void aspeed_2600_scu_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     AspeedSCUClass *asc = ASPEED_SCU_CLASS(klass);
@@ -954,7 +967,7 @@ static void aspeed_ast2700_scu_reset(DeviceState *dev)
     s->regs[AST2700_HW_STRAP1] = s->hw_strap1;
 }
 
-static void aspeed_2700_scu_class_init(ObjectClass *klass, void *data)
+static void aspeed_2700_scu_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     AspeedSCUClass *asc = ASPEED_SCU_CLASS(klass);
@@ -1022,6 +1035,10 @@ static void aspeed_ast2700_scuio_write(void *opaque, hwaddr offset,
         s->regs[reg - 1] ^= data;
         updated = true;
         break;
+    case AST2700_SCUIO_FREQ_CNT_CTL:
+        s->regs[reg] = deposit32(s->regs[reg], 6, 1, !!(data & BIT(1)));
+        updated = true;
+        break;
     default:
         qemu_log_mask(LOG_GUEST_ERROR,
                       "%s: Unhandled write at offset 0x%" HWADDR_PRIx "\n",
@@ -1066,9 +1083,10 @@ static const uint32_t ast2700_a0_resets_io[ASPEED_AST2700_SCU_NR_REGS] = {
     [AST2700_SCUIO_UARTCLK_GEN]         = 0x00014506,
     [AST2700_SCUIO_HUARTCLK_GEN]        = 0x000145c0,
     [AST2700_SCUIO_CLK_DUTY_MEAS_RST]   = 0x0c9100d2,
+    [AST2700_SCUIO_FREQ_CNT_CTL]        = 0x00000080,
 };
 
-static void aspeed_2700_scuio_class_init(ObjectClass *klass, void *data)
+static void aspeed_2700_scuio_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     AspeedSCUClass *asc = ASPEED_SCU_CLASS(klass);
@@ -1126,7 +1144,7 @@ static void aspeed_ast1030_scu_reset(DeviceState *dev)
     s->regs[PROT_KEY] = s->hw_prot_key;
 }
 
-static void aspeed_1030_scu_class_init(ObjectClass *klass, void *data)
+static void aspeed_1030_scu_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     AspeedSCUClass *asc = ASPEED_SCU_CLASS(klass);

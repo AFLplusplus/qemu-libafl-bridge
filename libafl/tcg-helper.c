@@ -1,5 +1,4 @@
 #include "qemu/osdep.h"
-#include "qemu/host-utils.h"
 #include "exec/cpu-common.h"
 #include "exec/helper-proto-common.h"
 
@@ -12,13 +11,13 @@
 void HELPER(libafl_qemu_handle_breakpoint)(CPUArchState* env, uint64_t pc)
 {
     CPUState* cpu = env_cpu(env);
-    libafl_exit_request_breakpoint(cpu, (target_ulong)pc);
+    libafl_exit_request_breakpoint(cpu, (vaddr)pc);
 }
 
 void HELPER(libafl_qemu_handle_custom_insn)(CPUArchState* env, uint64_t pc,
                                             uint32_t kind)
 {
     CPUState* cpu = env_cpu(env);
-    libafl_exit_request_custom_insn(cpu, (target_ulong)pc,
+    libafl_exit_request_custom_insn(cpu, (vaddr)pc,
                                     (enum libafl_custom_insn_kind)kind);
 }

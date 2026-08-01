@@ -1,13 +1,14 @@
-#include "libafl/exit.h"
-
-#include "tcg/tcg.h"
-#include "tcg/tcg-op.h"
-
+#include "qemu/osdep.h"
 #include "cpu.h"
+#include "tcg/tcg.h"
+#include "tcg/tcg-op-common.h"
+#include "exec/cpu-common.h"
+
+#include "libafl/exit.h"
 #include "libafl/defs.h"
 #include "libafl/cpu.h"
 
-#ifndef CONFIG_USER_ONLY
+#if !defined(CONFIG_USER_ONLY) && defined(AS_LIB)
 #include "system/runstate.h"
 #endif
 
@@ -19,7 +20,7 @@
 
 struct libafl_breakpoint* libafl_qemu_breakpoints = NULL;
 
-int libafl_qemu_set_breakpoint(target_ulong pc)
+int libafl_qemu_set_breakpoint(vaddr pc)
 {
     CPUState* cpu;
 
@@ -32,7 +33,7 @@ int libafl_qemu_set_breakpoint(target_ulong pc)
     return 1;
 }
 
-int libafl_qemu_remove_breakpoint(target_ulong pc)
+int libafl_qemu_remove_breakpoint(vaddr pc)
 {
     CPUState* cpu;
     int r = 0;
@@ -73,14 +74,14 @@ void libafl_sync_exit_cpu(void)
 
 bool libafl_exit_asap(void) { return expected_exit; }
 
-static void prepare_qemu_exit(CPUState* cpu, target_ulong next_pc)
+static void prepare_qemu_exit(CPUState* cpu, vaddr next_pc)
 {
     expected_exit = true;
     last_exit_reason.cpu = cpu;
     last_exit_reason.next_pc = next_pc;
 
-#ifndef CONFIG_USER_ONLY
-    qemu_system_debug_request();
+#if !defined(CONFIG_USER_ONLY) && defined(AS_LIB)
+    qemu_system_return_request();
 #endif
 
     // in usermode, this may be called from the syscall hook, thus already out
@@ -100,7 +101,7 @@ CPUState* libafl_last_exit_cpu(void)
     return NULL;
 }
 
-void libafl_exit_request_internal(CPUState* cpu, uint64_t pc,
+void libafl_exit_request_internal(CPUState* cpu, vaddr pc,
                                   ShutdownCause cause, int signal)
 {
     last_exit_reason.kind = INTERNAL;
@@ -112,7 +113,7 @@ void libafl_exit_request_internal(CPUState* cpu, uint64_t pc,
     expected_exit = true;
 }
 
-void libafl_exit_request_custom_insn(CPUState* cpu, target_ulong pc,
+void libafl_exit_request_custom_insn(CPUState* cpu, vaddr pc,
                                      enum libafl_custom_insn_kind kind)
 {
     last_exit_reason.kind = CUSTOM_INSN;
@@ -120,7 +121,7 @@ void libafl_exit_request_custom_insn(CPUState* cpu, target_ulong pc,
     prepare_qemu_exit(cpu, pc);
 }
 
-void libafl_exit_request_breakpoint(CPUState* cpu, target_ulong pc)
+void libafl_exit_request_breakpoint(CPUState* cpu, vaddr pc)
 {
     last_exit_reason.kind = BREAKPOINT;
     last_exit_reason.data.breakpoint.addr = pc;
@@ -146,7 +147,9 @@ void libafl_exit_request_timeout(void)
     last_exit_reason.kind = TIMEOUT;
     last_exit_reason.cpu = current_cpu;
 
-    qemu_system_debug_request();
+#ifdef AS_LIB
+    qemu_system_return_request();
+#endif
 }
 #endif
 

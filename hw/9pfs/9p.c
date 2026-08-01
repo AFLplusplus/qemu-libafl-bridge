@@ -136,8 +136,10 @@ static int dotl_to_open_flags(int flags)
         { P9_DOTL_NONBLOCK, O_NONBLOCK } ,
         { P9_DOTL_DSYNC, O_DSYNC },
         { P9_DOTL_FASYNC, FASYNC },
-#ifndef CONFIG_DARWIN
+#if !defined(CONFIG_DARWIN) && !defined(CONFIG_FREEBSD)
         { P9_DOTL_NOATIME, O_NOATIME },
+#endif
+#ifndef CONFIG_DARWIN
         /*
          *  On Darwin, we could map to F_NOCACHE, which is
          *  similar, but doesn't quite have the same
@@ -201,8 +203,7 @@ void v9fs_path_free(V9fsPath *path)
 }
 
 
-void G_GNUC_PRINTF(2, 3)
-v9fs_path_sprintf(V9fsPath *path, const char *fmt, ...)
+void v9fs_path_sprintf(V9fsPath *path, const char *fmt, ...)
 {
     va_list ap;
 
@@ -510,7 +511,15 @@ void coroutine_fn v9fs_reclaim_fd(V9fsPDU *pdu)
             err = (f->fid_type == P9_FID_DIR) ?
                 s->ops->closedir(&s->ctx, &f->fs_reclaim) :
                 s->ops->close(&s->ctx, &f->fs_reclaim);
-            if (!err) {
+
+            /* 'man 2 close' suggests to ignore close() errors except of EBADF */
+            if (unlikely(err && errno == EBADF)) {
+                /*
+                 * unexpected case as FIDs were picked above by having a valid
+                 * file descriptor
+                 */
+                error_report("9pfs: v9fs_reclaim_fd() WARNING: close() failed with EBADF");
+            } else {
                 /* total_open_fd must only be mutated on main thread */
                 nclosed++;
             }
@@ -1593,6 +1602,11 @@ out_nofid:
     pdu_complete(pdu, err);
 }
 
+static bool fid_has_valid_file_handle(V9fsState *s, V9fsFidState *fidp)
+{
+    return s->ops->has_valid_file_handle(fidp->fid_type, &fidp->fs);
+}
+
 static void coroutine_fn v9fs_getattr(void *opaque)
 {
     int32_t fid;
@@ -1615,9 +1629,7 @@ static void coroutine_fn v9fs_getattr(void *opaque)
         retval = -ENOENT;
         goto out_nofid;
     }
-    if ((fidp->fid_type == P9_FID_FILE && fidp->fs.fd != -1) ||
-        (fidp->fid_type == P9_FID_DIR && fidp->fs.dir.stream))
-    {
+    if (fid_has_valid_file_handle(pdu->s, fidp)) {
         retval = v9fs_co_fstat(pdu, fidp, &stbuf);
     } else {
         retval = v9fs_co_lstat(pdu, &fidp->path, &stbuf);
@@ -1724,7 +1736,11 @@ static void coroutine_fn v9fs_setattr(void *opaque)
         } else {
             times[1].tv_nsec = UTIME_OMIT;
         }
-        err = v9fs_co_utimensat(pdu, &fidp->path, times);
+        if (fid_has_valid_file_handle(pdu->s, fidp)) {
+            err = v9fs_co_futimens(pdu, fidp, times);
+        } else {
+            err = v9fs_co_utimensat(pdu, &fidp->path, times);
+        }
         if (err < 0) {
             goto out;
         }
@@ -1749,7 +1765,11 @@ static void coroutine_fn v9fs_setattr(void *opaque)
         }
     }
     if (v9iattr.valid & (P9_ATTR_SIZE)) {
-        err = v9fs_co_truncate(pdu, &fidp->path, v9iattr.size);
+        if (fid_has_valid_file_handle(pdu->s, fidp)) {
+            err = v9fs_co_ftruncate(pdu, fidp, v9iattr.size);
+        } else {
+            err = v9fs_co_truncate(pdu, &fidp->path, v9iattr.size);
+        }
         if (err < 0) {
             goto out;
         }
@@ -3640,7 +3660,7 @@ static int v9fs_fill_statfs(V9fsState *s, V9fsPDU *pdu, struct statfs *stbuf)
     f_bavail = stbuf->f_bavail / bsize_factor;
     f_files  = stbuf->f_files;
     f_ffree  = stbuf->f_ffree;
-#ifdef CONFIG_DARWIN
+#if defined(CONFIG_DARWIN) || defined(CONFIG_FREEBSD)
     fsid_val = (unsigned int)stbuf->f_fsid.val[0] |
                (unsigned long long)stbuf->f_fsid.val[1] << 32;
     f_namelen = NAME_MAX;
@@ -4030,6 +4050,16 @@ out_nofid:
  * calls. Because QEMU does not currently support macOS guests, the below
  * preliminary solution only works due to its being a reflection of the limit of
  * Linux guests.
+ */
+#define P9_XATTR_SIZE_MAX 65536
+#elif defined(CONFIG_FREEBSD)
+/*
+ * FreeBSD similarly doesn't define a maximum xattr size, the limit is
+ * filesystem dependent.  On UFS filesystems it's 2 times the filesystem block
+ * size, typically 32KB.  On ZFS it depends on the value of the xattr property;
+ * with the default value there is no limit, and with xattr=sa it is 64KB.
+ *
+ * So, a limit of 64k seems reasonable here too.
  */
 #define P9_XATTR_SIZE_MAX 65536
 #else

@@ -36,6 +36,7 @@ OBJECT_DECLARE_TYPE(QIOChannel, QIOChannelClass,
 
 #define QIO_CHANNEL_READ_FLAG_MSG_PEEK 0x1
 #define QIO_CHANNEL_READ_FLAG_RELAXED_EOF 0x2
+#define QIO_CHANNEL_READ_FLAG_FD_PRESERVE_BLOCKING 0x4
 
 typedef enum QIOChannelFeature QIOChannelFeature;
 
@@ -46,6 +47,7 @@ enum QIOChannelFeature {
     QIO_CHANNEL_FEATURE_WRITE_ZERO_COPY,
     QIO_CHANNEL_FEATURE_READ_MSG_PEEK,
     QIO_CHANNEL_FEATURE_SEEKABLE,
+    QIO_CHANNEL_FEATURE_CONCURRENT_IO,
 };
 
 
@@ -116,6 +118,15 @@ struct QIOChannelClass {
                          size_t nfds,
                          int flags,
                          Error **errp);
+
+    /*
+     * The io_readv handler must guarantee that all
+     * incoming fds are set BLOCKING (unless
+     * QIO_CHANNEL_READ_FLAG_FD_PRESERVE_BLOCKING flag is set) and
+     * CLOEXEC (if available).
+     * @fds and @nfds are set only on success path. Still, setting
+     * @fds and @nfds to zero is acceptable on failure path.
+     */
     ssize_t (*io_readv)(QIOChannel *ioc,
                         const struct iovec *iov,
                         size_t niov,
@@ -123,6 +134,7 @@ struct QIOChannelClass {
                         size_t *nfds,
                         int flags,
                         Error **errp);
+
     int (*io_close)(QIOChannel *ioc,
                     Error **errp);
     GSource * (*io_create_watch)(QIOChannel *ioc,
@@ -233,6 +245,13 @@ void qio_channel_set_name(QIOChannel *ioc,
  * was allocated. It is the callers responsibility
  * to call close() on each file descriptor and to
  * call g_free() on the array pointer in @fds.
+ * @fds allocated and set (and @nfds is set too)
+ * _only_ on success path. Still, @fds and @nfds
+ * may be set to zero on failure path.
+ * qio_channel_readv_full() guarantees that all
+ * incoming fds are set BLOCKING (unless
+ * QIO_CHANNEL_READ_FLAG_FD_PRESERVE_BLOCKING flag
+ * is set) and CLOEXEC (if available).
  *
  * It is an error to pass a non-NULL @fds parameter
  * unless qio_channel_has_feature() returns a true
@@ -418,7 +437,7 @@ ssize_t qio_channel_writev(QIOChannel *ioc,
  * a single memory region.
  */
 ssize_t qio_channel_read(QIOChannel *ioc,
-                         char *buf,
+                         void *buf,
                          size_t buflen,
                          Error **errp);
 
@@ -434,7 +453,7 @@ ssize_t qio_channel_read(QIOChannel *ioc,
  * single memory region.
  */
 ssize_t qio_channel_write(QIOChannel *ioc,
-                          const char *buf,
+                          const void *buf,
                           size_t buflen,
                           Error **errp);
 
@@ -456,7 +475,7 @@ ssize_t qio_channel_write(QIOChannel *ioc,
  *          without data, or -1 on error
  */
 int coroutine_mixed_fn qio_channel_read_all_eof(QIOChannel *ioc,
-                                                char *buf,
+                                                void *buf,
                                                 size_t buflen,
                                                 Error **errp);
 
@@ -476,7 +495,7 @@ int coroutine_mixed_fn qio_channel_read_all_eof(QIOChannel *ioc,
  * Returns: 0 if all bytes were read, or -1 on error
  */
 int coroutine_mixed_fn qio_channel_read_all(QIOChannel *ioc,
-                                            char *buf,
+                                            void *buf,
                                             size_t buflen,
                                             Error **errp);
 
@@ -495,7 +514,7 @@ int coroutine_mixed_fn qio_channel_read_all(QIOChannel *ioc,
  * Returns: 0 if all bytes were written, or -1 on error
  */
 int coroutine_mixed_fn qio_channel_write_all(QIOChannel *ioc,
-                                             const char *buf,
+                                             const void *buf,
                                              size_t buflen,
                                              Error **errp);
 
@@ -512,9 +531,9 @@ int coroutine_mixed_fn qio_channel_write_all(QIOChannel *ioc,
  * return QIO_CHANNEL_ERR_BLOCK if they would otherwise
  * block on I/O
  */
-int qio_channel_set_blocking(QIOChannel *ioc,
-                             bool enabled,
-                             Error **errp);
+bool qio_channel_set_blocking(QIOChannel *ioc,
+                              bool enabled,
+                              Error **errp);
 
 /**
  * qio_channel_set_follow_coroutine_ctx:
@@ -576,7 +595,7 @@ ssize_t qio_channel_pwritev(QIOChannel *ioc, const struct iovec *iov,
  * flag QIO_CHANNEL_FEATURE_SEEKABLE prior to calling this method.
  *
  */
-ssize_t qio_channel_pwrite(QIOChannel *ioc, char *buf, size_t buflen,
+ssize_t qio_channel_pwrite(QIOChannel *ioc, void *buf, size_t buflen,
                            off_t offset, Error **errp);
 
 /**
@@ -612,7 +631,7 @@ ssize_t qio_channel_preadv(QIOChannel *ioc, const struct iovec *iov,
  * flag QIO_CHANNEL_FEATURE_SEEKABLE prior to calling this method.
  *
  */
-ssize_t qio_channel_pread(QIOChannel *ioc, char *buf, size_t buflen,
+ssize_t qio_channel_pread(QIOChannel *ioc, void *buf, size_t buflen,
                           off_t offset, Error **errp);
 
 /**
@@ -851,6 +870,21 @@ void qio_channel_wake_read(QIOChannel *ioc);
  */
 void qio_channel_wait(QIOChannel *ioc,
                       GIOCondition condition);
+
+/**
+ * qio_channel_wait_cond:
+ * @ioc: the channel object
+ * @condition: the I/O condition to wait for
+ *
+ * Block execution from the current thread until
+ * the condition indicated by @condition becomes
+ * available.
+ *
+ * This will work with/without a coroutine context, by automatically select
+ * the proper API to wait.
+ */
+void qio_channel_wait_cond(QIOChannel *ioc,
+                           GIOCondition condition);
 
 /**
  * qio_channel_set_aio_fd_handler:

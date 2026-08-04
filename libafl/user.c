@@ -8,40 +8,9 @@ extern abi_ulong target_brk, initial_target_brk;
 
 static struct image_info libafl_image_info;
 
-static struct libafl_qemu_sig_ctx libafl_qemu_sig_ctx = {0};
-
 // if true, target crashes will issue an exit request and return to harness.
 // if false, target crahes will raise the appropriate signal.
 static bool libafl_return_on_crash = false;
-
-void host_signal_handler(int host_sig, siginfo_t* info, void* puc);
-
-void libafl_qemu_native_signal_handler(int host_sig, siginfo_t* info, void* puc)
-{
-    host_signal_handler(host_sig, info, puc);
-}
-
-void libafl_set_in_target_signal_ctx(void)
-{
-    libafl_qemu_sig_ctx.in_qemu_sig_hdlr = true;
-    libafl_qemu_sig_ctx.is_target_signal = true;
-}
-
-void libafl_set_in_host_signal_ctx(void)
-{
-    libafl_qemu_sig_ctx.in_qemu_sig_hdlr = true;
-    libafl_qemu_sig_ctx.is_target_signal = false;
-}
-
-void libafl_unset_in_signal_ctx(void)
-{
-    libafl_qemu_sig_ctx.in_qemu_sig_hdlr = false;
-}
-
-struct libafl_qemu_sig_ctx* libafl_qemu_signal_context(void)
-{
-    return &libafl_qemu_sig_ctx;
-}
 
 uint64_t libafl_load_addr(void) { return libafl_image_info.load_addr; }
 
@@ -72,3 +41,13 @@ void libafl_qemu_init(int argc, char** argv)
     _libafl_qemu_user_init(argc, argv, NULL);
 }
 #endif
+
+static __thread volatile sig_atomic_t signal_kind = LIBAFL_QEMU_FATAL_NONE;
+
+enum libafl_qemu_fatal_signal_kind libafl_qemu_fatal_signal(void) {
+    return (enum libafl_qemu_fatal_signal_kind) signal_kind;
+}
+
+void libafl_qemu_set_fatal_signal(enum libafl_qemu_fatal_signal_kind kind) {
+    signal_kind = (sig_atomic_t) kind;
+}

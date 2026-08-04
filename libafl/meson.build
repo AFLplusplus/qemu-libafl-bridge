@@ -5,10 +5,11 @@ subdir('syx-snapshot')
 specific_ss.add(files(
   'cpu.c',
   'exit.c',
+  'gdb.c',
   'hook.c',
   'jit.c',
   'utils.c',
-  'gdb.c',
+  'sigaction.c',
   'tcg.c',
   'tcg-helper.c',
 
@@ -36,4 +37,3 @@ specific_ss.add(when : 'CONFIG_USER_ONLY', if_false: [files(
   'system.c',
   'qemu_snapshot.c',
 )])
-

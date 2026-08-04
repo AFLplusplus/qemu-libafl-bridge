@@ -43,6 +43,7 @@
 
 #include "libafl/user.h"
 #include "libafl/exit.h"
+#include "libafl/sigaction.h"
 
 //// --- End LibAFL code ---
 
@@ -697,10 +698,16 @@ void signal_init(const char *rtsig_map)
         /* As we force remap SIGABRT, cannot probe and install in one step. */
         if (tsig == TARGET_SIGABRT) {
             sigaction(SIGABRT, NULL, &oact);
-            sigaction(hsig, &act, NULL);
+            // sigaction(hsig, &act, NULL);
+//// --- Begin LibAFL code ---
+            libafl_sigaction(hsig, &act, NULL);
+//// --- End LibAFL code ---
         } else {
             struct sigaction *iact = core_dump_signal(tsig) ? &act : NULL;
-            sigaction(hsig, iact, &oact);
+            // sigaction(hsig, iact, &oact);
+//// --- Begin LibAFL code ---
+            libafl_sigaction(hsig, iact, &oact);
+//// --- End LibAFL code ---
         }
 
         if (oact.sa_sigaction != (void *)SIG_IGN) {
@@ -795,43 +802,48 @@ void cpu_loop_exit_sigbus(CPUState *cpu, vaddr addr,
 
 /* abort host execution with signal */
 static G_NORETURN
-void die_with_signal(int host_sig)
+//// --- Start LibAFL code ---
+void die_with_signal(int host_sig, enum libafl_qemu_fatal_signal_kind kind, siginfo_t* info, void* puc)
+//// --- End LibAFL code ---
 {
 //// --- Start LibAFL code ---
-    // We don't want to give back the signal to default handler.
-    // Instead, LibAFL is gonna catch the signal if it has put a handler for it
-    // and decide what to do
+    libafl_qemu_set_fatal_signal(kind);
+
+    switch (kind) {
+        case LIBAFL_QEMU_FATAL_HOST:
+            if (info == NULL) {
+                // unreachable
+                _exit(EXIT_FAILURE);
+            }
+            libafl_sigaction_fatal(host_sig, info, puc);
+            break;
+        case LIBAFL_QEMU_FATAL_TARGET:
+            libafl_sigaction_raise(host_sig);
+            break;
+        default:
+            break;
+    }
+//// --- End LibAFL code ---
 
     // struct sigaction act = {
     //     .sa_handler = SIG_DFL,
     // };
 
-    /*
-     * The proper exit code for dying from an uncaught signal is -<signal>.
-     * The kernel doesn't allow exit() or _exit() to pass a negative value.
-     * To get the proper exit code we need to actually die from an uncaught
-     * signal.  Here the default signal handler is installed, we send
-     * the signal and we wait for it to arrive.
-     */
+    // /*
+    // * The proper exit code for dying from an uncaught signal is -<signal>.
+    // * The kernel doesn't allow exit() or _exit() to pass a negative value.
+    // * To get the proper exit code we need to actually die from an uncaught
+    // * signal.  Here the default signal handler is installed, we send
+    // * the signal and we wait for it to arrive.
+    // */
     // sigfillset(&act.sa_mask);
     // sigaction(host_sig, &act, NULL);
 
-    // make sure signal is not blocked
-    sigset_t host_sig_set;
-    sigemptyset(&host_sig_set);
-    sigaddset(&host_sig_set, host_sig);
+    // kill(getpid(), host_sig);
 
-    sigprocmask(SIG_UNBLOCK, &host_sig_set, NULL);
-//// --- End LibAFL code ---
-
-    kill(getpid(), host_sig);
-
-    /* Make sure the signal isn't masked (reusing the mask inside of act). */
-//// --- Start LibAFL code ---
-    // Unused as of now
+    // /* Make sure the signal isn't masked (reusing the mask inside of act). */
     // sigdelset(&act.sa_mask, host_sig);
     // sigsuspend(&act.sa_mask);
-//// --- End LibAFL code ---
 
     /* unreachable */
     _exit(EXIT_FAILURE);
@@ -873,7 +885,9 @@ void dump_core_and_abort(CPUArchState *env, int target_sig)
     }
 
     preexit_cleanup(env, 128 + target_sig);
-    die_with_signal(host_sig);
+//// --- Start LibAFL code ---
+    die_with_signal(host_sig, LIBAFL_QEMU_FATAL_TARGET, NULL, NULL);
+//// --- End LibAFL code ---
 }
 
 /* queue a signal so that it will be send to the virtual CPU as soon
@@ -909,7 +923,9 @@ static inline void rewind_if_in_safe_syscall(void *puc)
 
 // QEMU handler called when a real host signal is received (and not caused by the target)
 static G_NORETURN
-void die_from_signal(siginfo_t *info)
+//// --- Start LibAFL code ---
+void die_from_signal(siginfo_t *info, void* puc)
+//// --- End LibAFL code ---
 {
     char sigbuf[4], codebuf[12];
     const char *sig, *code = NULL;
@@ -986,7 +1002,9 @@ void die_from_signal(siginfo_t *info)
 
     error_report("QEMU internal SIG%s {code=%s, addr=%p}",
                  sig, code, info->si_addr);
-    die_with_signal(info->si_signo);
+//// --- Start LibAFL code ---
+    die_with_signal(info->si_signo, LIBAFL_QEMU_FATAL_HOST, info, puc);
+//// --- End LibAFL code ---
 }
 
 static void host_sigsegv_handler(CPUState *cpu, siginfo_t *info,
@@ -1019,7 +1037,9 @@ static void host_sigsegv_handler(CPUState *cpu, siginfo_t *info,
      */
     if (access_type != MMU_INST_FETCH
         && !in_code_gen_buffer((void *)(pc - tcg_splitwx_diff))) {
-        die_from_signal(info);
+//// --- Start LibAFL code ---
+        die_from_signal(info, uc);
+//// --- End LibAFL code ---
     }
 
     maperr = true;
@@ -1051,7 +1071,9 @@ static uintptr_t host_sigbus_handler(CPUState *cpu, siginfo_t *info,
      * mapping of the generated code buffer, then it is a host bug.
      */
     if (!in_code_gen_buffer((void *)(pc - tcg_splitwx_diff))) {
-        die_from_signal(info);
+//// --- Start LibAFL code ---
+        die_from_signal(info, uc);
+//// --- End LibAFL code ---
     }
 
     if (info->si_code == BUS_ADRALN) {
@@ -1082,10 +1104,6 @@ void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
     bool sync_sig = false;
     void *sigmask;
 
-//// --- Start LibAFL code ---
-    libafl_set_in_host_signal_ctx();
-//// --- End LibAFL code ---
-
     if (host_sig == host_interrupt_signal) {
         ts->signal_pending = 1;
         cpu_exit(thread_cpu);
@@ -1102,10 +1120,7 @@ void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
         case SIGSEGV:
             /* Only returns on handle_sigsegv_accerr_write success. */
             host_sigsegv_handler(cpu, info, uc);
-//// --- Start LibAFL code ---
-            goto exit;
-            // return;
-//// --- End LibAFL code ---
+            return;
         case SIGBUS:
             pc = host_sigbus_handler(cpu, info, uc);
             sync_sig = true;
@@ -1113,17 +1128,16 @@ void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
         case SIGILL:
         case SIGFPE:
         case SIGTRAP:
-            die_from_signal(info);
+//// --- Start LibAFL code ---
+            die_from_signal(info, uc);
+//// --- End LibAFL code ---
         }
     }
 
     /* get target signal number */
     guest_sig = host_to_target_signal(host_sig);
     if (guest_sig < 1 || guest_sig > TARGET_NSIG) {
-//// --- Start LibAFL code ---
-        goto exit;
-        // return;
-//// --- EndLibAFL code ---
+        return;
     }
     trace_user_host_signal(env, host_sig, guest_sig);
 
@@ -1165,10 +1179,6 @@ void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
 
     /* interrupt the virtual CPU as soon as possible */
     cpu_exit(thread_cpu);
-//// --- Start LibAFL code ---
-exit:
-    libafl_unset_in_signal_ctx();
-//// --- End LibAFL code ---
 }
 
 /* do_sigaltstack() returns target values and errnos. */
@@ -1299,7 +1309,10 @@ int do_sigaction(int sig, const struct target_sigaction *act,
                     act1.sa_flags |= SA_RESTART;
                 }
             }
-            ret = sigaction(host_sig, &act1, NULL);
+            // ret = sigaction(host_sig, &act1, NULL);
+//// --- Start LibAFL code ---
+            ret = libafl_sigaction(host_sig, &act1, NULL);
+//// --- End LibAFL code ---
         }
     }
     return ret;
@@ -1322,10 +1335,6 @@ static void handle_pending_signal(CPUArchState *cpu_env, int sig,
     target_sigset_t target_old_set;
     struct target_sigaction *sa;
     TaskState *ts = get_task_state(cpu);
-
-//// --- Start LibAFL code ---
-    libafl_set_in_target_signal_ctx();
-//// --- End LibAFL code ---
 
     trace_user_handle_signal(cpu_env, sig);
     /* dequeue signal */
@@ -1427,9 +1436,6 @@ static void handle_pending_signal(CPUArchState *cpu_env, int sig,
             sa->_sa_handler = TARGET_SIG_DFL;
         }
     }
-//// --- Start LibAFL code ---
-    libafl_unset_in_signal_ctx();
-//// --- End LibAFL code ---
 }
 
 void process_pending_signals(CPUArchState *cpu_env)

@@ -3,7 +3,6 @@
 #include "qapi/error.h"
 #include "qemu/osdep.h"
 #include "qemu/interval-tree.h"
-
 #include "exec/cpu-defs.h"
 
 struct libafl_mapinfo {
@@ -16,24 +15,16 @@ struct libafl_mapinfo {
     bool is_valid;
 };
 
-struct libafl_qemu_sig_ctx {
-    bool in_qemu_sig_hdlr; // we were inside qemu native signal handler
-    bool is_target_signal; // if we were in qemu signal handle, true -> is a
-                           // propagated target signal; false -> is a host qemu
-                           // signal.
-};
-
 extern int libafl_force_dfl;
 
-void libafl_qemu_native_signal_handler(int host_sig, siginfo_t* info,
-                                       void* puc);
+enum libafl_qemu_fatal_signal_kind {
+    LIBAFL_QEMU_FATAL_NONE = 0,
+    LIBAFL_QEMU_FATAL_HOST = 1,
+    LIBAFL_QEMU_FATAL_TARGET = 2,
+};
 
-struct libafl_qemu_sig_ctx* libafl_qemu_signal_context(void);
-void libafl_set_in_target_signal_ctx(void);
-void libafl_set_in_host_signal_ctx(void);
-void libafl_unset_in_signal_ctx(void);
-
-void libafl_qemu_handle_crash(int host_sig, siginfo_t* info, void* puc);
+enum libafl_qemu_fatal_signal_kind libafl_qemu_fatal_signal(void);
+void libafl_qemu_set_fatal_signal(enum libafl_qemu_fatal_signal_kind kind);
 
 IntervalTreeNode* libafl_maps_first(IntervalTreeRoot* map_info);
 IntervalTreeNode* libafl_maps_next(IntervalTreeNode* pageflags_maps_node,

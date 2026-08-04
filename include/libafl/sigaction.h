@@ -18,7 +18,7 @@ void libafl_qemu_set_fatal_signal(enum libafl_qemu_fatal_signal_kind kind);
 int libafl_sigaction(int signum, const struct sigaction* act, struct sigaction* oldact);
 
 // forward a fatal signal according to the saved action
-G_NORETURN void libafl_sigaction_fatal(int signum, siginfo_t* info, void* ucontext);
+G_NORETURN void libafl_sigaction_forward(int signum, siginfo_t* info, void* ucontext);
 
 // raise a new signal using the saved actions
 G_NORETURN void libafl_sigaction_raise(int signum);

@@ -388,7 +388,7 @@ static void sigbus_handler(int n, siginfo_t *siginfo, void *ctx)
     if (siginfo->si_code != BUS_MCEERR_AO && siginfo->si_code != BUS_MCEERR_AR) {
         // sigbus_reraise();
 //// --- Begin LibAFL code ---
-        libafl_sigaction_fatal(n, siginfo, ctx);
+        libafl_sigaction_forward(n, siginfo, ctx);
 //// --- End LibAFL code ---
     }
 
@@ -397,7 +397,7 @@ static void sigbus_handler(int n, siginfo_t *siginfo, void *ctx)
         if (kvm_on_sigbus_vcpu(current_cpu, siginfo->si_code, siginfo->si_addr)) {
             // sigbus_reraise();
 //// --- Begin LibAFL code ---
-            libafl_sigaction_fatal(n, siginfo, ctx);
+            libafl_sigaction_forward(n, siginfo, ctx);
 //// --- End LibAFL code ---
         }
     } else {
@@ -405,7 +405,7 @@ static void sigbus_handler(int n, siginfo_t *siginfo, void *ctx)
         if (kvm_on_sigbus(siginfo->si_code, siginfo->si_addr)) {
             // sigbus_reraise();
 //// --- Begin LibAFL code ---
-            libafl_sigaction_fatal(n, siginfo, ctx);
+            libafl_sigaction_forward(n, siginfo, ctx);
 //// --- End LibAFL code ---
         }
     }

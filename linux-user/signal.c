@@ -815,7 +815,7 @@ void die_with_signal(int host_sig, enum libafl_qemu_fatal_signal_kind kind, sigi
                 // unreachable
                 _exit(EXIT_FAILURE);
             }
-            libafl_sigaction_fatal(host_sig, info, puc);
+            libafl_sigaction_forward(host_sig, info, puc);
             break;
         case LIBAFL_QEMU_FATAL_TARGET:
             libafl_sigaction_raise(host_sig);

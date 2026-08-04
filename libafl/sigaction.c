@@ -46,6 +46,27 @@ static void raise_unblocked(int signum)
     raise(signum);
 }
 
+G_NORETURN
+static void raise_dft(int signum)
+{
+    struct sigaction action = { 0 };
+
+    if (!valid_signal(signum)) {
+        _exit(EXIT_FAILURE);
+    }
+
+    action.sa_handler = SIG_DFL;
+    sigemptyset(&action.sa_mask);
+
+    if (sigaction(signum, &action, NULL) < 0) {
+        _exit(EXIT_FAILURE);
+    }
+
+    raise_unblocked(signum);
+
+    _exit(128 + signum);
+}
+
 int libafl_sigaction(int signum, const struct sigaction* act, struct sigaction* oldact)
 {
     struct sigaction prev, curr, installed;
@@ -83,29 +104,8 @@ int libafl_sigaction(int signum, const struct sigaction* act, struct sigaction* 
     return 0;
 }
 
-G_NORETURN
-static void libafl_sigaction_raise_dft(int signum)
-{
-    struct sigaction action = { 0 };
-
-    if (!valid_signal(signum)) {
-        _exit(EXIT_FAILURE);
-    }
-
-    action.sa_handler = SIG_DFL;
-    sigemptyset(&action.sa_mask);
-
-    if (sigaction(signum, &action, NULL) < 0) {
-        _exit(EXIT_FAILURE);
-    }
-
-    raise_unblocked(signum);
-
-    _exit(128 + signum);
-}
-
 QEMU_DISABLE_CFI G_NORETURN
-void libafl_sigaction_fatal(int signum, siginfo_t* info, void* ucontext)
+void libafl_sigaction_forward(int signum, siginfo_t* info, void* ucontext)
 {
     if (valid_saved_action(signum)) {
         struct sigaction saved = saved_actions[signum].action;
@@ -121,7 +121,7 @@ void libafl_sigaction_fatal(int signum, siginfo_t* info, void* ucontext)
     }
 
     // fall back to default action
-    libafl_sigaction_raise_dft(signum);
+    raise_dft(signum);
 }
 
 G_NORETURN
@@ -141,7 +141,7 @@ void libafl_sigaction_raise(int signum)
         raise_unblocked(signum);
     }
 
-    libafl_sigaction_raise_dft(signum);
+    raise_dft(signum);
 }
 
 G_NORETURN void libafl_sigaction_abort(void)

@@ -405,7 +405,7 @@ static void sigbus_handler(int n, siginfo_t *siginfo, void *ctx)
         if (kvm_on_sigbus(siginfo->si_code, siginfo->si_addr)) {
             // sigbus_reraise();
 //// --- Begin LibAFL code ---
-        libafl_sigaction_fatal(n, siginfo, ctx);
+            libafl_sigaction_fatal(n, siginfo, ctx);
 //// --- End LibAFL code ---
         }
     }

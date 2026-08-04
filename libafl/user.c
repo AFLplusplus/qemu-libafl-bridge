@@ -41,13 +41,3 @@ void libafl_qemu_init(int argc, char** argv)
     _libafl_qemu_user_init(argc, argv, NULL);
 }
 #endif
-
-static __thread volatile sig_atomic_t signal_kind = LIBAFL_QEMU_FATAL_NONE;
-
-enum libafl_qemu_fatal_signal_kind libafl_qemu_fatal_signal(void) {
-    return (enum libafl_qemu_fatal_signal_kind) signal_kind;
-}
-
-void libafl_qemu_set_fatal_signal(enum libafl_qemu_fatal_signal_kind kind) {
-    signal_kind = (sig_atomic_t) kind;
-}

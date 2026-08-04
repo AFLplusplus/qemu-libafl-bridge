@@ -17,15 +17,6 @@ struct libafl_mapinfo {
 
 extern int libafl_force_dfl;
 
-enum libafl_qemu_fatal_signal_kind {
-    LIBAFL_QEMU_FATAL_NONE = 0,
-    LIBAFL_QEMU_FATAL_HOST = 1,
-    LIBAFL_QEMU_FATAL_TARGET = 2,
-};
-
-enum libafl_qemu_fatal_signal_kind libafl_qemu_fatal_signal(void);
-void libafl_qemu_set_fatal_signal(enum libafl_qemu_fatal_signal_kind kind);
-
 IntervalTreeNode* libafl_maps_first(IntervalTreeRoot* map_info);
 IntervalTreeNode* libafl_maps_next(IntervalTreeNode* pageflags_maps_node,
                                    IntervalTreeRoot* proc_maps_node,

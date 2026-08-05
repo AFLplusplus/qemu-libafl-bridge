@@ -12,7 +12,7 @@
 #if TARGET_LONG_BITS == 32
 uintptr_t __attribute__((weak)) libafl_shadow_base = 0x20000000;
 #elif TARGET_LONG_BITS == 64
-uintptr_t __attribute__((weak)) libafl_shadow_base = 0x1000000000;
+uintptr_t __attribute__((weak)) libafl_shadow_base = 0x7fff8000;
 #else
 #error Unhandled TARGET_LONG_BITS value
 #endif

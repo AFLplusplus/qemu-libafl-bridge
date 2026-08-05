@@ -8,6 +8,7 @@
 #include "accel/tcg/cpu-ops.h"
 #include "accel/tcg/tb-internal.h"
 
+#include "tcg/debug-assert.h"
 #include "tcg/insn-start-words.h"
 #include "tcg/perf.h"
 #include "tcg/tcg-op-common.h"
@@ -15,6 +16,31 @@
 
 #include "libafl/tcg.h"
 #include "libafl/hooks/tcg/edge.h"
+
+void libafl_gen_loop_exit_check(void)
+{
+    tcg_target_long should_exit_off = offsetof(CPUState, neg.libafl_loop_exit) - sizeof(CPUState);
+    TCGv_i32 should_exit = tcg_temp_new_i32();
+    TCGLabel* skip = gen_new_label();
+
+    tcg_gen_ld8u_i32(should_exit, tcg_env, should_exit_off);
+    tcg_gen_brcondi_i32(TCG_COND_EQ, should_exit, 0, skip);
+
+    tcg_gen_st8_i32(tcg_constant_i32(0), tcg_env, should_exit_off);
+    tcg_gen_exit_tb(NULL, 0);
+
+    gen_set_label(skip);
+}
+
+void libafl_loop_exit_if_requested(void)
+{
+    CPUState* cpu = current_cpu;
+
+    if (cpu && cpu->neg.libafl_loop_exit) {
+        cpu->neg.libafl_loop_exit = false;
+        cpu_loop_exit_noexc(cpu);
+    }
+}
 
 static target_ulong reverse_bits(target_ulong num)
 {
@@ -92,11 +118,13 @@ TranslationBlock* libafl_gen_edge(CPUState* cpu, vaddr src_block,
 {
     CPUArchState* env = cpu_env(cpu);
     TranslationBlock* tb;
-    tb_page_addr_t phys_pc;
+    G_GNUC_UNUSED tb_page_addr_t phys_pc;
     tcg_insn_unit* gen_code_buf;
     int gen_code_size, search_size, max_insns;
     int64_t ti;
     void* host_pc;
+
+    tcg_debug_assert(tcg_ctx->gen_tb == NULL);
 
     // edge hooks generation callbacks
     // early check if it should be skipped or not
@@ -154,7 +182,11 @@ buffer_overflow:
     tb->cs_base = s.cs_base;
     tb->flags = s.flags;
     tb->cflags = s.cflags | CF_IS_EDGE;
+#ifdef CONFIG_USER_ONLY
     tb_set_page_addr0(tb, phys_pc);
+#else
+    tb_set_page_addr0(tb, -1);
+#endif
     tb_set_page_addr1(tb, -1);
     // if (phys_pc != -1) {
     //     tb_lock_page0(phys_pc);
@@ -279,9 +311,9 @@ restart_translate:
 
     assert_no_pages_locked();
 
-#ifndef CONFIG_USER_ONLY
-    tb->page_addr[0] = tb->page_addr[1] = -1;
-#endif
+// #ifndef CONFIG_USER_ONLY
+//     tb->page_addr[0] = tb->page_addr[1] = -1;
+// #endif
 
     return tb;
 }

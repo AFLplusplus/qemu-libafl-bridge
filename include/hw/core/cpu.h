@@ -373,6 +373,9 @@ typedef struct CPUNegativeOffsetState {
 #endif
     IcountDecr icount_decr;
     bool can_do_io;
+//// --- Begin LibAFL code ---
+    bool libafl_loop_exit;
+//// --- End LibAFL code ---
 } CPUNegativeOffsetState;
 
 struct KVMState;

@@ -174,6 +174,7 @@ static void libafl_gen_rw(TCGTemp* pc, TCGTemp* addr, MemOpIdx oi,
 
         if (hook->gen_cb) {
             cur_id = hook->gen_cb(hook->data, libafl_gen_cur_pc, addr, oi);
+            libafl_loop_exit_if_requested();
         }
 
         TCGHelperInfo* info = NULL;

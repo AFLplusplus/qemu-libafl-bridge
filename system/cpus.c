@@ -48,6 +48,10 @@
 #include "hw/hw.h"
 #include "trace.h"
 
+//// --- Begin LibAFL code ---
+#include "libafl/sigaction.h"
+//// --- End LibAFL code ---
+
 #ifdef CONFIG_LINUX
 
 #include <sys/prctl.h>
@@ -360,38 +364,49 @@ void cpu_handle_guest_debug(CPUState *cpu)
 }
 
 #ifdef CONFIG_LINUX
-static void sigbus_reraise(void)
-{
-    sigset_t set;
-    struct sigaction action;
-
-    memset(&action, 0, sizeof(action));
-    action.sa_handler = SIG_DFL;
-    if (!sigaction(SIGBUS, &action, NULL)) {
-        raise(SIGBUS);
-        sigemptyset(&set);
-        sigaddset(&set, SIGBUS);
-        pthread_sigmask(SIG_UNBLOCK, &set, NULL);
-    }
-    perror("Failed to re-raise SIGBUS!");
-    abort();
-}
+//// --- Begin LibAFL code ---
+// static void sigbus_reraise(void)
+// {
+//     sigset_t set;
+//     struct sigaction action;
+//
+//     memset(&action, 0, sizeof(action));
+//     action.sa_handler = SIG_DFL;
+//     if (!sigaction(SIGBUS, &action, NULL)) {
+//         raise(SIGBUS);
+//         sigemptyset(&set);
+//         sigaddset(&set, SIGBUS);
+//         pthread_sigmask(SIG_UNBLOCK, &set, NULL);
+//     }
+//     perror("Failed to re-raise SIGBUS!");
+//     abort();
+// }
+//// --- End LibAFL code ---
 
 static void sigbus_handler(int n, siginfo_t *siginfo, void *ctx)
 {
     if (siginfo->si_code != BUS_MCEERR_AO && siginfo->si_code != BUS_MCEERR_AR) {
-        sigbus_reraise();
+        // sigbus_reraise();
+//// --- Begin LibAFL code ---
+        libafl_sigaction_forward(n, siginfo, ctx);
+//// --- End LibAFL code ---
     }
 
     if (current_cpu) {
         /* Called asynchronously in VCPU thread.  */
         if (kvm_on_sigbus_vcpu(current_cpu, siginfo->si_code, siginfo->si_addr)) {
-            sigbus_reraise();
+            // sigbus_reraise();
+//// --- Begin LibAFL code ---
+            libafl_sigaction_forward(n, siginfo, ctx);
+//// --- End LibAFL code ---
         }
     } else {
         /* Called synchronously (via signalfd) in main thread.  */
         if (kvm_on_sigbus(siginfo->si_code, siginfo->si_addr)) {
-            sigbus_reraise();
+            // sigbus_reraise();
+//// --- Begin LibAFL code ---
+            libafl_sigaction_forward(n, siginfo, ctx);
+//// --- End LibAFL code ---
         }
     }
 }
@@ -407,7 +422,10 @@ static void qemu_init_sigbus(void)
     memset(&action, 0, sizeof(action));
     action.sa_flags = SA_SIGINFO;
     action.sa_sigaction = sigbus_handler;
-    sigaction(SIGBUS, &action, NULL);
+    // sigaction(SIGBUS, &action, NULL);
+//// --- Begin LibAFL code ---
+    libafl_sigaction(SIGBUS, &action, NULL);
+//// --- End LibAFL code ---
 
     prctl(PR_MCE_KILL, PR_MCE_KILL_SET, PR_MCE_KILL_EARLY, 0, 0);
 }
@@ -947,4 +965,3 @@ void qmp_inject_nmi(Error **errp)
 {
     nmi_monitor_handle(monitor_get_cpu_index(monitor_cur()), errp);
 }
-

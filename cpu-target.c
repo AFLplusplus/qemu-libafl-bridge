@@ -26,6 +26,10 @@
 #include "hw/core/cpu.h"
 #include "trace/trace-root.h"
 
+//// --- Begin LibAFL code ---
+#include "libafl/sigaction.h"
+//// --- End LibAFL code ---
+
 /* enable or disable single step mode. EXCP_DEBUG is returned by the
    CPU loop after each instruction */
 void cpu_single_step(CPUState *cpu, int enabled)
@@ -68,14 +72,18 @@ void cpu_abort(CPUState *cpu, const char *fmt, ...)
     va_end(ap2);
     va_end(ap);
     replay_finish();
-#if defined(CONFIG_USER_ONLY)
-    {
-        struct sigaction act;
-        sigfillset(&act.sa_mask);
-        act.sa_handler = SIG_DFL;
-        act.sa_flags = 0;
-        sigaction(SIGABRT, &act, NULL);
-    }
-#endif
-    abort();
+
+// #if defined(CONFIG_USER_ONLY)
+//     {
+//         struct sigaction act;
+//         sigfillset(&act.sa_mask);
+//         act.sa_handler = SIG_DFL;
+//         act.sa_flags = 0;
+//         sigaction(SIGABRT, &act, NULL);
+//     }
+// #endif
+//     abort();
+//// --- Begin LibAFL code ---
+    libafl_sigaction_abort();
+//// --- End LibAFL code ---
 }

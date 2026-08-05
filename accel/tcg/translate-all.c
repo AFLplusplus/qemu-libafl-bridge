@@ -418,12 +418,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
     }
     tb->tc.size = gen_code_size;
 
-//// --- Begin LibAFL code ---
-
-    libafl_qemu_hook_block_post_run(tb, s.pc);
-
-//// --- End LibAFL code ---
-
     /*
      * For CF_PCREL, attribute all executions of the generated code
      * to its first mapping.
@@ -546,6 +540,9 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
      */
     if (tb_page_addr0(tb) == -1) {
         assert_no_pages_locked();
+//// --- Begin LibAFL code ---
+        libafl_qemu_hook_block_post_run(tb, s.pc);
+//// --- End LibAFL code ---
         return tb;
     }
 
@@ -563,8 +560,15 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
         orig_aligned -= ROUND_UP(sizeof(*tb), qemu_icache_linesize);
         qatomic_set(&tcg_ctx->code_gen_ptr, (void *)orig_aligned);
         tcg_tb_remove(tb);
-        return existing_tb;
+        // return existing_tb;
+//// --- Begin LibAFL code ---
+        tb = existing_tb;
+//// --- End LibAFL code ---
     }
+
+//// --- Begin LibAFL code ---
+    libafl_qemu_hook_block_post_run(tb, s.pc);
+//// --- End LibAFL code ---
     return tb;
 }
 

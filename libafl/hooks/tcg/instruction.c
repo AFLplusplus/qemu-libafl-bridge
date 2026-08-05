@@ -123,5 +123,6 @@ void libafl_qemu_hook_instruction_run(vaddr pc_next)
         TCGv tmp1 = tcg_constant_tl(pc_next);
         TCGTemp* tmp2[2] = {tcgv_i64_temp(tmp0), tcgv_tl_temp(tmp1)};
         tcg_gen_callN(hk->helper_info.func, &hk->helper_info, NULL, tmp2);
+        libafl_gen_loop_exit_check();
     }
 }

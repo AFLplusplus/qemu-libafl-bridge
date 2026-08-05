@@ -547,12 +547,20 @@ static void cpu_exec_longjmp_cleanup(CPUState *cpu)
      */
     if (tcg_ctx->gen_tb) {
         tb_unlock_pages(tcg_ctx->gen_tb);
-        tcg_ctx->gen_tb = NULL;
+        // tcg_ctx->gen_tb = NULL;
     }
 #endif
+//// --- Begin LibAFL code ---
+    tcg_ctx->gen_tb = NULL;
+//// --- End LibAFL code ---
     if (bql_locked()) {
         bql_unlock();
     }
+
+//// --- Begin LibAFL code ---
+    cpu->neg.libafl_loop_exit = false;
+//// --- End LibAFL code ---
+
     assert_no_pages_locked();
 }
 

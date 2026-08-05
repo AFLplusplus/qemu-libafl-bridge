@@ -60,8 +60,10 @@ void libafl_qemu_hook_block_post_run(TranslationBlock* tb, vaddr pc)
 {
     struct libafl_block_hook* hook = libafl_block_hooks;
     while (hook) {
-        if (hook->post_gen_cb)
+        if (hook->post_gen_cb) {
             hook->post_gen_cb(hook->data, pc, tb->size);
+            libafl_loop_exit_if_requested();
+        }
         hook = hook->next;
     }
 }
@@ -75,6 +77,7 @@ void libafl_qemu_hook_block_pre_run(vaddr pc)
 
         if (hook->pre_gen_cb) {
             cur_id = hook->pre_gen_cb(hook->data, pc);
+            libafl_loop_exit_if_requested();
         }
 
         if (cur_id != (uint64_t)-1 && hook->helper_info.func) {
@@ -83,10 +86,12 @@ void libafl_qemu_hook_block_pre_run(vaddr pc)
             TCGTemp* tmp2[2] = {tcgv_i64_temp(tmp0), tcgv_i64_temp(tmp1)};
             tcg_gen_callN(hook->helper_info.func, &hook->helper_info, NULL,
                           tmp2);
+            libafl_gen_loop_exit_check();
         }
 
         if (cur_id != (uint64_t)-1 && hook->jit_cb) {
             hook->jit_cb(hook->data, cur_id);
+            libafl_loop_exit_if_requested();
         }
 
         hook = hook->next;

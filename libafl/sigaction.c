@@ -32,7 +32,7 @@ static bool valid_saved_action(int signum) {
     return valid_signal(signum) && saved_actions[signum].valid;
 }
 
-static void raise_unblocked(int signum)
+static void unblock_signal(int signum)
 {
     sigset_t set;
 
@@ -42,7 +42,11 @@ static void raise_unblocked(int signum)
     if (pthread_sigmask(SIG_UNBLOCK, &set, NULL) != 0) {
         _exit(EXIT_FAILURE);
     }
+}
 
+static void raise_unblocked(int signum)
+{
+    unblock_signal(signum);
     raise(signum);
 }
 
@@ -112,6 +116,10 @@ void libafl_sigaction_forward(int signum, siginfo_t* info, void* ucontext)
 
         if (callable_action(&saved)) {
             // if action is valid and callable
+            if (saved.sa_flags & SA_NODEFER) {
+                unblock_signal(signum);
+            }
+
             if (saved.sa_flags & SA_SIGINFO) {
                 saved.sa_sigaction(signum, info, ucontext);
             } else {

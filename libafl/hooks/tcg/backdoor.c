@@ -47,6 +47,7 @@ void libafl_qemu_hook_backdoor_run(vaddr pc_next)
                             tcgv_tl_temp(tmp2)};
 
         tcg_gen_callN(bhk->helper_info.func, &bhk->helper_info, NULL, args);
+        libafl_gen_loop_exit_check();
 
         bhk = bhk->next;
     }

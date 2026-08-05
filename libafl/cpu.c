@@ -58,11 +58,6 @@ void libafl_breakpoint_invalidate(CPUState* cpu, vaddr pc)
 }
 #else
 
-G_NORETURN void libafl_qemu_set_pc(CPUState* cpu, vaddr pc) {
-    cpu_set_pc(cpu, pc);
-    cpu_loop_exit_noexc(cpu);
-}
-
 void libafl_breakpoint_invalidate(CPUState* cpu, vaddr pc)
 {
     mmap_lock();
@@ -70,6 +65,22 @@ void libafl_breakpoint_invalidate(CPUState* cpu, vaddr pc)
     mmap_unlock();
 }
 #endif
+
+static void libafl_qemu_set_pc_cb(CPUState* cpu, run_on_cpu_data data) {
+    cpu_set_pc(cpu, data.target_ptr);
+}
+
+void libafl_qemu_set_pc(CPUState* cpu, vaddr pc) {
+    if (current_cpu == cpu && qatomic_read(&cpu->running)) {
+        cpu_set_pc(cpu, pc);
+        cpu->neg.libafl_loop_exit = true;
+    } else if (qatomic_read(&cpu->running)) {
+        async_run_on_cpu(cpu, libafl_qemu_set_pc_cb, RUN_ON_CPU_TARGET_PTR(pc));
+    } else {
+        cpu_set_pc(cpu, pc);
+    }
+}
+
 
 vaddr libafl_page_from_addr(vaddr addr)
 {

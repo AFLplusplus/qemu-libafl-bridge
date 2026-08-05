@@ -98,8 +98,11 @@ void libafl_gen_cmp(vaddr pc, TCGv op0, TCGv op1, MemOp ot)
     struct libafl_cmp_hook* hook = libafl_cmp_hooks;
     while (hook) {
         uint64_t cur_id = 0;
-        if (hook->gen_cb)
+        if (hook->gen_cb) {
             cur_id = hook->gen_cb(hook->data, pc, size);
+            libafl_loop_exit_if_requested();
+        }
+
         TCGHelperInfo* info = NULL;
         if (size == 1 && hook->helper_info1.func)
             info = &hook->helper_info1;

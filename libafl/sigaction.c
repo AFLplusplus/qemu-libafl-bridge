@@ -116,7 +116,11 @@ void libafl_sigaction_forward(int signum, siginfo_t* info, void* ucontext)
 
         if (callable_action(&saved)) {
             // if action is valid and callable
-            if (saved.sa_flags & SA_NODEFER) {
+            if (pthread_sigmask(SIG_BLOCK, &saved.sa_mask, NULL) != 0) {
+                _exit(EXIT_FAILURE);
+            }
+
+            if ((saved.sa_flags & SA_NODEFER) && (sigismember(&saved.sa_mask, signum) == 0)) {
                 unblock_signal(signum);
             }
 

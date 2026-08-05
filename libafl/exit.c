@@ -86,7 +86,7 @@ static void prepare_qemu_exit(CPUState* cpu, vaddr next_pc)
 
     // in usermode, this may be called from the syscall hook, thus already out
     // of the cpu_exec but still in the cpu_loop
-    if (cpu->running) {
+    if (tcg_enabled() && cpu->running) {
         cpu->exception_index = EXCP_LIBAFL_EXIT;
         cpu_loop_exit(cpu);
     }

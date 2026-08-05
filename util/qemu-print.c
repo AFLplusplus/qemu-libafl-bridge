@@ -60,6 +60,8 @@ int qemu_vfprintf(FILE *stream, const char *fmt, va_list ap)
  */
 int qemu_fprintf(FILE *stream, const char *fmt, ...)
 {
+#define QEMU_DISABLE_FPRINTF 1
+#ifndef QEMU_DISABLE_FPRINTF
     va_list ap;
     int ret;
 
@@ -67,4 +69,7 @@ int qemu_fprintf(FILE *stream, const char *fmt, ...)
     ret = qemu_vfprintf(stream, fmt, ap);
     va_end(ap);
     return ret;
+#else
+    return 0;
+#endif
 }

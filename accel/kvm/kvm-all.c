@@ -58,6 +58,7 @@
 
 //// --- Begin LibAFL code ---
 
+#include "libafl/exit.h"
 #include "libafl/hooks/cpu_run.h"
 
 //// --- End LibAFL code ---
@@ -3254,12 +3255,20 @@ int kvm_cpu_exec(CPUState *cpu)
         switch (run->exit_reason) {
         case KVM_EXIT_IO:
             /* Called outside BQL */
-            kvm_handle_io(run->io.port, attrs,
-                          (uint8_t *)run + run->io.data_offset,
-                          run->io.direction,
-                          run->io.size,
-                          run->io.count);
-            ret = 0;
+            if (run->io.port == 0xFF00) {
+                struct kvm_regs regs;
+                ioctl(cpu->kvm_fd, KVM_GET_REGS, &regs);
+                /* Exits into LibAFL QEMU so that the NYX command handlers execute */
+                libafl_exit_request_custom_insn(cpu, regs.rip, LIBAFL_CUSTOM_INSN_NYX);
+                ret = -1;
+            } else {
+                kvm_handle_io(run->io.port, attrs,
+                            (uint8_t *)run + run->io.data_offset,
+                            run->io.direction,
+                            run->io.size,
+                            run->io.count);
+                ret = 0;
+            }
             break;
         case KVM_EXIT_MMIO:
             /* Called outside BQL */

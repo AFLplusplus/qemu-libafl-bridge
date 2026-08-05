@@ -1,5 +1,6 @@
 #include "qemu/osdep.h"
 #include <signal.h>
+#include <ucontext.h>
 
 #include "libafl/sigaction.h"
 
@@ -48,6 +49,33 @@ static void raise_unblocked(int signum)
 {
     unblock_signal(signum);
     raise(signum);
+}
+
+static void set_forwarded_signal_mask(int signum, const struct sigaction* saved, void* ucontext)
+{
+    ucontext_t *context = ucontext;
+    sigset_t mask;
+
+    if (context == NULL) {
+        _exit(EXIT_FAILURE);
+    }
+
+    mask = context->uc_sigmask;
+    for (int sig = 1; sig < _NSIG; sig++) {
+        int is_member = sigismember(&saved->sa_mask, sig);
+
+        if (is_member < 0 || (is_member && (sigaddset(&mask, sig) < 0))) {
+            _exit(EXIT_FAILURE);
+        }
+    }
+
+    if (!(saved->sa_flags & SA_NODEFER) && (sigaddset(&mask, signum) < 0)) {
+        _exit(EXIT_FAILURE);
+    }
+
+    if (pthread_sigmask(SIG_SETMASK, &mask, NULL) != 0) {
+        _exit(EXIT_FAILURE);
+    }
 }
 
 G_NORETURN
@@ -116,13 +144,7 @@ void libafl_sigaction_forward(int signum, siginfo_t* info, void* ucontext)
 
         if (callable_action(&saved)) {
             // if action is valid and callable
-            if (pthread_sigmask(SIG_BLOCK, &saved.sa_mask, NULL) != 0) {
-                _exit(EXIT_FAILURE);
-            }
-
-            if ((saved.sa_flags & SA_NODEFER) && (sigismember(&saved.sa_mask, signum) == 0)) {
-                unblock_signal(signum);
-            }
+            set_forwarded_signal_mask(signum, &saved, ucontext);
 
             if (saved.sa_flags & SA_SIGINFO) {
                 saved.sa_sigaction(signum, info, ucontext);

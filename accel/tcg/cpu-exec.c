@@ -527,6 +527,9 @@ static void cpu_exec_longjmp_cleanup(CPUState *cpu)
 #ifdef CONFIG_USER_ONLY
     clear_helper_retaddr();
     if (have_mmap_lock()) {
+//// --- Begin LibAFL code ---
+        tcg_ctx->gen_tb = NULL;
+//// --- End LibAFL code ---
         mmap_unlock();
     }
 #else
@@ -547,12 +550,9 @@ static void cpu_exec_longjmp_cleanup(CPUState *cpu)
      */
     if (tcg_ctx->gen_tb) {
         tb_unlock_pages(tcg_ctx->gen_tb);
-        // tcg_ctx->gen_tb = NULL;
+        tcg_ctx->gen_tb = NULL;
     }
 #endif
-//// --- Begin LibAFL code ---
-    tcg_ctx->gen_tb = NULL;
-//// --- End LibAFL code ---
     if (bql_locked()) {
         bql_unlock();
     }

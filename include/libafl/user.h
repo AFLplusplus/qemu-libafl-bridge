@@ -4,6 +4,11 @@
 #include "qemu/osdep.h"
 #include "qemu/interval-tree.h"
 #include "exec/cpu-defs.h"
+#include "hw/core/cpu.h"
+
+#ifndef LINUX_USER_USER_INTERNALS_H
+extern __thread CPUState *thread_cpu;
+#endif
 
 struct libafl_mapinfo {
     uint64_t start;

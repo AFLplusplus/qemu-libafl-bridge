@@ -3,10 +3,16 @@
 #include "tcg/tcg.h"
 #include "tcg/tcg-op-common.h"
 #include "exec/cpu-common.h"
+#ifdef CONFIG_USER_ONLY
+#include "qemu.h"
+#endif
 
 #include "libafl/exit.h"
 #include "libafl/defs.h"
 #include "libafl/cpu.h"
+#ifdef CONFIG_USER_ONLY
+#include "libafl/user.h"
+#endif
 
 #if !defined(CONFIG_USER_ONLY) && defined(AS_LIB)
 #include "system/runstate.h"
@@ -55,6 +61,16 @@ int libafl_qemu_remove_breakpoint(vaddr pc)
 static THREAD_MODIFIER struct libafl_exit_reason last_exit_reason;
 static THREAD_MODIFIER bool expected_exit = false;
 
+typedef struct libafl_thread_information {
+    int id;
+    struct libafl_exit_reason *exit_reason;
+    bool *expected_exit;
+    QTAILQ_ENTRY(libafl_thread_information) next;
+} LibAFLThreadInformation;
+
+QTAILQ_HEAD(libafl_thread_information_list, libafl_thread_information);
+static union libafl_thread_information_list libafl_thread_info_list_head;
+
 #if defined(TARGET_ARM)
 #define THUMB_MASK(cpu, value) (value | cpu_env(cpu)->thumb)
 #else
@@ -84,12 +100,26 @@ static void prepare_qemu_exit(CPUState* cpu, vaddr next_pc)
     qemu_system_return_request();
 #endif
 
-    // in usermode, this may be called from the syscall hook, thus already out
-    // of the cpu_exec but still in the cpu_loop
-    if (cpu->running) {
-        cpu->exception_index = EXCP_LIBAFL_EXIT;
-        cpu_loop_exit(cpu);
+    LibAFLThreadInformation *info;
+    QTAILQ_FOREACH(info, &libafl_thread_info_list_head, next) {
+        info->exit_reason->kind = last_exit_reason.kind;
+        info->exit_reason->data.breakpoint.addr = next_pc;
+        info->exit_reason->cpu = cpu;
+        info->exit_reason->next_pc = next_pc;
+        *(info->expected_exit) = true;
     }
+
+    CPUState *c;
+    CPU_FOREACH(c) {
+        qemu_cpu_kick(c);
+        cpu_exit(c);
+        if (c->running) {
+            c->exception_index = EXCP_LIBAFL_EXIT;
+            cpu_exit(c);
+        }
+    }
+
+    cpu_loop_exit(last_exit_reason.cpu);
 }
 
 CPUState* libafl_last_exit_cpu(void)
@@ -162,7 +192,12 @@ void libafl_qemu_trigger_breakpoint(CPUState* cpu)
 void libafl_exit_signal_vm_start(void)
 {
     last_exit_reason.cpu = NULL;
-    expected_exit = false;
+
+    LibAFLThreadInformation *info;
+    QTAILQ_FOREACH(info, &libafl_thread_info_list_head, next) {
+        info->exit_reason->cpu = NULL;
+        *(info->expected_exit) = false;
+    }
 }
 
 struct libafl_exit_reason* libafl_get_exit_reason(void)
@@ -173,6 +208,44 @@ struct libafl_exit_reason* libafl_get_exit_reason(void)
 
     return NULL;
 }
+
+#ifdef CONFIG_USER_ONLY
+void libafl_thread_info_list_init(void) {
+    LibAFLThreadInformation *thread_info = g_new0(LibAFLThreadInformation, 1);
+    thread_info->exit_reason = &last_exit_reason;
+    thread_info->expected_exit = &expected_exit;
+    thread_info->id = 0;
+
+    QTAILQ_INIT(&libafl_thread_info_list_head);
+    QTAILQ_INSERT_HEAD(&libafl_thread_info_list_head, thread_info, next);
+}
+
+void libafl_thread_info_list_add(void) {
+    LibAFLThreadInformation *thread_info = g_new0(LibAFLThreadInformation, 1);
+    thread_info->exit_reason = &last_exit_reason;
+    thread_info->expected_exit = &expected_exit;
+    thread_info->id = thread_cpu->cpu_index;
+
+    QTAILQ_INSERT_TAIL(&libafl_thread_info_list_head, thread_info, next);
+}
+
+void libafl_thread_info_list_remove(void) {
+    LibAFLThreadInformation *thread_info;
+
+    int current_id = thread_cpu->cpu_index;
+
+    QTAILQ_FOREACH(thread_info, &libafl_thread_info_list_head, next) {
+        if (thread_info->id == current_id) {
+            QTAILQ_REMOVE(&libafl_thread_info_list_head, thread_info, next);
+
+            // avoid memory leak
+            g_free(thread_info);
+
+            break;
+        }
+    }
+}
+#endif
 
 void libafl_qemu_breakpoint_run(vaddr pc_next)
 {

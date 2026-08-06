@@ -1,5 +1,6 @@
 #include "qemu/osdep.h"
 #include "hw/core/sysemu-cpu-ops.h"
+#include "hw/core/cpu.h"
 
 #ifdef CONFIG_USER_ONLY
 #include "qemu.h"
@@ -15,6 +16,9 @@
 
 #include "libafl/cpu.h"
 #include "libafl/exit.h"
+#ifdef CONFIG_USER_ONLY
+#include "libafl/user.h"
+#endif
 
 static __thread GByteArray* libafl_qemu_mem_buf = NULL;
 static __thread int num_regs = 0;
@@ -188,4 +192,15 @@ int libafl_qemu_run(void)
 }
 
 void libafl_set_qemu_env(CPUArchState* env) { libafl_qemu_env = env; }
+
+int libafl_qemu_run_single_cpu(CPUState *cpu) {
+    CPUArchState *env = cpu_env(cpu);
+
+    current_cpu = cpu;
+    thread_cpu = cpu;
+    libafl_qemu_env = env;
+
+    cpu_loop(env);
+    return 1;
+}
 #endif
